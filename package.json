@@ -1,0 +1,21 @@
+{
+  "name": "shadow-bets",
+  "version": "1.0.0",
+  "description": "Shadow Bets automation — Node.js replacement for Google Apps Script",
+  "main": "src/triggers.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/triggers.js",
+    "test": "node src/diagnostics.js"
+  },
+  "dependencies": {
+    "googleapis": "^140.0.0",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.52.0",
+    "nodemailer": "^6.9.14",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
