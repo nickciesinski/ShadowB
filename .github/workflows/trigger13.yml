@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'npm' }
-      - run: npm ci
+      - run: npm install
       - name: Send weekly performance summary email
         run: node src/triggers.js trigger13
         env:
