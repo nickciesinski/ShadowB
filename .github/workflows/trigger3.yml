@@ -15,7 +15,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-      - run: npm ci
+      - run: npm install
       - name: Fetch odds, grade yesterday, CLV snapshot
         run: node src/triggers.js trigger3
         env:
