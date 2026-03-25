@@ -3,17 +3,18 @@
  * weights.js — Weight Optimization
  * Reads/writes the Weights sheet to tune prediction model coefficients.
  */
-const { getSheet, sheetsApi } = require('./sheets');
+const { getValues, setValues, getSheetsClient } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
-const WEIGHTS_SHEET = SHEETS.WEIGHTS; // 'Weights'
+const WEIGHTS_SHEET = SHEETS.WEIGHTS; // 'Weights_MLB' (default)
 
 /**
- * Read all weights from the Weights sheet.
+ * Read all weights from a weights sheet.
  * Returns an object like { recentForm: 0.35, headToHead: 0.25, ... }
+ * @param {string} [sheetName] - Override sheet (e.g. SHEETS.WEIGHTS_NBA)
  */
-async function readWeights() {
-  const rows = await getSheet(WEIGHTS_SHEET);
+async function readWeights(sheetName) {
+  const rows = await getValues(SPREADSHEET_ID, sheetName || WEIGHTS_SHEET);
   const weights = {};
   for (const row of rows) {
     const key = row[0];
@@ -26,19 +27,15 @@ async function readWeights() {
 }
 
 /**
- * Write updated weights back to the Weights sheet.
+ * Write updated weights back to a weights sheet.
  * @param {Object} weights - key/value pairs of weight name → numeric value
+ * @param {string} [sheetName] - Override sheet (e.g. SHEETS.WEIGHTS_NBA)
  */
-async function writeWeights(weights) {
-  const sheets = await sheetsApi();
+async function writeWeights(weights, sheetName) {
+  const target = sheetName || WEIGHTS_SHEET;
   const values = Object.entries(weights).map(([k, v]) => [k, v]);
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${WEIGHTS_SHEET}!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values },
-  });
-  console.log('[weights] Wrote', values.length, 'weights to sheet');
+  await setValues(SPREADSHEET_ID, target, 'A1', values);
+  console.log('[weights] Wrote', values.length, 'weights to', target);
 }
 
 /**

@@ -5,7 +5,7 @@
  * prop bets + multi-platform combo recommendations to the Props sheet.
  */
 const fetch = require('node-fetch');
-const { sheetsApi } = require('./sheets');
+const { getValues, setValues, getSheetsClient } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
 
 const PROPS_SHEET   = SHEETS.PLAYER_PROPS;   // 'Player Props'
@@ -56,28 +56,24 @@ function parseProps(events, market) {
  * Update the Player Props sheet with fresh prop lines.
  */
 async function updatePlayerProps() {
-  const sheets = await sheetsApi();
   const markets = ['player_points', 'player_rebounds', 'player_assists', 'player_threes'];
   let allRows = [['Game', 'Time', 'Book', 'Player', 'Description', 'Price', 'Line', 'Market']];
 
-  for (const sport of SPORTS) {
+  for (const [league, sportConfig] of Object.entries(SPORTS)) {
+    const sportKey = sportConfig.key; // e.g. 'basketball_nba'
     for (const market of markets) {
       try {
-        const events = await fetchPropOdds(sport, market);
+        const events = await fetchPropOdds(sportKey, market);
         const rows = parseProps(events, market);
         allRows = allRows.concat(rows);
+        console.log(`[props] ${league}/${market}: ${rows.length} rows`);
       } catch (err) {
-        console.warn(`[props] Failed ${sport}/${market}:`, err.message);
+        console.warn(`[props] Failed ${league}/${market}:`, err.message);
       }
     }
   }
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${PROPS_SHEET}!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values: allRows },
-  });
+  await setValues(SPREADSHEET_ID, PROPS_SHEET, 'A1', allRows);
   console.log(`[props] Wrote ${allRows.length - 1} prop rows`);
 }
 
@@ -86,13 +82,9 @@ async function updatePlayerProps() {
  * Looks for same-player props available across multiple books with +EV lines.
  */
 async function updatePlatformCombos() {
-  const sheets = await sheetsApi();
-  // Read existing props
-  const resp = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${PROPS_SHEET}!A2:H`,
-  });
-  const rows = resp.data.values || [];
+  // Read existing props (skip header)
+  const allProps = await getValues(SPREADSHEET_ID, PROPS_SHEET, 'A2:H');
+  const rows = allProps || [];
 
   // Group by player + market
   const grouped = {};
@@ -112,12 +104,7 @@ async function updatePlatformCombos() {
     comboRows.push([key, books, bestPrice, sorted[0].line, 'Review']);
   }
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${COMBOS_SHEET}!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values: comboRows },
-  });
+  await setValues(SPREADSHEET_ID, COMBOS_SHEET, 'A1', comboRows);
   console.log(`[props] Wrote ${comboRows.length - 1} combo recommendations`);
 }
 

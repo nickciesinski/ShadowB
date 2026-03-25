@@ -101,9 +101,10 @@ Format as JSON array: [{team, betType, line, confidence, rationale}]`;
 async function generateNBAPredictions() {
   console.log('[predictions] Generating NBA predictions...');
 
-  const [oddsRows, teamRows] = await Promise.all([
+  const [oddsRows, weightRows, teamRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
-    getValues(SPREADSHEET_ID, SHEETS.TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NBA),
+    getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
   ]);
 
   const today = new Date().toISOString().split('T')[0];
@@ -114,15 +115,32 @@ async function generateNBAPredictions() {
     return;
   }
 
+  // Build weight context
+  const weights = {};
+  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+
+  // Build team records context
+  const teamsMap = {};
+  for (const row of teamRows.slice(1)) {
+    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+  }
+
   const gamesContext = nbaOdds.slice(0, 10).map(r =>
     `${r[2]} vs ${r[3]}: ${r[5]} ${r[6]} @ ${r[7]}`
   ).join('\n');
 
-  const prompt = `You are a sports betting analyst. Based on today's NBA odds, 
-generate 3-5 best bets. Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}
+  const prompt = `You are a sports betting analyst. Based on today's NBA odds and team stats,
+generate 3-5 best bets. For each pick provide: team, bet type, confidence (1-10), brief rationale.
 
 Today's NBA games:
-${gamesContext}`;
+${gamesContext}
+
+Team records (Win-Loss):
+${Object.entries(teamsMap).slice(0, 20).map(([t, r]) => `${t}: ${r.wins}-${r.losses}`).join('\n')}
+
+Weight priorities: ${JSON.stringify(weights)}
+
+Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}`;
 
   let picks = [];
   try {

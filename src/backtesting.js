@@ -4,9 +4,8 @@
  * Reads past bets from the Graded Bets sheet and replays them through
  * the current prediction model to measure accuracy and ROI.
  */
-const { getSheet, sheetsApi } = require('./sheets');
+const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
-const { generatePrediction } = require('./predictions');
 
 const GRADED_SHEET     = SHEETS.GRADED_BETS;    // 'Graded Bets'
 const BACKTEST_SHEET   = SHEETS.BACKTEST_RESULTS; // 'Backtest Results'
@@ -16,7 +15,7 @@ const BACKTEST_SHEET   = SHEETS.BACKTEST_RESULTS; // 'Backtest Results'
  * Replays each bet through generatePrediction() and compares to actual outcome.
  */
 async function runBacktest() {
-  const rows = await getSheet(GRADED_SHEET);
+  const rows = await getValues(SPREADSHEET_ID, GRADED_SHEET);
   if (!rows || rows.length < 2) {
     console.log('[backtest] No graded bets found');
     return { total: 0, correct: 0, accuracy: 0, roi: 0 };
@@ -65,16 +64,10 @@ async function runBacktest() {
   console.log(`[backtest] Total: ${total}, Correct: ${correct}, Accuracy: ${accuracy}%, ROI: ${roi}%`);
 
   // Write results
-  const sheets = await sheetsApi();
   resultRows.push([]);
   resultRows.push(['', '', '', 'Accuracy', `${accuracy}%`, 'ROI', `${roi}%`]);
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${BACKTEST_SHEET}!A1`,
-    valueInputOption: 'RAW',
-    requestBody: { values: resultRows },
-  });
+  await setValues(SPREADSHEET_ID, BACKTEST_SHEET, 'A1', resultRows);
 
   return { total, correct, accuracy: parseFloat(accuracy), roi: parseFloat(roi) };
 }

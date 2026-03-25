@@ -3,11 +3,11 @@
  * player-tiers.js — Player Value Tier Calculations
  * Reads player stats and assigns tier ratings (S/A/B/C/D) to the Player Tiers sheet.
  */
-const { getSheet, writeRows, sheetsApi } = require('./sheets');
+const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
-const TIERS_SHEET = SHEETS.PLAYER_TIERS;      // 'Player Tiers'
-const STATS_SHEET = SHEETS.PLAYER_STATS;       // 'Player Stats' (or equivalent)
+const TIERS_SHEET = SHEETS.PLAYER_TIERS;      // 'NBA Players' (aliased in config)
+const STATS_SHEET = SHEETS.PLAYER_STATS;       // 'NBA Players' (aliased in config)
 
 const TIER_THRESHOLDS = {
   S: 90,
@@ -42,13 +42,12 @@ function assignTier(score) {
  * Read player stats, calculate tiers, and write results back to the Player Tiers sheet.
  */
 async function updatePlayerTiers() {
-  const statsRows = await getSheet(STATS_SHEET);
+  const statsRows = await getValues(SPREADSHEET_ID, STATS_SHEET);
   if (!statsRows || statsRows.length < 2) {
     console.log('[player-tiers] No player stats found');
     return;
   }
 
-  const header = statsRows[0];
   const dataRows = statsRows.slice(1);
 
   const tierRows = dataRows.map((row) => {
@@ -59,15 +58,8 @@ async function updatePlayerTiers() {
     return [name, team, score.toFixed(1), tier];
   });
 
-  const sheets = await sheetsApi();
-  const writeRange = `${TIERS_SHEET}!A1`;
   const values = [['Player', 'Team', 'Score', 'Tier'], ...tierRows];
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: writeRange,
-    valueInputOption: 'RAW',
-    requestBody: { values },
-  });
+  await setValues(SPREADSHEET_ID, TIERS_SHEET, 'A1', values);
 
   console.log(`[player-tiers] Updated ${tierRows.length} player tiers`);
 }
@@ -76,7 +68,7 @@ async function updatePlayerTiers() {
  * Read current tier assignments from the sheet.
  */
 async function readPlayerTiers() {
-  const rows = await getSheet(TIERS_SHEET);
+  const rows = await getValues(SPREADSHEET_ID, TIERS_SHEET);
   if (!rows || rows.length < 2) return [];
   return rows.slice(1).map((row) => ({
     name:  row[0],

@@ -9,6 +9,8 @@ const { validateConfig } = require('./config');
 const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade } = require('./data-collection');
 const { generateMLBPredictions, generateNBAPredictions, takeCLVSnapshot } = require('./predictions');
 const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
+const { updatePlayerProps, updatePlatformCombos } = require('./props');
+const { updatePlayerTiers } = require('./player-tiers');
 
 // ── Trigger Map ──────────────────────────────────────────────────
 // Maps trigger names (passed as CLI arg) to their functions.
@@ -36,20 +38,14 @@ const TRIGGERS = {
   // Trigger 5: 5:30 AM ET → NBA predictions (if trigger 4 is slow)
   trigger5: generateNBAPredictions,
 
-  // Trigger 6: 6:00 AM ET → Player props (placeholder for Phase 2)
-  trigger6: async () => {
-    console.log('[triggers] trigger6: Player props — implement in Phase 2');
-  },
+  // Trigger 6: 6:00 AM ET → Player props
+  trigger6: updatePlayerProps,
 
   // Trigger 7: 6:15 AM ET → Platform combos
-  trigger7: async () => {
-    console.log('[triggers] trigger7: Platform combos — implement in Phase 2');
-  },
+  trigger7: updatePlatformCombos,
 
   // Trigger 8: 6:20 AM ET → Player tiers
-  trigger8: async () => {
-    console.log('[triggers] trigger8: Player tiers — implement in Phase 2');
-  },
+  trigger8: updatePlayerTiers,
 
   // Trigger 9: 6:30 AM ET → Send daily picks email
   trigger9: sendDailyPicksEmail,
