@@ -143,8 +143,70 @@ async function fetchOddsAndGrade() {
   console.log(`[data-collection] Odds updated: ${allOddsRows.length - 1} rows`);
 }
 
+// ── Yesterday's Results (Scores API) ─────────────────────────
+
+/**
+ * Fetch yesterday's completed game scores from The Odds API.
+ * Writes to Yesterday_Results sheet for grading.
+ * Used by trigger12 (post-game grading).
+ */
+async function fetchYesterdayResults() {
+  console.log('[data-collection] Fetching yesterday\'s game results...');
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+
+  const allRows = [['League', 'GameDate', 'AwayTeam', 'HomeTeam', 'AwayScore', 'HomeScore', 'Status']];
+
+  for (const [sportName, sportConfig] of Object.entries(SPORTS)) {
+    try {
+      const params = new URLSearchParams({
+        apiKey: ODDS_API_KEY,
+        daysFrom: '1',
+      });
+      const url = `${ODDS_API_BASE}/sports/${sportConfig.key}/scores?${params}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) { console.warn(`Scores API ${sportName}: ${res.status}`); continue; }
+      const games = await res.json();
+
+      for (const game of games) {
+        if (!game.completed) continue;
+
+        // Check if the game was yesterday
+        const gameDate = (game.commence_time || '').split('T')[0];
+        if (gameDate !== yesterdayStr) continue;
+
+        // Extract scores — scores array has { name, score } for each team
+        const scores = game.scores || [];
+        const homeData = scores.find(s => s.name === game.home_team) || {};
+        const awayData = scores.find(s => s.name === game.away_team) || {};
+
+        allRows.push([
+          sportName,
+          game.commence_time || '',
+          game.away_team || '',
+          game.home_team || '',
+          parseFloat(awayData.score) || 0,
+          parseFloat(homeData.score) || 0,
+          'Final',
+        ]);
+      }
+      console.log(`[data-collection] ${sportName}: found scores for ${allRows.length - 1} completed games`);
+    } catch (err) {
+      console.error(`[data-collection] Scores API ${sportName} error:`, err.message);
+    }
+  }
+
+  await clearSheet(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS);
+  await setValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS, 'A1', allRows);
+  console.log(`[data-collection] Yesterday results updated: ${allRows.length - 1} games`);
+  return allRows.length - 1;
+}
+
 module.exports = {
   updatePlayerStats,
   updateTeamStats,
   fetchOddsAndGrade,
+  fetchYesterdayResults,
 };

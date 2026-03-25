@@ -6,8 +6,8 @@
 // =============================================================
 
 const { validateConfig } = require('./config');
-const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade } = require('./data-collection');
-const { generateMLBPredictions, generateNBAPredictions, takeCLVSnapshot } = require('./predictions');
+const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults } = require('./data-collection');
+const { generateMLBPredictions, generateNBAPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
 const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
 const { updatePlayerProps, updatePlatformCombos } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
@@ -59,9 +59,10 @@ const TRIGGERS = {
     await takeCLVSnapshot();
   },
 
-  // Trigger 12: 11:00 PM ET → Post-game grading (placeholder)
+  // Trigger 12: 11:00 PM ET → Fetch yesterday's scores + grade bets
   trigger12: async () => {
-    console.log('[triggers] trigger12: Post-game grading — implement in Phase 2');
+    await fetchYesterdayResults();
+    await gradePerformanceLog();
   },
 
   // Trigger 13: Sunday 8:00 PM ET → Weekly performance summary
