@@ -90,6 +90,9 @@ Format as JSON array: [{team, betType, line, confidence, rationale}]`;
   await clearSheet(SPREADSHEET_ID, targetSheet);
   await setValues(SPREADSHEET_ID, targetSheet, 'A1', rows);
   console.log(`[predictions] MLB: ${picks.length} picks written to ${targetSheet}`);
+
+  // Log to Performance Log for grading
+  await logPicksToPerformanceLog(picks, 'MLB', oddsRows, weights);
 }
 
 // ── NBA Predictions ─────────────────────────────────────────────
@@ -166,6 +169,87 @@ Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}`;
   await clearSheet(SPREADSHEET_ID, targetSheet);
   await setValues(SPREADSHEET_ID, targetSheet, 'A1', rows);
   console.log(`[predictions] NBA: ${picks.length} picks written to ${targetSheet}`);
+
+  // Log to Performance Log for grading
+  await logPicksToPerformanceLog(picks, 'NBA', oddsRows, weights);
+}
+
+// ── Performance Log Writer ───────────────────────────────────────
+
+/**
+ * Log picks to the Performance Log so they can be graded later.
+ * Matches picks to odds data to fill in away/home teams, start time, etc.
+ *
+ * Performance Log columns:
+ *   A: date, B: league, C: market, D: awayTeam, E: homeTeam, F: start_time,
+ *   G: bet_type, H: pick, I: line, J: odds, K: units, L: confidence,
+ *   M: prediction_score, N: preAwayScore, O: preHomeScore, P: preTotal,
+ *   Q: result, R: unit_return
+ */
+async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
+  if (!picks || picks.length === 0) return;
+
+  const today = new Date();
+  const dateStr = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`;
+
+  // Build odds lookup by team name for matching
+  const oddsLookup = {};
+  for (const row of oddsRows.slice(1)) {
+    if (row[1] !== sport) continue;
+    // key by home team and away team
+    const home = row[2] || '';
+    const away = row[3] || '';
+    const market = row[5] || '';
+    const commence = row[4] || '';
+    if (!oddsLookup[home]) oddsLookup[home] = { away, home, commence };
+    if (!oddsLookup[away]) oddsLookup[away] = { away, home, commence };
+  }
+
+  const perfRows = [];
+  for (const p of picks) {
+    const team = p.team || '';
+    const betType = (p.betType || '').toLowerCase();
+    const line = p.line || '';
+    const confidence = p.confidence || '';
+    const odds = p.odds || (betType === 'moneyline' ? 0 : -110);
+    const units = 0.1; // Default tracking unit
+
+    // Try to find the game in odds data
+    const game = oddsLookup[team] || {};
+    const awayTeam = game.away || '';
+    const homeTeam = game.home || '';
+    const startTime = game.commence || '';
+
+    // Build the pick string (team name for ML/spread, Over/Under for totals)
+    const pick = betType === 'total' ? (line > 0 ? `Over ${line}` : `Under ${Math.abs(line)}`) : team;
+
+    perfRows.push([
+      dateStr,          // A: date
+      sport,            // B: league
+      betType,          // C: market
+      awayTeam,         // D: Away Team
+      homeTeam,         // E: Home Team
+      startTime,        // F: start_time
+      betType,          // G: bet_type
+      pick,             // H: pick
+      line,             // I: line
+      odds,             // J: odds
+      units,            // K: units
+      `${confidence}%`, // L: confidence
+      0,                // M: prediction_score
+      0,                // N: Pre Away Score
+      0,                // O: Pre Home Score
+      0,                // P: Pre Total
+      '',               // Q: result (empty — to be graded)
+      '',               // R: unit_return (empty — to be graded)
+      JSON.stringify(weights || {}), // S: weights_snapshot
+    ]);
+  }
+
+  if (perfRows.length > 0) {
+    await appendRows(SPREADSHEET_ID, SHEETS.PERFORMANCE, perfRows);
+    console.log(`[predictions] Logged ${perfRows.length} ${sport} picks to Performance Log`);
+  }
 }
 
 // ── CLV Snapshot ─────────────────────────────────────────────────
@@ -259,8 +343,9 @@ function determineBetResult(market, pick, line, homeTeam, awayTeam, homeScore, a
 }
 
 /**
- * Grade bets in the Performance Log using Yesterday_Results.
- * Reads yesterday's scores, matches to ungraded bets, writes W/L/P + unit return.
+ * Grade ungraded bets in the Performance Log using Yesterday_Results.
+ * Matches ANY ungraded bet (not just yesterday's) against available results
+ * by league + away team + home team. This handles backfills and missed days.
  * Trigger 12: 11:00 PM ET daily (post-game).
  *
  * Performance Log columns (0-indexed):
@@ -298,11 +383,6 @@ async function gradePerformanceLog() {
     return { graded: 0 };
   }
 
-  // Get yesterday's date string for matching
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
-
   let graded = 0;
   const maxRows = Math.min(500, perfRows.length);
 
@@ -314,18 +394,6 @@ async function gradePerformanceLog() {
     const existingResult = (row[16] || '').toString().trim();
     if (existingResult === 'W' || existingResult === 'L' || existingResult === 'P') continue;
 
-    // Check if bet is from yesterday
-    const betDate = row[0] || '';
-    let betDateStr = '';
-    if (betDate) {
-      // Handle both ISO dates and M/d/yyyy format
-      const d = new Date(betDate);
-      if (!isNaN(d.getTime())) {
-        betDateStr = d.toISOString().split('T')[0];
-      }
-    }
-    if (betDateStr !== yesterdayStr) continue;
-
     const league = row[1] || '';
     const market = row[2] || '';
     const awayTeam = row[3] || '';
@@ -334,6 +402,8 @@ async function gradePerformanceLog() {
     const line = row[8];
     const odds = parseFloat(row[9]) || -110;
     const units = parseFloat(row[10]) || 1;
+
+    if (!league || !awayTeam || !homeTeam || !pick) continue;
 
     // Find matching result
     const key = `${league}|${awayTeam}|${homeTeam}`;
