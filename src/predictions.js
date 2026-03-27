@@ -31,12 +31,18 @@ async function generateMLBPredictions() {
     getValues(SPREADSHEET_ID, SHEETS.TEAM_STATS),
   ]);
 
-  // Filter to MLB games today
-  const today = new Date().toISOString().split('T')[0];
-  const mlbOdds = oddsRows.slice(1).filter(r => r[1] === 'MLB' && (r[4] || '').startsWith(today));
+  // Filter to MLB games today (next 24h window to handle UTC/ET mismatch)
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const mlbOdds = oddsRows.slice(1).filter(r => {
+    if (r[1] !== 'MLB') return false;
+    const commence = new Date(r[4]);
+    return !isNaN(commence) && commence >= now && commence <= in24h;
+  });
 
+  console.log(`[predictions] Total odds rows: ${oddsRows.length - 1}, MLB matches in next 24h: ${mlbOdds.length}`);
   if (mlbOdds.length === 0) {
-    console.log('[predictions] No MLB games today, skipping.');
+    console.log('[predictions] No MLB games in next 24h, skipping.');
     return;
   }
 
@@ -110,11 +116,18 @@ async function generateNBAPredictions() {
     getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
   ]);
 
-  const today = new Date().toISOString().split('T')[0];
-  const nbaOdds = oddsRows.slice(1).filter(r => r[1] === 'NBA' && (r[4] || '').startsWith(today));
+  // Filter to NBA games today (next 24h window to handle UTC/ET mismatch)
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const nbaOdds = oddsRows.slice(1).filter(r => {
+    if (r[1] !== 'NBA') return false;
+    const commence = new Date(r[4]);
+    return !isNaN(commence) && commence >= now && commence <= in24h;
+  });
 
+  console.log(`[predictions] Total odds rows: ${oddsRows.length - 1}, NBA matches in next 24h: ${nbaOdds.length}`);
   if (nbaOdds.length === 0) {
-    console.log('[predictions] No NBA games today, skipping.');
+    console.log('[predictions] No NBA games in next 24h, skipping.');
     return;
   }
 
