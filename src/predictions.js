@@ -254,7 +254,8 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
 
     // Try to find the game in odds data
     // For totals, GPT may not return a real team name — try team first,
-    // then search gameLookup for any partial match from the rationale
+    // then search gameLookup for any partial match from the rationale,
+    // then fall back to the first available game for this sport
     let game = gameLookup[team] || {};
     if (!game.away && isTotal) {
       // Try to find game from team name mentioned in rationale or line
@@ -264,6 +265,11 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           game = info;
           break;
         }
+      }
+      // Last resort: use the first game available (works when there's only one game)
+      if (!game.away) {
+        const firstGame = Object.values(gameLookup)[0];
+        if (firstGame) game = firstGame;
       }
     }
     const awayTeam = game.away || '';
