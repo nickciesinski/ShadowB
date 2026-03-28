@@ -239,6 +239,9 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const betType = (p.betType || '').toLowerCase();
     const confidence = p.confidence || '';
     const units = 0.1; // Default tracking unit
+    const isTotal = betType === 'total' || betType === 'totals';
+    const isMoneyline = betType === 'moneyline' || betType === 'h2h';
+    const isSpread = betType === 'spread' || betType === 'spreads';
 
     // Try to find the game in odds data
     const game = gameLookup[team] || {};
@@ -246,16 +249,38 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const homeTeam = game.home || '';
     const startTime = game.commence || '';
 
-    // Map betType to Odds API market key
-    const marketKey = betType === 'moneyline' ? 'h2h' : betType === 'spread' ? 'spreads' : betType === 'total' || betType === 'totals' ? 'totals' : betType;
+    let odds = -110;
+    let line = '';
+    let pick = team;
 
-    // Pull real odds from the odds data
-    const oddsEntry = oddsMap[`${team}|${marketKey}`] || {};
-    const odds = oddsEntry.price || (betType === 'moneyline' ? -110 : -110);
-    const line = oddsEntry.point || p.line || '';
+    if (isMoneyline) {
+      // Moneyline: odds from h2h market, no line
+      const entry = oddsMap[`${team}|h2h`] || {};
+      odds = entry.price || -110;
+      line = '';  // moneyline has no line/point
+      pick = team;
 
-    // Build the pick string (team name for ML/spread, Over/Under for totals)
-    const pick = betType === 'total' || betType === 'totals' ? (line > 0 ? `Over ${line}` : `Under ${Math.abs(line)}`) : team;
+    } else if (isSpread) {
+      // Spread: odds and point from spreads market
+      const entry = oddsMap[`${team}|spreads`] || {};
+      odds = entry.price || -110;
+      line = entry.point || p.line || '';
+      pick = team;
+
+    } else if (isTotal) {
+      // Total: GPT returns team name but we need Over/Under from totals market
+      // Determine Over/Under from GPT's rationale or line hint
+      const gptLine = String(p.line || '').toLowerCase();
+      const gptRationale = String(p.rationale || '').toLowerCase();
+      const isOver = gptLine.includes('over') || gptRationale.includes('over');
+      const direction = isOver ? 'Over' : 'Under';
+      const overEntry = oddsMap[`Over|totals`] || {};
+      const underEntry = oddsMap[`Under|totals`] || {};
+      const entry = isOver ? overEntry : underEntry;
+      odds = entry.price || -110;
+      line = parseFloat(entry.point) || parseFloat(String(p.line).replace(/[^0-9.]/g, '')) || '';
+      pick = line ? `${direction} ${line}` : direction;
+    }
 
     perfRows.push([
       `'${dateStr}`,    // A: date (leading apostrophe forces text to avoid serial number)
