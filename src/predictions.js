@@ -16,6 +16,96 @@ function getTargetSheet(baseSheet) {
   return IS_TEST ? SHEETS['TEST_' + baseSheet.replace('Predictions', '')] || baseSheet : baseSheet;
 }
 
+/**
+ * Convert American odds to implied probability (0-1).
+ */
+function impliedProbability(americanOdds) {
+  const o = parseFloat(americanOdds);
+  if (isNaN(o)) return 0;
+  return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
+}
+
+/**
+ * Deduplicate raw odds rows into structured game objects with consensus odds.
+ * Returns array of { home, away, commence, markets: { h2h, spreads, totals } }
+ * Each market has outcomes with median price across bookmakers.
+ */
+function buildGameObjects(oddsRows, sportFilter) {
+  const games = {}; // key: "away@home" -> { home, away, commence, marketsRaw }
+  for (const row of oddsRows.slice(1)) {
+    if (row[1] !== sportFilter) continue;
+    const home = row[2] || '';
+    const away = row[3] || '';
+    const commence = row[4] || '';
+    const market = row[5] || '';
+    const outcome = row[6] || '';
+    const price = parseFloat(row[7]);
+    const point = row[8] || '';
+    if (isNaN(price)) continue;
+
+    const gk = `${away}@${home}`;
+    if (!games[gk]) games[gk] = { home, away, commence, marketsRaw: {} };
+    const mk = `${market}|${outcome}|${point}`;
+    if (!games[gk].marketsRaw[mk]) games[gk].marketsRaw[mk] = [];
+    games[gk].marketsRaw[mk].push(price);
+  }
+
+  // Compute consensus (median) odds per outcome
+  return Object.values(games).map(g => {
+    const markets = {};
+    for (const [mk, prices] of Object.entries(g.marketsRaw)) {
+      const [market, outcome, point] = mk.split('|');
+      if (!markets[market]) markets[market] = [];
+      prices.sort((a, b) => a - b);
+      const median = prices[Math.floor(prices.length / 2)];
+      markets[market].push({ outcome, price: median, point, impliedProb: impliedProbability(median).toFixed(3) });
+    }
+    return { home: g.home, away: g.away, commence: g.commence, markets };
+  });
+}
+
+/**
+ * Map confidence (1-10) to unit size. Higher confidence = more units at risk.
+ * Scale: 1-3 → 0.05, 4-5 → 0.1, 6-7 → 0.2, 8 → 0.3, 9 → 0.4, 10 → 0.5
+ */
+function confidenceToUnits(confidence) {
+  const c = parseInt(confidence) || 5;
+  if (c <= 3) return 0.05;
+  if (c <= 5) return 0.1;
+  if (c <= 7) return 0.2;
+  if (c === 8) return 0.3;
+  if (c === 9) return 0.4;
+  return 0.5;
+}
+
+/**
+ * League+market performance modifiers based on historical ROI.
+ * Multiplier on units: >1 = boost profitable segments, <1 = reduce losing ones.
+ * Updated periodically based on Performance Log analysis.
+ */
+const PERFORMANCE_MODIFIERS = {
+  'NHL|spread':     1.5,   // 59.3% cover, +18.5% ROI — best segment
+  'NHL|moneyline':  1.0,
+  'NHL|total':      0.8,
+  'NBA|spread':     0.7,   // historically weak
+  'NBA|moneyline':  0.5,   // 68% of volume at -4.8% ROI — reduce exposure
+  'NBA|total':      0.8,
+  'MLB|spread':     0.8,
+  'MLB|moneyline':  0.7,
+  'MLB|total':      0.8,
+  'NFL|spread':     1.0,
+  'NFL|moneyline':  0.8,
+  'NFL|total':      0.9,
+};
+
+function getPerformanceModifier(league, betType) {
+  const key = `${league}|${betType.toLowerCase()}`;
+  return PERFORMANCE_MODIFIERS[key] || 1.0;
+}
+
+/** Minimum confidence to log a pick (filters out low-conviction noise) */
+const MIN_CONFIDENCE = 5;
+
 // ── MLB Predictions ─────────────────────────────────────────────
 
 /**
@@ -31,46 +121,56 @@ async function generateMLBPredictions() {
     getValues(SPREADSHEET_ID, SHEETS.TEAM_STATS),
   ]);
 
-  // Filter to MLB games today (next 24h window to handle UTC/ET mismatch)
-  const now = new Date();
-  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const mlbOdds = oddsRows.slice(1).filter(r => {
-    if (r[1] !== 'MLB') return false;
-    const commence = new Date(r[4]);
-    return !isNaN(commence) && commence >= now && commence <= in24h;
-  });
-
-  console.log(`[predictions] Total odds rows: ${oddsRows.length - 1}, MLB matches in next 24h: ${mlbOdds.length}`);
-  if (mlbOdds.length === 0) {
-    console.log('[predictions] No MLB games in next 24h, skipping.');
+  // Build deduplicated game objects with consensus odds
+  const games = buildGameObjects(oddsRows, 'MLB');
+  console.log(`[predictions] MLB: ${games.length} unique games found`);
+  if (games.length === 0) {
+    console.log('[predictions] No MLB games, skipping.');
     return;
   }
 
-  // Build context for OpenAI
+  // Build weight context
   const weights = {};
   for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
-  
+
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
     teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
   }
 
-  const gamesContext = mlbOdds.slice(0, 10).map(r =>
-    `${r[2]} vs ${r[3]}: ${r[5]} ${r[6]} @ ${r[7]}`
-  ).join('\n');
+  // Build structured game context with all market odds
+  const gamesContext = games.map(g => {
+    const lines = [`${g.away} @ ${g.home} (${g.commence})`];
+    for (const [mkt, outcomes] of Object.entries(g.markets)) {
+      for (const o of outcomes) {
+        const label = mkt === 'h2h' ? 'ML' : mkt === 'spreads' ? 'Spread' : 'Total';
+        const pointStr = o.point ? ` ${o.point}` : '';
+        lines.push(`  ${label}: ${o.outcome}${pointStr} → ${o.price} (implied ${(o.impliedProb * 100).toFixed(1)}%)`);
+      }
+    }
+    return lines.join('\n');
+  }).join('\n\n');
 
-  const prompt = `You are a sports betting analyst. Based on today's MLB odds and team stats, 
-generate 3-5 best bets. For each pick provide: team, bet type, confidence (1-10), brief rationale.
+  const prompt = `You are an expert sports betting value analyst. Your job is to find EDGES — situations where your estimated probability of an outcome differs meaningfully from the implied probability of the odds.
 
-Today's games:
+Today's MLB games with consensus odds and implied probabilities:
+
 ${gamesContext}
 
-Team records (Win-Loss):
-${Object.entries(teamsMap).slice(0, 20).map(([t, r]) => `${t}: ${r.wins}-${r.losses}`).join('\n')}
+Team records:
+${Object.entries(teamsMap).slice(0, 30).map(([t, r]) => `${t}: ${r.wins}-${r.losses} (${r.pct})`).join('\n')}
 
 Weight priorities: ${JSON.stringify(weights)}
 
-Format as JSON array: [{team, betType, line, confidence, rationale}]`;
+INSTRUCTIONS:
+1. For each game, estimate the TRUE probability of each outcome based on team strength, matchups, and context.
+2. Compare your estimated probability to the IMPLIED probability from the odds.
+3. Only recommend bets where your estimated probability exceeds the implied probability by at least 5 percentage points (this is the "edge").
+4. Spread your picks across DIFFERENT GAMES — max 1 pick per game unless exceptional value exists.
+5. Confidence (1-10) should reflect the size of the edge, NOT just how likely the pick is to win.
+6. Return 3-5 picks. Quality over quantity — if only 2 games have real value, return 2.
+
+Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|total", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}`;
 
   let picks = [];
   try {
@@ -86,19 +186,23 @@ Format as JSON array: [{team, betType, line, confidence, rationale}]`;
     console.error('[predictions] OpenAI error:', err.message);
   }
 
+  // Filter out low-confidence picks
+  const filteredPicks = picks.filter(p => (parseInt(p.confidence) || 0) >= MIN_CONFIDENCE);
+  console.log(`[predictions] MLB: ${picks.length} raw picks, ${filteredPicks.length} after confidence filter (min ${MIN_CONFIDENCE})`);
+
   const ts = new Date().toISOString();
   const rows = [['Timestamp', 'Sport', 'Team', 'BetType', 'Line', 'Confidence', 'Rationale']];
-  for (const p of picks) {
+  for (const p of filteredPicks) {
     rows.push([ts, 'MLB', p.team || '', p.betType || '', p.line || '', p.confidence || '', p.rationale || '']);
   }
 
   const targetSheet = getTargetSheet(SHEETS.MLB_PREDICTIONS);
   await clearSheet(SPREADSHEET_ID, targetSheet);
   await setValues(SPREADSHEET_ID, targetSheet, 'A1', rows);
-  console.log(`[predictions] MLB: ${picks.length} picks written to ${targetSheet}`);
+  console.log(`[predictions] MLB: ${filteredPicks.length} picks written to ${targetSheet}`);
 
   // Log to Performance Log for grading
-  await logPicksToPerformanceLog(picks, 'MLB', oddsRows, weights);
+  await logPicksToPerformanceLog(filteredPicks, 'MLB', oddsRows, weights);
 }
 
 // ── NBA Predictions ─────────────────────────────────────────────
@@ -116,18 +220,11 @@ async function generateNBAPredictions() {
     getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
   ]);
 
-  // Filter to NBA games today (next 24h window to handle UTC/ET mismatch)
-  const now = new Date();
-  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const nbaOdds = oddsRows.slice(1).filter(r => {
-    if (r[1] !== 'NBA') return false;
-    const commence = new Date(r[4]);
-    return !isNaN(commence) && commence >= now && commence <= in24h;
-  });
-
-  console.log(`[predictions] Total odds rows: ${oddsRows.length - 1}, NBA matches in next 24h: ${nbaOdds.length}`);
-  if (nbaOdds.length === 0) {
-    console.log('[predictions] No NBA games in next 24h, skipping.');
+  // Build deduplicated game objects with consensus odds
+  const games = buildGameObjects(oddsRows, 'NBA');
+  console.log(`[predictions] NBA: ${games.length} unique games found`);
+  if (games.length === 0) {
+    console.log('[predictions] No NBA games, skipping.');
     return;
   }
 
@@ -135,28 +232,45 @@ async function generateNBAPredictions() {
   const weights = {};
   for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
 
-  // Build team records context
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
     teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
   }
 
-  const gamesContext = nbaOdds.slice(0, 10).map(r =>
-    `${r[2]} vs ${r[3]}: ${r[5]} ${r[6]} @ ${r[7]}`
-  ).join('\n');
+  // Build structured game context with all market odds
+  const gamesContext = games.map(g => {
+    const lines = [`${g.away} @ ${g.home} (${g.commence})`];
+    for (const [mkt, outcomes] of Object.entries(g.markets)) {
+      for (const o of outcomes) {
+        const label = mkt === 'h2h' ? 'ML' : mkt === 'spreads' ? 'Spread' : 'Total';
+        const pointStr = o.point ? ` ${o.point}` : '';
+        lines.push(`  ${label}: ${o.outcome}${pointStr} → ${o.price} (implied ${(o.impliedProb * 100).toFixed(1)}%)`);
+      }
+    }
+    return lines.join('\n');
+  }).join('\n\n');
 
-  const prompt = `You are a sports betting analyst. Based on today's NBA odds and team stats,
-generate 3-5 best bets. For each pick provide: team, bet type, confidence (1-10), brief rationale.
+  const prompt = `You are an expert sports betting value analyst. Your job is to find EDGES — situations where your estimated probability of an outcome differs meaningfully from the implied probability of the odds.
 
-Today's NBA games:
+Today's NBA games with consensus odds and implied probabilities:
+
 ${gamesContext}
 
-Team records (Win-Loss):
-${Object.entries(teamsMap).slice(0, 20).map(([t, r]) => `${t}: ${r.wins}-${r.losses}`).join('\n')}
+Team records:
+${Object.entries(teamsMap).slice(0, 30).map(([t, r]) => `${t}: ${r.wins}-${r.losses} (${r.pct})`).join('\n')}
 
 Weight priorities: ${JSON.stringify(weights)}
 
-Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}`;
+INSTRUCTIONS:
+1. For each game, estimate the TRUE probability of each outcome based on team strength, matchups, recent form, and context.
+2. Compare your estimated probability to the IMPLIED probability from the odds.
+3. Only recommend bets where your estimated probability exceeds the implied probability by at least 5 percentage points.
+4. STRONGLY PREFER spread and total bets over moneyline — NBA moneyline has historically been our weakest market (-4.8% ROI). Only pick NBA moneyline if the edge is very large (8+ points).
+5. Spread your picks across DIFFERENT GAMES — max 1 pick per game unless exceptional value exists.
+6. Confidence (1-10) should reflect the size of the edge, NOT just how likely the pick is to win.
+7. Return 3-5 picks. Quality over quantity.
+
+Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|total", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}`;
 
   let picks = [];
   try {
@@ -172,19 +286,23 @@ Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}`;
     console.error('[predictions] OpenAI NBA error:', err.message);
   }
 
+  // Filter out low-confidence picks
+  const filteredPicks = picks.filter(p => (parseInt(p.confidence) || 0) >= MIN_CONFIDENCE);
+  console.log(`[predictions] NBA: ${picks.length} raw picks, ${filteredPicks.length} after confidence filter (min ${MIN_CONFIDENCE})`);
+
   const ts = new Date().toISOString();
   const rows = [['Timestamp', 'Sport', 'Team', 'BetType', 'Line', 'Confidence', 'Rationale']];
-  for (const p of picks) {
+  for (const p of filteredPicks) {
     rows.push([ts, 'NBA', p.team || '', p.betType || '', p.line || '', p.confidence || '', p.rationale || '']);
   }
 
   const targetSheet = getTargetSheet(SHEETS.NBA_PREDICTIONS);
   await clearSheet(SPREADSHEET_ID, targetSheet);
   await setValues(SPREADSHEET_ID, targetSheet, 'A1', rows);
-  console.log(`[predictions] NBA: ${picks.length} picks written to ${targetSheet}`);
+  console.log(`[predictions] NBA: ${filteredPicks.length} picks written to ${targetSheet}`);
 
   // Log to Performance Log for grading
-  await logPicksToPerformanceLog(picks, 'NBA', oddsRows, weights);
+  await logPicksToPerformanceLog(filteredPicks, 'NBA', oddsRows, weights);
 }
 
 // ── Performance Log Writer ───────────────────────────────────────
@@ -244,13 +362,17 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const team = p.team || '';
     const rawBetType = (p.betType || '').toLowerCase();
     const confidence = p.confidence || '';
-    const units = 0.1; // Default tracking unit
 
     // Normalize bet type — GPT sometimes returns "over"/"under" instead of "total"
     const isTotal = rawBetType === 'total' || rawBetType === 'totals' || rawBetType === 'over' || rawBetType === 'under';
     const isMoneyline = rawBetType === 'moneyline' || rawBetType === 'h2h';
     const isSpread = rawBetType === 'spread' || rawBetType === 'spreads';
     const betType = isTotal ? 'total' : isMoneyline ? 'moneyline' : isSpread ? 'spread' : rawBetType;
+
+    // Confidence-scaled units with league/market performance modifier
+    const baseUnits = confidenceToUnits(confidence);
+    const modifier = getPerformanceModifier(sport, betType);
+    const units = parseFloat((baseUnits * modifier).toFixed(3));
 
     // Try to find the game in odds data
     // For totals, GPT may not return a real team name — try team first,

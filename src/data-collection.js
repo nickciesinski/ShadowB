@@ -151,19 +151,24 @@ async function fetchOddsAndGrade() {
  * Used by trigger12 (post-game grading).
  */
 async function fetchYesterdayResults() {
-  console.log('[data-collection] Fetching yesterday\'s game results...');
+  console.log('[data-collection] Fetching recent game results (2-day lookback)...');
 
+  // Look back 2 days to catch late-night games and timezone edge cases
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0]; // YYYY-MM-DD
+  const twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const twoDaysAgoStr = twoDaysAgo.toISOString().split('T')[0];
 
   const allRows = [['League', 'GameDate', 'AwayTeam', 'HomeTeam', 'AwayScore', 'HomeScore', 'Status']];
+  const seen = new Set(); // Deduplicate games across the 2-day window
 
   for (const [sportName, sportConfig] of Object.entries(SPORTS)) {
     try {
       const params = new URLSearchParams({
         apiKey: ODDS_API_KEY,
-        daysFrom: '1',
+        daysFrom: '2',
       });
       const url = `${ODDS_API_BASE}/sports/${sportConfig.key}/scores?${params}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
@@ -173,11 +178,15 @@ async function fetchYesterdayResults() {
       for (const game of games) {
         if (!game.completed) continue;
 
-        // Check if the game was yesterday
+        // Accept games from yesterday or the day before
         const gameDate = (game.commence_time || '').split('T')[0];
-        if (gameDate !== yesterdayStr) continue;
+        if (gameDate !== yesterdayStr && gameDate !== twoDaysAgoStr) continue;
 
-        // Extract scores — scores array has { name, score } for each team
+        // Deduplicate
+        const dedupeKey = `${sportName}|${game.away_team}|${game.home_team}|${gameDate}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+
         const scores = game.scores || [];
         const homeData = scores.find(s => s.name === game.home_team) || {};
         const awayData = scores.find(s => s.name === game.away_team) || {};
@@ -200,7 +209,7 @@ async function fetchYesterdayResults() {
 
   await clearSheet(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS);
   await setValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS, 'A1', allRows);
-  console.log(`[data-collection] Yesterday results updated: ${allRows.length - 1} games`);
+  console.log(`[data-collection] Results updated: ${allRows.length - 1} games (2-day window)`);
   return allRows.length - 1;
 }
 
