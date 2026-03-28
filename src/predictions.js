@@ -253,7 +253,19 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const betType = isTotal ? 'total' : isMoneyline ? 'moneyline' : isSpread ? 'spread' : rawBetType;
 
     // Try to find the game in odds data
-    const game = gameLookup[team] || {};
+    // For totals, GPT may not return a real team name — try team first,
+    // then search gameLookup for any partial match from the rationale
+    let game = gameLookup[team] || {};
+    if (!game.away && isTotal) {
+      // Try to find game from team name mentioned in rationale or line
+      const rationale = (p.rationale || '').toLowerCase();
+      for (const [teamName, info] of Object.entries(gameLookup)) {
+        if (rationale.includes(teamName.toLowerCase())) {
+          game = info;
+          break;
+        }
+      }
+    }
     const awayTeam = game.away || '';
     const homeTeam = game.home || '';
     const startTime = game.commence || '';
