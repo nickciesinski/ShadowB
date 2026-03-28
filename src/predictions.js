@@ -202,18 +202,19 @@ Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}`;
 async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
   if (!picks || picks.length === 0) return;
 
-  // Format date as plain text to avoid Google Sheets serial number conversion
+  // Format date as MM/DD/YYYY string
   const today = new Date();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
+  const mm = String(today.getMonth() + 1);
+  const dd = String(today.getDate());
   const yyyy = today.getFullYear();
   const dateStr = `${mm}/${dd}/${yyyy}`;
 
-  // Build odds lookup by team name for matching — store game info + best odds per market
+  // Build odds lookup by team name for matching — store game info + per-game odds
   // Game Odds columns: 0=Timestamp, 1=Sport, 2=HomeTeam, 3=AwayTeam, 4=CommenceTime,
   //                    5=Market(h2h/spreads/totals), 6=Outcome, 7=Price, 8=Point, 9=BookmakerKey
-  const gameLookup = {};   // team -> { away, home, commence }
-  const oddsMap = {};      // "team|market" -> { price, point }
+  const gameLookup = {};   // team -> { away, home, commence, gameKey }
+  const oddsMap = {};      // "outcome|market" -> { price, point }
+  const gameOddsMap = {};  // "gameKey|outcome|market" -> { price, point }
   for (const row of oddsRows.slice(1)) {
     if (row[1] !== sport) continue;
     const home = row[2] || '';
@@ -223,31 +224,40 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const outcome = row[6] || '';  // team name or Over/Under
     const price = parseFloat(row[7]) || 0;
     const point = row[8] || '';
+    const gameKey = `${away}@${home}`;
 
-    // Store game info
-    if (!gameLookup[home]) gameLookup[home] = { away, home, commence };
-    if (!gameLookup[away]) gameLookup[away] = { away, home, commence };
+    // Store game info (keyed by both team names)
+    if (!gameLookup[home]) gameLookup[home] = { away, home, commence, gameKey };
+    if (!gameLookup[away]) gameLookup[away] = { away, home, commence, gameKey };
 
-    // Store best odds per team+market (first bookmaker wins, they're usually consensus)
+    // Store best odds per outcome+market (first bookmaker = consensus)
     const oddsKey = `${outcome}|${market}`;
     if (!oddsMap[oddsKey]) oddsMap[oddsKey] = { price, point };
+
+    // Also store per-game odds (needed for totals which are game-specific)
+    const gameOddsKey = `${gameKey}|${outcome}|${market}`;
+    if (!gameOddsMap[gameOddsKey]) gameOddsMap[gameOddsKey] = { price, point };
   }
 
   const perfRows = [];
   for (const p of picks) {
     const team = p.team || '';
-    const betType = (p.betType || '').toLowerCase();
+    const rawBetType = (p.betType || '').toLowerCase();
     const confidence = p.confidence || '';
     const units = 0.1; // Default tracking unit
-    const isTotal = betType === 'total' || betType === 'totals';
-    const isMoneyline = betType === 'moneyline' || betType === 'h2h';
-    const isSpread = betType === 'spread' || betType === 'spreads';
+
+    // Normalize bet type — GPT sometimes returns "over"/"under" instead of "total"
+    const isTotal = rawBetType === 'total' || rawBetType === 'totals' || rawBetType === 'over' || rawBetType === 'under';
+    const isMoneyline = rawBetType === 'moneyline' || rawBetType === 'h2h';
+    const isSpread = rawBetType === 'spread' || rawBetType === 'spreads';
+    const betType = isTotal ? 'total' : isMoneyline ? 'moneyline' : isSpread ? 'spread' : rawBetType;
 
     // Try to find the game in odds data
     const game = gameLookup[team] || {};
     const awayTeam = game.away || '';
     const homeTeam = game.home || '';
     const startTime = game.commence || '';
+    const gameKey = game.gameKey || '';
 
     let odds = -110;
     let line = '';
@@ -268,28 +278,40 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       pick = team;
 
     } else if (isTotal) {
-      // Total: GPT returns team name but we need Over/Under from totals market
-      // Determine Over/Under from GPT's rationale or line hint
+      // Total: determine Over/Under direction from GPT output
       const gptLine = String(p.line || '').toLowerCase();
       const gptRationale = String(p.rationale || '').toLowerCase();
-      const isOver = gptLine.includes('over') || gptRationale.includes('over');
+      const isOver = rawBetType === 'over' || gptLine.includes('over') || gptRationale.includes('over');
       const direction = isOver ? 'Over' : 'Under';
-      const overEntry = oddsMap[`Over|totals`] || {};
-      const underEntry = oddsMap[`Under|totals`] || {};
-      const entry = isOver ? overEntry : underEntry;
+
+      // Look up totals for this specific game first, then fall back to global
+      let entry;
+      if (gameKey) {
+        entry = isOver
+          ? gameOddsMap[`${gameKey}|Over|totals`]
+          : gameOddsMap[`${gameKey}|Under|totals`];
+      }
+      if (!entry) {
+        entry = isOver
+          ? oddsMap['Over|totals']
+          : oddsMap['Under|totals'];
+      }
+      entry = entry || {};
       odds = entry.price || -110;
       line = parseFloat(entry.point) || parseFloat(String(p.line).replace(/[^0-9.]/g, '')) || '';
       pick = line ? `${direction} ${line}` : direction;
     }
 
+    console.log(`[predictions] Perf row: date=${dateStr} sport=${sport} betType=${betType} pick=${pick} odds=${odds} line=${line} away=${awayTeam} home=${homeTeam}`);
+
     perfRows.push([
-      `'${dateStr}`,    // A: date (leading apostrophe forces text to avoid serial number)
+      dateStr,          // A: date
       sport,            // B: league
-      betType,          // C: market
+      betType,          // C: market (normalized)
       awayTeam,         // D: Away Team
       homeTeam,         // E: Home Team
       startTime,        // F: start_time
-      betType,          // G: bet_type
+      betType,          // G: bet_type (normalized)
       pick,             // H: pick
       line,             // I: line
       odds,             // J: odds
@@ -311,6 +333,8 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const header = existing.length > 0 ? [existing[0]] : [];
     const oldRows = existing.slice(1);
     const newData = [...header, ...perfRows, ...oldRows];
+    // Clear first to avoid stale row artifacts, then write the full dataset
+    await clearSheet(SPREADSHEET_ID, SHEETS.PERFORMANCE);
     await setValues(SPREADSHEET_ID, SHEETS.PERFORMANCE, 'A1', newData);
     console.log(`[predictions] Logged ${perfRows.length} ${sport} picks to top of Performance Log`);
   }
