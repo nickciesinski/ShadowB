@@ -88,7 +88,7 @@ const SHEETS = {
 
   // Logs
   DIAGNOSTIC_LOG:      'API_Usage_Log',
-  EMAIL_LOG:           'Performance Log',
+  EMAIL_LOG:           'API_Usage_Log',
   BACKTESTING:         'Historical_Results',
   GRADED_BETS:         'Yesterday_Results',
   BACKTEST_RESULTS:    'Historical_Results',

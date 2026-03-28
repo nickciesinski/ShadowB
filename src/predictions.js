@@ -202,42 +202,63 @@ Format as JSON: {picks: [{team, betType, line, confidence, rationale}]}`;
 async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
   if (!picks || picks.length === 0) return;
 
+  // Format date as plain text to avoid Google Sheets serial number conversion
   const today = new Date();
-  const dateStr = `${today.getMonth() + 1}/${today.getDate()}/${today.getFullYear()}`;
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const yyyy = today.getFullYear();
+  const dateStr = `${mm}/${dd}/${yyyy}`;
 
-  // Build odds lookup by team name for matching
-  const oddsLookup = {};
+  // Build odds lookup by team name for matching — store game info + best odds per market
+  // Game Odds columns: 0=Timestamp, 1=Sport, 2=HomeTeam, 3=AwayTeam, 4=CommenceTime,
+  //                    5=Market(h2h/spreads/totals), 6=Outcome, 7=Price, 8=Point, 9=BookmakerKey
+  const gameLookup = {};   // team -> { away, home, commence }
+  const oddsMap = {};      // "team|market" -> { price, point }
   for (const row of oddsRows.slice(1)) {
     if (row[1] !== sport) continue;
-    // key by home team and away team
     const home = row[2] || '';
     const away = row[3] || '';
-    const market = row[5] || '';
     const commence = row[4] || '';
-    if (!oddsLookup[home]) oddsLookup[home] = { away, home, commence };
-    if (!oddsLookup[away]) oddsLookup[away] = { away, home, commence };
+    const market = row[5] || '';   // h2h, spreads, totals
+    const outcome = row[6] || '';  // team name or Over/Under
+    const price = parseFloat(row[7]) || 0;
+    const point = row[8] || '';
+
+    // Store game info
+    if (!gameLookup[home]) gameLookup[home] = { away, home, commence };
+    if (!gameLookup[away]) gameLookup[away] = { away, home, commence };
+
+    // Store best odds per team+market (first bookmaker wins, they're usually consensus)
+    const oddsKey = `${outcome}|${market}`;
+    if (!oddsMap[oddsKey]) oddsMap[oddsKey] = { price, point };
   }
 
   const perfRows = [];
   for (const p of picks) {
     const team = p.team || '';
     const betType = (p.betType || '').toLowerCase();
-    const line = p.line || '';
     const confidence = p.confidence || '';
-    const odds = p.odds || (betType === 'moneyline' ? 0 : -110);
     const units = 0.1; // Default tracking unit
 
     // Try to find the game in odds data
-    const game = oddsLookup[team] || {};
+    const game = gameLookup[team] || {};
     const awayTeam = game.away || '';
     const homeTeam = game.home || '';
     const startTime = game.commence || '';
 
+    // Map betType to Odds API market key
+    const marketKey = betType === 'moneyline' ? 'h2h' : betType === 'spread' ? 'spreads' : betType === 'total' || betType === 'totals' ? 'totals' : betType;
+
+    // Pull real odds from the odds data
+    const oddsEntry = oddsMap[`${team}|${marketKey}`] || {};
+    const odds = oddsEntry.price || (betType === 'moneyline' ? -110 : -110);
+    const line = oddsEntry.point || p.line || '';
+
     // Build the pick string (team name for ML/spread, Over/Under for totals)
-    const pick = betType === 'total' ? (line > 0 ? `Over ${line}` : `Under ${Math.abs(line)}`) : team;
+    const pick = betType === 'total' || betType === 'totals' ? (line > 0 ? `Over ${line}` : `Under ${Math.abs(line)}`) : team;
 
     perfRows.push([
-      dateStr,          // A: date
+      `'${dateStr}`,    // A: date (leading apostrophe forces text to avoid serial number)
       sport,            // B: league
       betType,          // C: market
       awayTeam,         // D: Away Team
@@ -260,8 +281,13 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
   }
 
   if (perfRows.length > 0) {
-    await appendRows(SPREADSHEET_ID, SHEETS.PERFORMANCE, perfRows);
-    console.log(`[predictions] Logged ${perfRows.length} ${sport} picks to Performance Log`);
+    // Prepend new picks at the top (after header row) instead of appending at bottom
+    const existing = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const header = existing.length > 0 ? [existing[0]] : [];
+    const oldRows = existing.slice(1);
+    const newData = [...header, ...perfRows, ...oldRows];
+    await setValues(SPREADSHEET_ID, SHEETS.PERFORMANCE, 'A1', newData);
+    console.log(`[predictions] Logged ${perfRows.length} ${sport} picks to top of Performance Log`);
   }
 }
 
