@@ -66,12 +66,15 @@ function buildGameObjects(oddsRows, sportFilter) {
 
 /**
  * Map confidence (1-10) to unit size. Higher confidence = more units at risk.
- * Scale: 1-3 → 0.05, 4-5 → 0.1, 6-7 → 0.2, 8 → 0.3, 9 → 0.4, 10 → 0.5
+ * Every game MUST have a pick on all 3 markets (spread, ML, total).
+ * Low confidence picks get minimal units (0.01) rather than being filtered out.
+ * Scale: 1-2 → 0.01, 3-4 → 0.05, 5 → 0.1, 6-7 → 0.2, 8 → 0.3, 9 → 0.4, 10 → 0.5
  */
 function confidenceToUnits(confidence) {
   const c = parseInt(confidence) || 5;
-  if (c <= 3) return 0.05;
-  if (c <= 5) return 0.1;
+  if (c <= 2) return 0.01;
+  if (c <= 4) return 0.05;
+  if (c === 5) return 0.1;
   if (c <= 7) return 0.2;
   if (c === 8) return 0.3;
   if (c === 9) return 0.4;
@@ -103,8 +106,8 @@ function getPerformanceModifier(league, betType) {
   return PERFORMANCE_MODIFIERS[key] || 1.0;
 }
 
-/** Minimum confidence to log a pick (filters out low-conviction noise) */
-const MIN_CONFIDENCE = 5;
+// No minimum confidence filter — every game gets all 3 market picks.
+// Low-confidence picks use minimal units (0.01) instead of being excluded.
 
 // ── MLB Predictions ─────────────────────────────────────────────
 
@@ -163,14 +166,15 @@ ${Object.entries(teamsMap).slice(0, 30).map(([t, r]) => `${t}: ${r.wins}-${r.los
 Weight priorities: ${JSON.stringify(weights)}
 
 INSTRUCTIONS:
-1. For each game, estimate the TRUE probability of each outcome based on team strength, matchups, and context.
-2. Compare your estimated probability to the IMPLIED probability from the odds.
-3. Only recommend bets where your estimated probability exceeds the implied probability by at least 5 percentage points (this is the "edge").
-4. Spread your picks across DIFFERENT GAMES — max 1 pick per game unless exceptional value exists.
-5. Confidence (1-10) should reflect the size of the edge, NOT just how likely the pick is to win.
-6. Return 3-5 picks. Quality over quantity — if only 2 games have real value, return 2.
+1. For EVERY game, you MUST provide exactly 3 picks: one spread, one moneyline, and one total (over/under). No exceptions.
+2. For each pick, estimate the TRUE probability of the chosen side based on team strength, matchups, and context.
+3. Compare your estimated probability to the IMPLIED probability from the odds to determine the edge.
+4. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
+5. For totals, specify "over" or "under" as the betType and include the total line number.
 
-Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|total", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}`;
+Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
+
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
 
   let picks = [];
   try {
@@ -186,23 +190,21 @@ Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|to
     console.error('[predictions] OpenAI error:', err.message);
   }
 
-  // Filter out low-confidence picks
-  const filteredPicks = picks.filter(p => (parseInt(p.confidence) || 0) >= MIN_CONFIDENCE);
-  console.log(`[predictions] MLB: ${picks.length} raw picks, ${filteredPicks.length} after confidence filter (min ${MIN_CONFIDENCE})`);
+  console.log(`[predictions] MLB: ${picks.length} picks returned (expected ${games.length * 3})`);
 
   const ts = new Date().toISOString();
   const rows = [['Timestamp', 'Sport', 'Team', 'BetType', 'Line', 'Confidence', 'Rationale']];
-  for (const p of filteredPicks) {
+  for (const p of picks) {
     rows.push([ts, 'MLB', p.team || '', p.betType || '', p.line || '', p.confidence || '', p.rationale || '']);
   }
 
   const targetSheet = getTargetSheet(SHEETS.MLB_PREDICTIONS);
   await clearSheet(SPREADSHEET_ID, targetSheet);
   await setValues(SPREADSHEET_ID, targetSheet, 'A1', rows);
-  console.log(`[predictions] MLB: ${filteredPicks.length} picks written to ${targetSheet}`);
+  console.log(`[predictions] MLB: ${picks.length} picks written to ${targetSheet}`);
 
   // Log to Performance Log for grading
-  await logPicksToPerformanceLog(filteredPicks, 'MLB', oddsRows, weights);
+  await logPicksToPerformanceLog(picks, 'MLB', oddsRows, weights);
 }
 
 // ── NBA Predictions ─────────────────────────────────────────────
@@ -262,15 +264,16 @@ ${Object.entries(teamsMap).slice(0, 30).map(([t, r]) => `${t}: ${r.wins}-${r.los
 Weight priorities: ${JSON.stringify(weights)}
 
 INSTRUCTIONS:
-1. For each game, estimate the TRUE probability of each outcome based on team strength, matchups, recent form, and context.
-2. Compare your estimated probability to the IMPLIED probability from the odds.
-3. Only recommend bets where your estimated probability exceeds the implied probability by at least 5 percentage points.
-4. STRONGLY PREFER spread and total bets over moneyline — NBA moneyline has historically been our weakest market (-4.8% ROI). Only pick NBA moneyline if the edge is very large (8+ points).
-5. Spread your picks across DIFFERENT GAMES — max 1 pick per game unless exceptional value exists.
-6. Confidence (1-10) should reflect the size of the edge, NOT just how likely the pick is to win.
-7. Return 3-5 picks. Quality over quantity.
+1. For EVERY game, you MUST provide exactly 3 picks: one spread, one moneyline, and one total (over/under). No exceptions.
+2. For each pick, estimate the TRUE probability of the chosen side based on team strength, matchups, recent form, and context.
+3. Compare your estimated probability to the IMPLIED probability from the odds to determine the edge.
+4. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
+5. NBA moneyline has historically been our weakest market (-4.8% ROI). Be extra critical when assigning moneyline confidence — only give high confidence (7+) if the edge is very clear.
+6. For totals, specify "over" or "under" as the betType and include the total line number.
 
-Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|total", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}`;
+Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
+
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
 
   let picks = [];
   try {
@@ -286,23 +289,21 @@ Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|to
     console.error('[predictions] OpenAI NBA error:', err.message);
   }
 
-  // Filter out low-confidence picks
-  const filteredPicks = picks.filter(p => (parseInt(p.confidence) || 0) >= MIN_CONFIDENCE);
-  console.log(`[predictions] NBA: ${picks.length} raw picks, ${filteredPicks.length} after confidence filter (min ${MIN_CONFIDENCE})`);
+  console.log(`[predictions] NBA: ${picks.length} picks returned (expected ${games.length * 3})`);
 
   const ts = new Date().toISOString();
   const rows = [['Timestamp', 'Sport', 'Team', 'BetType', 'Line', 'Confidence', 'Rationale']];
-  for (const p of filteredPicks) {
+  for (const p of picks) {
     rows.push([ts, 'NBA', p.team || '', p.betType || '', p.line || '', p.confidence || '', p.rationale || '']);
   }
 
   const targetSheet = getTargetSheet(SHEETS.NBA_PREDICTIONS);
   await clearSheet(SPREADSHEET_ID, targetSheet);
   await setValues(SPREADSHEET_ID, targetSheet, 'A1', rows);
-  console.log(`[predictions] NBA: ${filteredPicks.length} picks written to ${targetSheet}`);
+  console.log(`[predictions] NBA: ${picks.length} picks written to ${targetSheet}`);
 
   // Log to Performance Log for grading
-  await logPicksToPerformanceLog(filteredPicks, 'NBA', oddsRows, weights);
+  await logPicksToPerformanceLog(picks, 'NBA', oddsRows, weights);
 }
 
 // ── Performance Log Writer ───────────────────────────────────────
