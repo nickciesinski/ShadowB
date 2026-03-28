@@ -7,9 +7,9 @@
 
 const { validateConfig } = require('./config');
 const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults } = require('./data-collection');
-const { generateMLBPredictions, generateNBAPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
+const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, generateNFLPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
 const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
-const { updatePlayerProps, updatePlatformCombos } = require('./props');
+const { updatePlayerProps, generatePropPicks } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
 
 // ── Trigger Map ──────────────────────────────────────────────────
@@ -29,20 +29,25 @@ const TRIGGERS = {
     await takeCLVSnapshot();
   },
 
-  // Trigger 4: 5:00 AM ET → MLB + NBA predictions
+  // Trigger 4: 5:00 AM ET → All sport predictions (MLB, NBA, NHL, NFL)
   trigger4: async () => {
     await generateMLBPredictions();
     await generateNBAPredictions();
+    await generateNHLPredictions();
+    await generateNFLPredictions();
   },
 
-  // Trigger 5: 5:30 AM ET → NBA predictions (if trigger 4 is slow)
-  trigger5: generateNBAPredictions,
+  // Trigger 5: 5:30 AM ET → NHL + NFL predictions (if trigger 4 is slow)
+  trigger5: async () => {
+    await generateNHLPredictions();
+    await generateNFLPredictions();
+  },
 
   // Trigger 6: 6:00 AM ET → Player props
   trigger6: updatePlayerProps,
 
-  // Trigger 7: 6:15 AM ET → Platform combos
-  trigger7: updatePlatformCombos,
+  // Trigger 7: 6:15 AM ET → GPT-powered prop picks for PrizePicks/Betr
+  trigger7: generatePropPicks,
 
   // Trigger 8: 6:20 AM ET → Player tiers
   trigger8: updatePlayerTiers,

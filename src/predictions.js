@@ -306,6 +306,187 @@ IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 mo
   await logPicksToPerformanceLog(picks, 'NBA', oddsRows, weights);
 }
 
+// ── NHL Predictions ─────────────────────────────────────────────
+
+/**
+ * Generate NHL picks — 3 per game (spread, moneyline, total).
+ * Trigger 4 extension or dedicated trigger.
+ */
+async function generateNHLPredictions() {
+  console.log('[predictions] Generating NHL predictions...');
+
+  const [oddsRows, weightRows, teamRows] = await Promise.all([
+    getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
+    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NHL),
+    getValues(SPREADSHEET_ID, SHEETS.NHL_TEAM_STATS),
+  ]);
+
+  const games = buildGameObjects(oddsRows, 'NHL');
+  console.log(`[predictions] NHL: ${games.length} unique games found`);
+  if (games.length === 0) {
+    console.log('[predictions] No NHL games, skipping.');
+    return;
+  }
+
+  const weights = {};
+  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+
+  const teamsMap = {};
+  for (const row of teamRows.slice(1)) {
+    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+  }
+
+  const gamesContext = games.map(g => {
+    const lines = [`${g.away} @ ${g.home} (${g.commence})`];
+    for (const [mkt, outcomes] of Object.entries(g.markets)) {
+      for (const o of outcomes) {
+        const label = mkt === 'h2h' ? 'ML' : mkt === 'spreads' ? 'Spread' : 'Total';
+        const pointStr = o.point ? ` ${o.point}` : '';
+        lines.push(`  ${label}: ${o.outcome}${pointStr} → ${o.price} (implied ${(o.impliedProb * 100).toFixed(1)}%)`);
+      }
+    }
+    return lines.join('\n');
+  }).join('\n\n');
+
+  const prompt = `You are an expert sports betting value analyst. Your job is to find EDGES — situations where your estimated probability of an outcome differs meaningfully from the implied probability of the odds.
+
+Today's NHL games with consensus odds and implied probabilities:
+
+${gamesContext}
+
+Team records:
+${Object.entries(teamsMap).slice(0, 32).map(([t, r]) => `${t}: ${r.wins}-${r.losses} (${r.pct})`).join('\n')}
+
+Weight priorities: ${JSON.stringify(weights)}
+
+INSTRUCTIONS:
+1. For EVERY game, you MUST provide exactly 3 picks: one spread (puckline), one moneyline, and one total (over/under). No exceptions.
+2. NHL spread is our historically strongest market (59.3% cover, +18.5% ROI). Give extra attention to puckline value.
+3. For each pick, estimate the TRUE probability and compare to implied probability to find edges.
+4. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
+5. For totals, specify "over" or "under" as the betType and include the total line number.
+
+Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
+
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
+
+  let picks = [];
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+    });
+    const parsed = JSON.parse(completion.choices[0].message.content);
+    picks = parsed.picks || parsed.bets || [];
+  } catch (err) {
+    console.error('[predictions] OpenAI NHL error:', err.message);
+  }
+
+  console.log(`[predictions] NHL: ${picks.length} picks returned (expected ${games.length * 3})`);
+
+  const ts = new Date().toISOString();
+  const rows = [['Timestamp', 'Sport', 'Team', 'BetType', 'Line', 'Confidence', 'Rationale']];
+  for (const p of picks) {
+    rows.push([ts, 'NHL', p.team || '', p.betType || '', p.line || '', p.confidence || '', p.rationale || '']);
+  }
+
+  // NHL doesn't have a dedicated predictions tab — write to NHL Team Stats area or a generic output
+  // For now, log directly to Performance Log (the primary tracking mechanism)
+  await logPicksToPerformanceLog(picks, 'NHL', oddsRows, weights);
+  console.log(`[predictions] NHL: ${picks.length} picks logged to Performance Log`);
+}
+
+// ── NFL Predictions ─────────────────────────────────────────────
+
+/**
+ * Generate NFL picks — 3 per game (spread, moneyline, total).
+ * Only runs during NFL season (Sep-Feb).
+ */
+async function generateNFLPredictions() {
+  console.log('[predictions] Generating NFL predictions...');
+
+  const [oddsRows, weightRows, teamRows] = await Promise.all([
+    getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
+    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NFL),
+    getValues(SPREADSHEET_ID, SHEETS.NFL_TEAM_STATS),
+  ]);
+
+  const games = buildGameObjects(oddsRows, 'NFL');
+  console.log(`[predictions] NFL: ${games.length} unique games found`);
+  if (games.length === 0) {
+    console.log('[predictions] No NFL games, skipping.');
+    return;
+  }
+
+  const weights = {};
+  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+
+  const teamsMap = {};
+  for (const row of teamRows.slice(1)) {
+    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+  }
+
+  const gamesContext = games.map(g => {
+    const lines = [`${g.away} @ ${g.home} (${g.commence})`];
+    for (const [mkt, outcomes] of Object.entries(g.markets)) {
+      for (const o of outcomes) {
+        const label = mkt === 'h2h' ? 'ML' : mkt === 'spreads' ? 'Spread' : 'Total';
+        const pointStr = o.point ? ` ${o.point}` : '';
+        lines.push(`  ${label}: ${o.outcome}${pointStr} → ${o.price} (implied ${(o.impliedProb * 100).toFixed(1)}%)`);
+      }
+    }
+    return lines.join('\n');
+  }).join('\n\n');
+
+  const prompt = `You are an expert sports betting value analyst. Your job is to find EDGES — situations where your estimated probability of an outcome differs meaningfully from the implied probability of the odds.
+
+Today's NFL games with consensus odds and implied probabilities:
+
+${gamesContext}
+
+Team records:
+${Object.entries(teamsMap).slice(0, 32).map(([t, r]) => `${t}: ${r.wins}-${r.losses} (${r.pct})`).join('\n')}
+
+Weight priorities: ${JSON.stringify(weights)}
+
+INSTRUCTIONS:
+1. For EVERY game, you MUST provide exactly 3 picks: one spread, one moneyline, and one total (over/under). No exceptions.
+2. For each pick, estimate the TRUE probability and compare to implied probability to find edges.
+3. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
+4. For totals, specify "over" or "under" as the betType and include the total line number.
+
+Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
+
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
+
+  let picks = [];
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: 'json_object' },
+      temperature: 0.3,
+    });
+    const parsed = JSON.parse(completion.choices[0].message.content);
+    picks = parsed.picks || parsed.bets || [];
+  } catch (err) {
+    console.error('[predictions] OpenAI NFL error:', err.message);
+  }
+
+  console.log(`[predictions] NFL: ${picks.length} picks returned (expected ${games.length * 3})`);
+
+  const ts = new Date().toISOString();
+  const rows = [['Timestamp', 'Sport', 'Team', 'BetType', 'Line', 'Confidence', 'Rationale']];
+  for (const p of picks) {
+    rows.push([ts, 'NFL', p.team || '', p.betType || '', p.line || '', p.confidence || '', p.rationale || '']);
+  }
+
+  await logPicksToPerformanceLog(picks, 'NFL', oddsRows, weights);
+  console.log(`[predictions] NFL: ${picks.length} picks logged to Performance Log`);
+}
+
 // ── Performance Log Writer ───────────────────────────────────────
 
 /**
@@ -670,6 +851,8 @@ async function gradePerformanceLog() {
 module.exports = {
   generateMLBPredictions,
   generateNBAPredictions,
+  generateNHLPredictions,
+  generateNFLPredictions,
   takeCLVSnapshot,
   gradePerformanceLog,
 };
