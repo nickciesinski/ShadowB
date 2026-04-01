@@ -68,15 +68,16 @@ function buildGameObjects(oddsRows, sportFilter) {
  * Map confidence (1-10) to unit size. Higher confidence = more units at risk.
  * Every game MUST have a pick on all 3 markets (spread, ML, total).
  * Low confidence picks get minimal units (0.01) rather than being filtered out.
- * Scale: 1-2 → 0.01, 3-4 → 0.05, 5 → 0.1, 6-7 → 0.2, 8 → 0.3, 9 → 0.4, 10 → 0.5
+ * Scale: 1-2 → 0.01, 3-4 → 0.05, 5 → 0.1, 6-7 → 0.15, 8 → 0.2, 9 → 0.4, 10 → 0.5
+ * (7-8 tier tightened after early data showed 58% wins but -2.2% ROI at old sizing)
  */
 function confidenceToUnits(confidence) {
   const c = parseInt(confidence) || 5;
   if (c <= 2) return 0.01;
   if (c <= 4) return 0.05;
   if (c === 5) return 0.1;
-  if (c <= 7) return 0.2;
-  if (c === 8) return 0.3;
+  if (c <= 7) return 0.15;
+  if (c === 8) return 0.2;
   if (c === 9) return 0.4;
   return 0.5;
 }
@@ -87,15 +88,15 @@ function confidenceToUnits(confidence) {
  * Updated periodically based on Performance Log analysis.
  */
 const PERFORMANCE_MODIFIERS = {
-  'NHL|spread':     1.5,   // 59.3% cover, +18.5% ROI — best segment
+  'NHL|spread':     1.0,   // Was 1.5 but 47.4% / -8.0% ROI post-fix — dial back until stabilized
   'NHL|moneyline':  1.0,
-  'NHL|total':      0.8,
-  'NBA|spread':     0.7,   // historically weak
-  'NBA|moneyline':  0.5,   // 68% of volume at -4.8% ROI — reduce exposure
-  'NBA|total':      0.8,
-  'MLB|spread':     0.8,
-  'MLB|moneyline':  0.7,
-  'MLB|total':      0.8,
+  'NHL|total':      1.2,   // 61.9% / +12.9% ROI post-fix — best current segment, slight boost
+  'NBA|spread':     1.0,   // 64.3% / +17.9% ROI post-fix — upgraded from 0.7
+  'NBA|moneyline':  0.3,   // 71.4% wins but -9.5% ROI — heavy fav trap, cut further
+  'NBA|total':      1.0,   // 56.0% / +6.1% ROI post-fix — upgraded from 0.8
+  'MLB|spread':     1.0,   // 52.9% / +2.5% ROI — modest profit, keep neutral
+  'MLB|moneyline':  0.7,   // 53.1% but -6.3% ROI — same fav problem
+  'MLB|total':      0.5,   // 47.6% / -17.6% ROI — worst segment, cut hard
   'NFL|spread':     1.0,
   'NFL|moneyline':  0.8,
   'NFL|total':      0.9,
@@ -554,7 +555,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     // Confidence-scaled units with league/market performance modifier
     const baseUnits = confidenceToUnits(confidence);
     const modifier = getPerformanceModifier(sport, betType);
-    const units = parseFloat((baseUnits * modifier).toFixed(3));
+    let units = parseFloat((baseUnits * modifier).toFixed(3));
 
     // Try to find the game in odds data
     // For totals, GPT may not return a real team name — try team first,
@@ -624,7 +625,14 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       pick = line ? `${direction} ${line}` : direction;
     }
 
-    console.log(`[predictions] Perf row: date=${dateStr} sport=${sport} betType=${betType} pick=${pick} odds=${odds} line=${line} away=${awayTeam} home=${homeTeam}`);
+    // Heavy favorite cap: moneyline bets on favorites past -200 get capped to 0.01 units.
+    // These win often but one upset wipes out 3-4 wins worth of profit (NBA ML: 71% win, -9.5% ROI).
+    if (isMoneyline && odds < -200) {
+      console.log(`[predictions] Heavy fav cap: ${pick} ML ${odds} → units capped to 0.01 (was ${units})`);
+      units = 0.01;
+    }
+
+    console.log(`[predictions] Perf row: date=${dateStr} sport=${sport} betType=${betType} pick=${pick} odds=${odds} line=${line} units=${units} away=${awayTeam} home=${homeTeam}`);
 
     perfRows.push([
       dateStr,          // A: date
