@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 // ── Constants ───────────────────────────────────────────────────────
 const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
-const CONFIDENCE_FILTERS = ['All Bets', 'High Confidence'];
+const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
 const LEAGUE_COLORS = { NBA: '#C9082A', NHL: '#000', MLB: '#002D72', NFL: '#013369' };
 const LEAGUE_BG = { NBA: '#FEF2F2', NHL: '#F3F4F6', MLB: '#EFF6FF', NFL: '#EEF2FF' };
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'All Time'];
@@ -23,6 +23,13 @@ const confBg = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? '#ECFDF5' 
 
 function cleanTime(period) {
   if (!period) return '';
+  // Handle ISO dates (from startTime field)
+  if (period.includes('T')) {
+    try {
+      const d = new Date(period);
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    } catch (e) { return period; }
+  }
   return period.replace(/ 0:00$/, '').replace(/ 0\.0$/, '').replace(/^(\d+\/\d+) - /, '').trim();
 }
 
@@ -146,7 +153,7 @@ function PicksTab({ picks, sf, bf, cf }) {
   const filtered = dedupedPicks.filter(p =>
     (sf === 'All' || p.league === sf) &&
     (bf === 'All' || (p.betType || p.market || '').toLowerCase() === bf.toLowerCase()) &&
-    (cf === 'All Bets' || p.units >= 0.5)
+    (cf !== '0.2u+' || p.units >= 0.2)
   );
 
   const games = {};
@@ -160,7 +167,7 @@ function PicksTab({ picks, sf, bf, cf }) {
 
   return (
     <>
-      {cf === 'All Bets' && sf === 'All' && bf === 'All' && <BestBets picks={dedupedPicks} />}
+      {cf !== '0.2u+' && sf === 'All' && bf === 'All' && <BestBets picks={dedupedPicks} />}
       {Object.values(games).map((g, i) => (
         <div key={i} style={{ background: 'white', borderRadius: 12, marginBottom: 8, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: LEAGUE_BG[g.league] || '#F9FAFB', borderBottom: '1px solid #F3F4F6' }}>
