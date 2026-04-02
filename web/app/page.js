@@ -24,13 +24,18 @@ const confBg = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? '#ECFDF5' 
 function cleanTime(period) {
   if (!period) return '';
   // Handle ISO dates (from startTime field)
-  if (period.includes('T')) {
+  if (period.includes('T') && period.includes('-')) {
     try {
       const d = new Date(period);
+      if (isNaN(d.getTime())) return '';
       return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    } catch (e) { return period; }
+    } catch (e) { return ''; }
   }
-  return period.replace(/ 0:00$/, '').replace(/ 0\.0$/, '').replace(/^(\d+\/\d+) - /, '').trim();
+  // Clean ESPN shortDetail format
+  let cleaned = period.replace(/ 0:00$/, '').replace(/ 0\.0$/, '');
+  // Strip leading date like "4/2 - "
+  cleaned = cleaned.replace(/^\d+\/\d+\s*-\s*/, '');
+  return cleaned.trim();
 }
 
 function dedup(picks) {
