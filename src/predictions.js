@@ -171,11 +171,11 @@ INSTRUCTIONS:
 2. For each pick, estimate the TRUE probability of the chosen side based on team strength, matchups, and context.
 3. Compare your estimated probability to the IMPLIED probability from the odds to determine the edge.
 4. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
-5. For totals, specify "over" or "under" as the betType and include the total line number.
+5. For totals, pick EITHER "over" OR "under" (never both) as the betType and include the total line number. Only ONE total pick per game.
 
 Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
 
-IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total). Do NOT return both over and under for the same game — pick one direction only.`;
 
   let picks = [];
   try {
@@ -270,11 +270,11 @@ INSTRUCTIONS:
 3. Compare your estimated probability to the IMPLIED probability from the odds to determine the edge.
 4. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
 5. NBA moneyline has historically been our weakest market (-4.8% ROI). Be extra critical when assigning moneyline confidence — only give high confidence (7+) if the edge is very clear.
-6. For totals, specify "over" or "under" as the betType and include the total line number.
+6. For totals, pick EITHER "over" OR "under" (never both) as the betType and include the total line number. Only ONE total pick per game.
 
 Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
 
-IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total). Do NOT return both over and under for the same game — pick one direction only.`;
 
   let picks = [];
   try {
@@ -365,11 +365,11 @@ INSTRUCTIONS:
 2. NHL spread is our historically strongest market (59.3% cover, +18.5% ROI). Give extra attention to puckline value.
 3. For each pick, estimate the TRUE probability and compare to implied probability to find edges.
 4. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
-5. For totals, specify "over" or "under" as the betType and include the total line number.
+5. For totals, pick EITHER "over" OR "under" (never both) as the betType and include the total line number. Only ONE total pick per game.
 
 Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
 
-IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total). Do NOT return both over and under for the same game — pick one direction only.`;
 
   let picks = [];
   try {
@@ -456,11 +456,11 @@ INSTRUCTIONS:
 1. For EVERY game, you MUST provide exactly 3 picks: one spread, one moneyline, and one total (over/under). No exceptions.
 2. For each pick, estimate the TRUE probability and compare to implied probability to find edges.
 3. Confidence (1-10) should reflect the size of the edge. Even if you see no edge, pick the side you lean toward and give it a low confidence (1-3).
-4. For totals, specify "over" or "under" as the betType and include the total line number.
+4. For totals, pick EITHER "over" OR "under" (never both) as the betType and include the total line number. Only ONE total pick per game.
 
 Format as JSON: {"picks": [{"team": "Team Name", "betType": "moneyline|spread|over|under", "line": "spread/total number or empty for ML", "confidence": 7, "rationale": "Edge: estimated 58% vs implied 52%. Reason..."}]}
 
-IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total).`;
+IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 moneyline + 1 total). Do NOT return both over and under for the same game — pick one direction only.`;
 
   let picks = [];
   try {
@@ -657,16 +657,42 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     ]);
   }
 
-  if (perfRows.length > 0) {
+  // Dedup totals: if GPT returned both Over and Under for the same game, keep higher confidence
+  const seenTotals = {};  // gameKey -> index in perfRows
+  const toRemove = new Set();
+  for (let i = 0; i < perfRows.length; i++) {
+    const row = perfRows[i];
+    const betType = row[6]; // G: bet_type
+    if (betType !== 'total') continue;
+    const gameKey = `${row[3]}@${row[4]}`; // D: away @ E: home
+    const conf = parseFloat(String(row[11]).replace('%', '')) || 0; // L: confidence
+    if (seenTotals[gameKey] !== undefined) {
+      const prevIdx = seenTotals[gameKey];
+      const prevConf = parseFloat(String(perfRows[prevIdx][11]).replace('%', '')) || 0;
+      if (conf > prevConf) {
+        toRemove.add(prevIdx);
+        seenTotals[gameKey] = i;
+        console.log(`[predictions] Dedup: removed duplicate total for ${gameKey} (kept conf ${conf}% over ${prevConf}%)`);
+      } else {
+        toRemove.add(i);
+        console.log(`[predictions] Dedup: removed duplicate total for ${gameKey} (kept conf ${prevConf}% over ${conf}%)`);
+      }
+    } else {
+      seenTotals[gameKey] = i;
+    }
+  }
+  const dedupedPerfRows = perfRows.filter((_, i) => !toRemove.has(i));
+
+  if (dedupedPerfRows.length > 0) {
     // Prepend new picks at the top (after header row) instead of appending at bottom
     const existing = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
     const header = existing.length > 0 ? [existing[0]] : [];
     const oldRows = existing.slice(1);
-    const newData = [...header, ...perfRows, ...oldRows];
+    const newData = [...header, ...dedupedPerfRows, ...oldRows];
     // Clear first to avoid stale row artifacts, then write the full dataset
     await clearSheet(SPREADSHEET_ID, SHEETS.PERFORMANCE);
     await setValues(SPREADSHEET_ID, SHEETS.PERFORMANCE, 'A1', newData);
-    console.log(`[predictions] Logged ${perfRows.length} ${sport} picks to top of Performance Log`);
+    console.log(`[predictions] Logged ${dedupedPerfRows.length} ${sport} picks to top of Performance Log (${perfRows.length - dedupedPerfRows.length} duplicate totals removed)`);
   }
 }
 
