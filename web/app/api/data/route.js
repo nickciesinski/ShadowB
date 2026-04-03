@@ -45,10 +45,14 @@ function parsePropRow(row) {
     sport: row[1] || '',
     player: row[2] || '',
     market: row[3] || '',
-    pick: row[4] || '',
-    line: row[5] || '',
-    confidence: parseInt(row[6]) || 0,
-    rationale: row[7] || '',
+    prizepicks: row[4] || '',
+    underdog: row[5] || '',
+    betr: row[6] || '',
+    sleepr: row[7] || '',
+    pick: row[8] || '',
+    line: row[9] || '',
+    confidence: parseInt(row[10]) || 0,
+    rationale: row[11] || '',
   };
 }
 
