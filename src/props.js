@@ -1,14 +1,11 @@
 'use strict';
 /**
- * props.js — Player Props & Platform Prop Picks
- * Fetches player prop lines from the Odds API, then uses GPT to generate
- * over/under recommendations for platforms like PrizePicks and Betr.
+ * props.js — Player Props Edge Detection
+ * Fetches player prop lines from the Odds API, computes consensus lines,
+ * and identifies +EV edges where individual books diverge from consensus.
  */
-const OpenAI = require('openai');
 const { getValues, setValues, clearSheet } = require('./sheets');
-const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, OPENAI_API_KEY, SPORTS } = require('./config');
-
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
 
 const PROPS_SHEET   = SHEETS.PLAYER_PROPS;    // 'Player_Props'
 const COMBOS_SHEET  = SHEETS.PLATFORM_COMBOS;  // 'Prop_Combos'
@@ -174,156 +171,206 @@ async function updatePlayerProps() {
 }
 
 /**
- * Generate GPT-powered player prop picks for PrizePicks/Betr.
- * Reads the raw prop data, deduplicates to consensus lines,
- * then asks GPT to pick over/under with confidence for the best plays.
- * Trigger 7: 6:15 AM ET daily (replaces old platform combos).
+ * Analyze player props for +EV edges using consensus vs individual book lines.
+ * Replaces GPT-based picks with pure math edge detection.
+ * Trigger 7: 6:15 AM ET daily.
  */
-async function generatePropPicks() {
-  console.log('[props] Generating player prop picks...');
+async function generatePropEdges() {
+  console.log('[props] Computing prop edges...');
 
-  // Read raw props (written by updatePlayerProps in trigger6)
   const rawProps = await getValues(SPREADSHEET_ID, PROPS_SHEET);
   if (!rawProps || rawProps.length < 2) {
-    console.warn(`[props] ⚠️ No prop data available at ${new Date().toISOString()}. Trigger6 may have failed or no games today.`);
+    console.warn(`[props] ⚠️ No prop data available at ${new Date().toISOString()}.`);
     return;
   }
 
   const propRows = rawProps.slice(1);
-  const consensus = buildPropConsensus(propRows);
-  console.log(`[props] ${consensus.length} unique player+market combinations`);
 
-  if (consensus.length === 0) {
-    console.warn(`[props] ⚠️ Consensus building failed at ${new Date().toISOString()}. No valid prop combinations found.`);
-    return;
-  }
-
-  // Build sport lookup from the league column (column 8 in propRows)
-  const sportMap = {
-    'NBA': 'NBA',
-    'MLB': 'MLB',
-    'NHL': 'NHL',
-    'NFL': 'NFL',
+  // Helper: American odds → implied probability
+  const impliedProb = (odds) => {
+    const o = parseFloat(odds);
+    if (isNaN(o) || o === 0) return 0.5;
+    return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
   };
 
-  // Group by sport for separate GPT calls (keeps context focused)
-  const bySport = {};
-  for (const prop of consensus) {
-    // Find the original row to get the league (column 8)
-    const originalRow = propRows.find(row =>
-      row[3] === prop.player && row[7] === prop.market && row[6] === prop.line
-    );
-    const league = originalRow ? originalRow[8] : null;
-    const sport = league && sportMap[league] ? sportMap[league] : 'NBA';
+  // Step 1: Group all lines by player|market|line
+  // Each entry tracks per-book prices and the consensus
+  const grouped = {}; // key: "player|market|line" → { game, league, player, market, line, books: { bookName: { overPrice, underPrice } } }
 
-    if (!bySport[sport]) bySport[sport] = [];
-    bySport[sport].push(prop);
-  }
+  for (const row of propRows) {
+    const game = row[0];
+    const book = row[2];
+    const player = row[3];
+    const direction = row[4]; // 'Over' or 'Under'
+    const price = parseInt(row[5]) || 0;
+    const line = row[6];
+    const market = row[7];
+    const league = row[8] || '';
 
-  const allPicks = [];
+    const key = `${player}|${market}|${line}`;
+    if (!grouped[key]) grouped[key] = { game, league, player, market, line, books: {} };
+    if (!grouped[key].books[book]) grouped[key].books[book] = {};
 
-  for (const [sport, props] of Object.entries(bySport)) {
-    // Limit to top 30 props per sport to stay within token limits
-    const topProps = props.slice(0, 30);
-
-    const propsContext = topProps.map(p =>
-      `${p.player} | ${p.market} | Line: ${p.line} | Over ${p.overPrice} (${p.overImplied}% implied) | Under ${p.underPrice} (${p.underImplied}% implied) | Game: ${p.game}`
-    ).join('\n');
-
-    const prompt = `You are an expert player props analyst for sports betting platforms like PrizePicks and Betr. Your job is to find the best over/under plays.
-
-${sport} Player Props — Consensus Lines:
-
-${propsContext}
-
-INSTRUCTIONS:
-1. Analyze each player's prop line and determine whether Over or Under has better value.
-2. Consider: player recent form, matchup difficulty, pace of play, and whether the line is set too high or too low.
-3. Pick the BEST 5-8 plays from this list — the ones with the clearest edges.
-4. For each pick, provide the player, market, your pick (over/under), the line, and confidence (1-10).
-5. Focus on plays that would work on PrizePicks/Betr (player over/under format).
-
-Format as JSON: {"picks": [{"player": "Player Name", "market": "player_points", "pick": "over", "line": "24.5", "confidence": 7, "rationale": "Averaging 28 PPG last 10, facing bottom-5 defense..."}]}`;
-
-    try {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-      });
-      const parsed = JSON.parse(completion.choices[0].message.content);
-      const picks = parsed.picks || parsed.recommendations || [];
-      for (const p of picks) {
-        allPicks.push({ ...p, sport });
-      }
-      console.log(`[props] ${sport}: ${picks.length} prop picks generated`);
-    } catch (err) {
-      console.error(`[props] GPT error for ${sport} props:`, err.message);
+    if (direction === 'Over') {
+      grouped[key].books[book].overPrice = price;
+    } else if (direction === 'Under') {
+      grouped[key].books[book].underPrice = price;
     }
   }
 
-  // Write picks to Prop_Combos sheet (repurposed for prop picks)
+  // Step 2: Compute consensus and per-book edges
+  const allEdges = [];
+
+  for (const g of Object.values(grouped)) {
+    const bookNames = Object.keys(g.books);
+    if (bookNames.length < 2) continue; // Need multiple books for meaningful consensus
+
+    // Consensus: median implied prob across books
+    const overProbs = [];
+    const underProbs = [];
+    for (const b of Object.values(g.books)) {
+      if (b.overPrice) overProbs.push(impliedProb(b.overPrice));
+      if (b.underPrice) underProbs.push(impliedProb(b.underPrice));
+    }
+
+    const median = arr => {
+      if (!arr.length) return 0.5;
+      arr.sort((a, b) => a - b);
+      const mid = Math.floor(arr.length / 2);
+      return arr.length % 2 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+    };
+
+    const consensusOverProb = median(overProbs);
+    const consensusUnderProb = median(underProbs);
+
+    // Platform market names
+    const platformNames = PLATFORM_MARKETS[g.market] || {};
+
+    // For each book, compute edge on both sides
+    for (const [bookName, prices] of Object.entries(g.books)) {
+      // Over edge
+      if (prices.overPrice) {
+        const bookProb = impliedProb(prices.overPrice);
+        const edge = consensusOverProb - bookProb; // positive = book prices Over too high (good for bettor)
+        if (edge > 0.02) { // Only show 2%+ edges
+          allEdges.push({
+            player: g.player,
+            market: g.market,
+            marketDisplay: (g.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' '),
+            line: g.line,
+            direction: 'Over',
+            book: bookName,
+            bookOdds: prices.overPrice,
+            consensusProb: (consensusOverProb * 100).toFixed(1),
+            bookProb: (bookProb * 100).toFixed(1),
+            edge: (edge * 100).toFixed(1),
+            game: g.game,
+            league: g.league,
+            prizepicks: platformNames.prizepicks || '',
+            underdog: platformNames.underdog || '',
+            betr: platformNames.betr || '',
+            sleepr: platformNames.sleepr || '',
+          });
+        }
+      }
+
+      // Under edge
+      if (prices.underPrice) {
+        const bookProb = impliedProb(prices.underPrice);
+        const edge = consensusUnderProb - bookProb;
+        if (edge > 0.02) {
+          allEdges.push({
+            player: g.player,
+            market: g.market,
+            marketDisplay: (g.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' '),
+            line: g.line,
+            direction: 'Under',
+            book: bookName,
+            bookOdds: prices.underPrice,
+            consensusProb: (consensusUnderProb * 100).toFixed(1),
+            bookProb: (bookProb * 100).toFixed(1),
+            edge: (edge * 100).toFixed(1),
+            game: g.game,
+            league: g.league,
+            prizepicks: platformNames.prizepicks || '',
+            underdog: platformNames.underdog || '',
+            betr: platformNames.betr || '',
+            sleepr: platformNames.sleepr || '',
+          });
+        }
+      }
+    }
+  }
+
+  // Sort by edge descending (biggest edges first)
+  allEdges.sort((a, b) => parseFloat(b.edge) - parseFloat(a.edge));
+  console.log(`[props] Found ${allEdges.length} prop edges (2%+ threshold)`);
+
+  // Write to Prop_Combos sheet
   const ts = new Date().toISOString();
-  const outputRows = [['Timestamp', 'Sport', 'Player', 'Market', 'PrizePicks', 'Underdog', 'Betr', 'Sleepr', 'Pick', 'Line', 'Confidence', 'Rationale']];
-  for (const p of allPicks) {
-    const platformNames = PLATFORM_MARKETS[p.market] || {};
+  const outputRows = [['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction', 'Book', 'BookOdds', 'BookProb', 'ConsensusProb', 'Edge', 'Game', 'PrizePicks', 'Underdog', 'Betr', 'Sleepr']];
+  for (const e of allEdges) {
     outputRows.push([
       ts,
-      p.sport || '',
-      p.player || '',
-      p.market || '',
-      platformNames.prizepicks || '',
-      platformNames.underdog || '',
-      platformNames.betr || '',
-      platformNames.sleepr || '',
-      p.pick || '',
-      p.line || '',
-      p.confidence || '',
-      p.rationale || '',
+      e.league,
+      e.player,
+      e.marketDisplay,
+      e.line,
+      e.direction,
+      e.book,
+      e.bookOdds,
+      e.bookProb,
+      e.consensusProb,
+      e.edge,
+      e.game,
+      e.prizepicks,
+      e.underdog,
+      e.betr,
+      e.sleepr,
     ]);
   }
 
   await clearSheet(SPREADSHEET_ID, COMBOS_SHEET);
   await setValues(SPREADSHEET_ID, COMBOS_SHEET, 'A1', outputRows);
-  console.log(`[props] Wrote ${allPicks.length} prop picks to ${COMBOS_SHEET}`);
+  console.log(`[props] Wrote ${allEdges.length} prop edges to ${COMBOS_SHEET}`);
 }
 
 /**
- * Grade prop picks against actual player stats.
- * Reads Prop_Combos (today's picks), compares against actual performance,
+ * Grade prop edges against actual player stats.
+ * Reads Prop_Combos (today's edges), compares against actual performance,
  * writes results to Prop_Performance sheet to create feedback loop.
  * Trigger 8: ~11 PM ET daily (after games end).
  */
 async function gradePropPicks() {
-  console.log('[props] Grading prop picks...');
+  console.log('[props] Grading prop edges...');
   const combos = await getValues(SPREADSHEET_ID, COMBOS_SHEET);
   if (!combos || combos.length < 2) {
-    console.warn('[props] No prop picks to grade.');
+    console.warn('[props] No prop edges to grade.');
     return;
   }
 
-  const picks = combos.slice(1);
-  // TODO: Fetch actual player stats from ESPN or stats API to compare against picks
+  const edges = combos.slice(1);
+  // TODO: Fetch actual player stats from ESPN or stats API to compare against edges
   // For now, log what needs grading
-  console.log(`[props] ${picks.length} prop picks pending grading.`);
+  console.log(`[props] ${edges.length} prop edges pending grading.`);
   console.log('[props] Grading requires stats API integration — logging for manual review.');
 
   // Write a summary to Prop_Performance
   const perfSheet = SHEETS.PROP_PERFORMANCE || 'Prop_Performance';
   const ts = new Date().toISOString();
-  const summaryRows = [['Timestamp', 'Sport', 'Player', 'Market', 'Pick', 'Line', 'Confidence', 'Actual', 'Result']];
-  for (const row of picks) {
+  const summaryRows = [['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction', 'Book', 'Edge', 'Actual', 'Result']];
+  for (const row of edges) {
     summaryRows.push([
       ts,
-      row[1] || '', // sport
+      row[1] || '', // league
       row[2] || '', // player
       row[3] || '', // market
-      row[8] || '', // pick
-      row[9] || '', // line
-      row[10] || '', // confidence
-      'PENDING',    // actual - needs stats API
-      'PENDING',    // result - needs comparison
+      row[4] || '', // line
+      row[5] || '', // direction
+      row[6] || '', // book
+      row[10] || '', // edge
+      'PENDING',     // actual - needs stats API
+      'PENDING',     // result - needs comparison
     ]);
   }
 
@@ -337,7 +384,7 @@ async function gradePropPicks() {
     const nextRow = existing.length + 1;
     await setValues(SPREADSHEET_ID, perfSheet, `A${nextRow}`, appendRows);
   }
-  console.log(`[props] Wrote ${picks.length} picks to ${perfSheet} for grading.`);
+  console.log(`[props] Wrote ${edges.length} edges to ${perfSheet} for grading.`);
 }
 
-module.exports = { updatePlayerProps, generatePropPicks, gradePropPicks };
+module.exports = { updatePlayerProps, generatePropEdges, gradePropPicks };

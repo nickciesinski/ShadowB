@@ -9,7 +9,7 @@ const { validateConfig } = require('./config');
 const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults } = require('./data-collection');
 const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, generateNFLPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
 const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
-const { updatePlayerProps, generatePropPicks } = require('./props');
+const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
 
 // ── Trigger Map ──────────────────────────────────────────────────
@@ -46,8 +46,8 @@ const TRIGGERS = {
   // Trigger 6: 6:00 AM ET → Player props
   trigger6: updatePlayerProps,
 
-  // Trigger 7: 6:15 AM ET → GPT-powered prop picks for PrizePicks/Betr
-  trigger7: generatePropPicks,
+  // Trigger 7: 6:15 AM ET → Compute prop edges (consensus vs book lines)
+  trigger7: generatePropEdges,
 
   // Trigger 8: 6:20 AM ET → Player tiers
   trigger8: updatePlayerTiers,

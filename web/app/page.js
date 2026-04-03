@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
 const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
+const PLATFORMS = ['All', 'PrizePicks', 'Underdog', 'Betr', 'Sleepr'];
 const LEAGUE_COLORS = { NBA: '#C9082A', NHL: '#000', MLB: '#002D72', NFL: '#013369' };
 const LEAGUE_BG = { NBA: '#FEF2F2', NHL: '#F3F4F6', MLB: '#EFF6FF', NFL: '#EEF2FF' };
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'All Time'];
@@ -371,91 +372,82 @@ function ScoresTab({ liveGames, picks, sf, bf }) {
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
-function PropsTab({ props, sf }) {
-  const filtered = props.filter(p => {
-    if (sf === 'All' || sf === 'Live') return true;
-    // Try to match sport from the games text or sport field
-    const sportText = (p.sport || '').toUpperCase();
-    return sportText === sf || sportText.includes(sf);
+function PropsTab({ props, sf, pf }) {
+  // Filter by sport
+  let filtered = props.filter(p => {
+    if (sf !== 'All' && sf !== 'Live' && p.league !== sf) return false;
+    return true;
   });
 
-  if (!filtered.length) return <div style={{ textAlign: 'center', color: '#9CA3AF', padding: 40, fontSize: 14 }}>No props available</div>;
+  // Filter by platform — show only edges from books relevant to that platform
+  // When a platform is selected, show props that have a market name for that platform
+  if (pf !== 'All') {
+    const pfKey = pf.toLowerCase();
+    filtered = filtered.filter(p => {
+      if (pfKey === 'prizepicks') return !!p.prizepicks;
+      if (pfKey === 'underdog') return !!p.underdog;
+      if (pfKey === 'betr') return !!p.betr;
+      if (pfKey === 'sleepr') return !!p.sleepr;
+      return true;
+    });
+  }
 
-  // Group by combo (using the games field as key)
-  return filtered.map((p, i) => {
-    // Parse the combined text to extract player info
-    const pickText = (p.pick || '').trim();
-    const lineText = (p.line || '').trim();
-    const playerText = p.player || '';
+  // Sort by edge descending (already sorted from backend, but enforce here)
+  filtered.sort((a, b) => b.edge - a.edge);
 
-    // Determine if this is a combo-format row (games in sport field)
-    const isCombo = (p.sport || '').includes('@');
+  if (!filtered.length) return <div style={{ textAlign: 'center', color: '#9CA3AF', padding: 40, fontSize: 14 }}>No prop edges found</div>;
 
-    // Try to extract meaningful display info
-    let displayPlayer = playerText;
-    let displayStat = (p.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' ');
-    let displayDirection = pickText;
-    let displayLine = lineText;
-    let displayConf = p.confidence;
-    let sportBadge = p.sport || '';
+  // Get platform-specific market name
+  const getPlatformMarket = (p) => {
+    const pfKey = (pf || '').toLowerCase();
+    if (pfKey === 'prizepicks') return p.prizepicks;
+    if (pfKey === 'underdog') return p.underdog;
+    if (pfKey === 'betr') return p.betr;
+    if (pfKey === 'sleepr') return p.sleepr;
+    return p.market; // "All" shows generic market name
+  };
 
-    // If combo format, the fields are shifted
-    if (isCombo) {
-      // sport field has games, player has a number, market has a number,
-      // pick has status/direction, line has the actual description
-      displayPlayer = lineText; // "Nico Hischier shots on goal LEAN UNDER"
-      displayStat = '';
-      displayDirection = '';
-      displayLine = playerText; // the number
-      displayConf = p.confidence;
-      sportBadge = '';
+  const isOver = (d) => (d || '').toLowerCase() === 'over';
 
-      // Try to parse "Player Name stat LEAN OVER/UNDER" from the description
-      const leanMatch = displayPlayer.match(/^(.+?)\s+(LEAN\s+(?:OVER|UNDER))$/i);
-      if (leanMatch) {
-        displayPlayer = leanMatch[1].trim();
-        displayDirection = leanMatch[2].trim();
-      }
-      // Try to extract stat type
-      const statMatch = displayPlayer.match(/^(.+?)\s+(points|rebounds|assists|shots on goal|saves|blocks|strikeouts|hits|home runs|RBIs|passing yards|rushing yards|receiving yards|touchdowns|goals|three pointers|threes|steals)$/i);
-      if (statMatch) {
-        displayPlayer = statMatch[1].trim();
-        displayStat = statMatch[2].trim();
-      }
-    }
-
-    const isOver = displayDirection.toLowerCase().includes('over');
-    const isUnder = displayDirection.toLowerCase().includes('under');
-
-    return (
-      <div key={i} style={{ background: 'white', borderRadius: 12, marginBottom: 6, padding: '10px 12px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {sportBadge && !isCombo && (
-              <span style={{ background: LEAGUE_COLORS[sportBadge] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3, marginRight: 5 }}>{sportBadge}</span>
-            )}
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 2 }}>{displayPlayer}</div>
-            {displayStat && <div style={{ fontSize: 11, color: '#4B5563', marginBottom: 2 }}>{displayStat}</div>}
-            {p.rationale && <div style={{ fontSize: 11, color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.rationale}</div>}
-            {isCombo && p.sport && (
-              <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 3, lineHeight: 1.4 }}>
-                {p.sport.split('+').map((g, gi) => <div key={gi}>{g.trim()}</div>)}
-              </div>
-            )}
-          </div>
-          <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
-            {displayDirection && (
-              <div style={{ fontSize: 11, fontWeight: 800, color: isOver ? '#059669' : isUnder ? '#DC2626' : '#6B7280', textTransform: 'uppercase', marginBottom: 2 }}>{displayDirection}</div>
-            )}
-            {displayLine && <div style={{ fontSize: 18, fontWeight: 800 }}>{displayLine}</div>}
-            {displayConf > 0 && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: confColor(displayConf), background: confBg(displayConf), padding: '1px 5px', borderRadius: 10 }}>{displayConf}/10</span>
-            )}
-          </div>
-        </div>
+  return (
+    <>
+      <div style={{ background: 'white', borderRadius: 12, padding: '10px 14px', marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>Top Edges</div>
+        <div style={{ fontSize: 11, color: '#9CA3AF' }}>{filtered.length} props found</div>
       </div>
-    );
-  });
+      {filtered.map((p, i) => {
+        const edgeNum = parseFloat(p.edge) || 0;
+        const edgeColor = edgeNum >= 8 ? '#059669' : edgeNum >= 5 ? '#D97706' : '#6B7280';
+        const edgeBg = edgeNum >= 8 ? '#ECFDF5' : edgeNum >= 5 ? '#FFFBEB' : '#F3F4F6';
+        const dirColor = isOver(p.direction) ? '#059669' : '#DC2626';
+
+        return (
+          <div key={i} style={{ background: 'white', borderRadius: 12, marginBottom: 6, padding: '10px 12px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', borderLeft: `3px solid ${edgeColor}` }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                  {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#6B7280', background: '#F3F4F6', padding: '1px 5px', borderRadius: 3 }}>{getPlatformMarket(p) || p.market}</span>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', marginBottom: 1 }}>{p.player}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: dirColor }}>{p.direction}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>{p.line}</span>
+                  <span style={{ fontSize: 11, color: '#9CA3AF' }}>({fmt(p.bookOdds)})</span>
+                </div>
+                <div style={{ fontSize: 10, color: '#9CA3AF' }}>{p.game}</div>
+                <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1 }}>via {p.book} · consensus {p.consensusProb}% vs book {p.bookProb}%</div>
+              </div>
+              <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: edgeColor }}>{p.edge}%</div>
+                <div style={{ fontSize: 9, fontWeight: 700, color: '#9CA3AF', background: edgeBg, padding: '2px 8px', borderRadius: 10 }}>EDGE</div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 // ── Results Tab ─────────────────────────────────────────────────────
@@ -600,6 +592,7 @@ export default function App() {
   const [sf, setSf] = useState('All');
   const [bf, setBf] = useState('All');
   const [cf, setCf] = useState('All Bets');
+  const [pf, setPf] = useState('All');
   const [dateFilter, setDateFilter] = useState('Last 7 Days');
   const [data, setData] = useState(null);
   const [liveGames, setLiveGames] = useState([]);
@@ -666,6 +659,7 @@ export default function App() {
         <Pills items={sportPills} active={sf} onChange={setSf} color="#6EE7B7" />
         {tab === 'picks' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color="#818CF8" />}
         {tab === 'picks' && <Pills items={CONFIDENCE_FILTERS} active={cf} onChange={setCf} color="#F59E0B" />}
+        {tab === 'props' && <Pills items={PLATFORMS} active={pf} onChange={setPf} color="#8B5CF6" />}
         {tab === 'scores' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color="#818CF8" />}
         {tab === 'results' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color="#818CF8" />}
         {tab === 'results' && <Pills items={DATE_FILTERS} active={dateFilter} onChange={setDateFilter} color="#F59E0B" />}
@@ -680,7 +674,7 @@ export default function App() {
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#DC2626', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#9CA3AF' }}>Check Vercel env vars</span></div>}
         {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} />}
-        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} />}
+        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} />}
         {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} />}
       </div>
 
