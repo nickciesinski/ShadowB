@@ -40,19 +40,35 @@ function parsePerfRow(row) {
 }
 
 function parsePropRow(row) {
+  // Detect old 8-col format vs new 12-col format
+  // New format has platform columns at indices 4-7 (PrizePicks, Underdog, Betr, Sleepr)
+  // Old format has Pick at index 4 (typically "over"/"under")
+  const isNewFormat = row.length > 8;
+  if (isNewFormat) {
+    return {
+      timestamp: row[0] || '',
+      sport: row[1] || '',
+      player: row[2] || '',
+      market: row[3] || '',
+      prizepicks: row[4] || '',
+      underdog: row[5] || '',
+      betr: row[6] || '',
+      sleepr: row[7] || '',
+      pick: row[8] || '',
+      line: row[9] || '',
+      confidence: parseInt(row[10]) || 0,
+      rationale: row[11] || '',
+    };
+  }
   return {
     timestamp: row[0] || '',
     sport: row[1] || '',
     player: row[2] || '',
     market: row[3] || '',
-    prizepicks: row[4] || '',
-    underdog: row[5] || '',
-    betr: row[6] || '',
-    sleepr: row[7] || '',
-    pick: row[8] || '',
-    line: row[9] || '',
-    confidence: parseInt(row[10]) || 0,
-    rationale: row[11] || '',
+    pick: row[4] || '',
+    line: row[5] || '',
+    confidence: parseInt(row[6]) || 0,
+    rationale: row[7] || '',
   };
 }
 
