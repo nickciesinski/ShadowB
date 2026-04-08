@@ -549,29 +549,17 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     if (!gameOddsMap[gameOddsKey]) gameOddsMap[gameOddsKey] = { price, point };
   }
 
-  // Minimum confidence threshold from the league's weights sheet.
-  // Threshold is stored as a 0-1 value (e.g. 0.60 = GPT confidence >= 6 on 1-10 scale).
-  // If undefined, no filter is applied (matches pre-fix behavior).
-  const minConfRaw = weights && Number.isFinite(weights.param_min_confidence_to_bet)
-    ? weights.param_min_confidence_to_bet
-    : null;
+  // PICK COVERAGE RULE: Every game MUST produce a pick on all 3 markets
+  // (moneyline, spread, total). Low-confidence picks are NOT dropped — they
+  // get the minimum stake via confidenceToUnits() + the param_min_units_to_bet
+  // floor enforced below. param_min_confidence_to_bet is intentionally unused
+  // as a drop filter. See memory/feedback_pick_coverage_rule.md.
 
   const perfRows = [];
-  let droppedLowConf = 0;
   for (const p of picks) {
     const team = p.team || '';
     const rawBetType = (p.betType || '').toLowerCase();
     const confidence = p.confidence || '';
-
-    // Apply min-confidence filter. GPT confidence is 1-10; threshold is 0-1.
-    // conf 7 → 0.7; threshold 0.6 passes, 0.8 fails.
-    if (minConfRaw != null) {
-      const confAsRatio = (parseFloat(confidence) || 0) / 10;
-      if (confAsRatio < minConfRaw) {
-        droppedLowConf++;
-        continue;
-      }
-    }
 
     // Normalize bet type — GPT sometimes returns "over"/"under" instead of "total"
     const isTotal = rawBetType === 'total' || rawBetType === 'totals' || rawBetType === 'over' || rawBetType === 'under';
@@ -692,10 +680,6 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       '',               // R: unit_return (empty — to be graded)
       JSON.stringify(weights || {}), // S: weights_snapshot
     ]);
-  }
-
-  if (droppedLowConf > 0) {
-    console.log(`[predictions] Dropped ${droppedLowConf} ${sport} picks below min confidence ${minConfRaw}`);
   }
 
   // Dedup totals: if GPT returned both Over and Under for the same game, keep higher confidence

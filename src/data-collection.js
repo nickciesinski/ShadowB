@@ -6,6 +6,11 @@
 
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, ODDS_API_BASE, SPORTS, MARKETS } = require('./config');
 const { getValues, setValues, appendRows, clearSheet } = require('./sheets');
+const { logApiCall } = require('./monitoring');
+
+// Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
+// We log a flat $0.001/call placeholder so the API_Usage_Log has a signal to sum.
+const ODDS_API_COST_PER_CALL = 0.001;
 
 // ── ESPN API ────────────────────────────────────────────────────
 
@@ -108,6 +113,7 @@ async function fetchOddsAndGrade() {
       });
       const url = `${ODDS_API_BASE}/sports/${sportConfig.key}/odds?${params}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      logApiCall({ endpoint: `odds/${sportConfig.key}`, costEstimate: ODDS_API_COST_PER_CALL });
       if (!res.ok) { console.warn(`Odds API ${sportName}: ${res.status}`); continue; }
       const events = await res.json();
 
@@ -172,6 +178,7 @@ async function fetchYesterdayResults() {
       });
       const url = `${ODDS_API_BASE}/sports/${sportConfig.key}/scores?${params}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+      logApiCall({ endpoint: `scores/${sportConfig.key}`, costEstimate: ODDS_API_COST_PER_CALL });
       if (!res.ok) { console.warn(`Scores API ${sportName}: ${res.status}`); continue; }
       const games = await res.json();
 

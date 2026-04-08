@@ -1,0 +1,30 @@
+name: Apply Weights (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      leagues:
+        description: 'Space-separated leagues to push (e.g. "MLB NBA"). Leave blank for all.'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run (print rows, do not write)'
+        required: false
+        default: 'false'
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install
+      - name: Apply weights
+        run: |
+          ARGS="${{ github.event.inputs.leagues }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          node scripts/apply-weights.js $ARGS
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          NODE_ENV: production
