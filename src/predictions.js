@@ -7,8 +7,14 @@
 const OpenAI = require('openai');
 const { SPREADSHEET_ID, SHEETS, OPENAI_API_KEY, IS_TEST } = require('./config');
 const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
+const { parseWeightRows, sheetForLeague } = require('./weights');
 
-const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+// Lazy-init so importing this module for testing/tools doesn't require a key.
+let _openai = null;
+function openai() {
+  if (!_openai) _openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+  return _openai;
+}
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -87,17 +93,20 @@ function confidenceToUnits(confidence) {
  * Multiplier on units: >1 = boost profitable segments, <1 = reduce losing ones.
  * Updated periodically based on Performance Log analysis.
  */
+// Updated 2026-04-08 based on 30-day offline-optimize run.
+// NBA|moneyline ROI metric is contaminated by the stake=0 bug; modifier is
+// held (not cut further) until grading runs on clean data post-fix.
 const PERFORMANCE_MODIFIERS = {
-  'NHL|spread':     1.0,   // Was 1.5 but 47.4% / -8.0% ROI post-fix — dial back until stabilized
-  'NHL|moneyline':  1.0,
-  'NHL|total':      1.2,   // 61.9% / +12.9% ROI post-fix — best current segment, slight boost
-  'NBA|spread':     1.0,   // 64.3% / +17.9% ROI post-fix — upgraded from 0.7
-  'NBA|moneyline':  0.3,   // 71.4% wins but -9.5% ROI — heavy fav trap, cut further
-  'NBA|total':      1.0,   // 56.0% / +6.1% ROI post-fix — upgraded from 0.8
-  'MLB|spread':     1.0,   // 52.9% / +2.5% ROI — modest profit, keep neutral
-  'MLB|moneyline':  0.7,   // 53.1% but -6.3% ROI — same fav problem
-  'MLB|total':      0.5,   // 47.6% / -17.6% ROI — worst segment, cut hard
-  'NFL|spread':     1.0,
+  'NHL|spread':     1.15,  // 30d: 53.2% / +10.6% ROI (n=250) — boost
+  'NHL|moneyline':  1.15,  // 30d: 56.4% / +13.5% ROI (n=250) — boost
+  'NHL|total':      1.35,  // 30d: 52.8% / +13.0% ROI (n=196) — boost
+  'NBA|spread':     1.05,  // 30d: 55.3% / +6.9% ROI (n=204) — slight boost
+  'NBA|moneyline':  0.3,   // HOLD — data corrupted by stake=0 bug, re-evaluate after fix
+  'NBA|total':      0.7,   // 30d: 45.5% / -11.6% ROI (n=167) — cut hard
+  'MLB|spread':     0.7,   // 30d: 44.2% / -17.3% ROI (n=138) — cut hard, biggest bleeder
+  'MLB|moneyline':  0.6,   // 30d: 52.2% / -3.6% ROI (n=136) — reduce 15%
+  'MLB|total':      0.5,   // 30d: 53.8% / -2.1% ROI (n=92) — hold
+  'NFL|spread':     1.0,   // no recent NFL activity
   'NFL|moneyline':  0.8,
   'NFL|total':      0.9,
 };
@@ -133,9 +142,9 @@ async function generateMLBPredictions() {
     return;
   }
 
-  // Build weight context
-  const weights = {};
-  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+  // Build weight context — correct 3-col schema [market, key, value]
+  const parsedWeights = parseWeightRows(weightRows);
+  const weights = parsedWeights.flat;
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
@@ -179,7 +188,7 @@ IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 mo
 
   let picks = [];
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await openai().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
@@ -231,9 +240,9 @@ async function generateNBAPredictions() {
     return;
   }
 
-  // Build weight context
-  const weights = {};
-  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+  // Build weight context — correct 3-col schema [market, key, value]
+  const parsedWeights = parseWeightRows(weightRows);
+  const weights = parsedWeights.flat;
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
@@ -278,7 +287,7 @@ IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 mo
 
   let picks = [];
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await openai().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
@@ -373,7 +382,7 @@ IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 mo
 
   let picks = [];
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await openai().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
@@ -464,7 +473,7 @@ IMPORTANT: Return exactly ${games.length * 3} picks (3 per game: 1 spread + 1 mo
 
   let picks = [];
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await openai().chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
@@ -540,11 +549,29 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     if (!gameOddsMap[gameOddsKey]) gameOddsMap[gameOddsKey] = { price, point };
   }
 
+  // Minimum confidence threshold from the league's weights sheet.
+  // Threshold is stored as a 0-1 value (e.g. 0.60 = GPT confidence >= 6 on 1-10 scale).
+  // If undefined, no filter is applied (matches pre-fix behavior).
+  const minConfRaw = weights && Number.isFinite(weights.param_min_confidence_to_bet)
+    ? weights.param_min_confidence_to_bet
+    : null;
+
   const perfRows = [];
+  let droppedLowConf = 0;
   for (const p of picks) {
     const team = p.team || '';
     const rawBetType = (p.betType || '').toLowerCase();
     const confidence = p.confidence || '';
+
+    // Apply min-confidence filter. GPT confidence is 1-10; threshold is 0-1.
+    // conf 7 → 0.7; threshold 0.6 passes, 0.8 fails.
+    if (minConfRaw != null) {
+      const confAsRatio = (parseFloat(confidence) || 0) / 10;
+      if (confAsRatio < minConfRaw) {
+        droppedLowConf++;
+        continue;
+      }
+    }
 
     // Normalize bet type — GPT sometimes returns "over"/"under" instead of "total"
     const isTotal = rawBetType === 'total' || rawBetType === 'totals' || rawBetType === 'over' || rawBetType === 'under';
@@ -556,6 +583,16 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const baseUnits = confidenceToUnits(confidence);
     const modifier = getPerformanceModifier(sport, betType);
     let units = parseFloat((baseUnits * modifier).toFixed(3));
+
+    // Enforce minimum stake. If the weights sheet defines param_min_units_to_bet,
+    // use that; otherwise default to 0.01. This prevents 0-unit bets from being
+    // logged (which the grader previously mis-counted as 1-unit losses).
+    const minUnits = (weights && Number.isFinite(weights.param_min_units_to_bet))
+      ? weights.param_min_units_to_bet
+      : 0.01;
+    if (!Number.isFinite(units) || units < minUnits) {
+      units = minUnits;
+    }
 
     // Try to find the game in odds data
     // For totals, GPT may not return a real team name — try team first,
@@ -655,6 +692,10 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       '',               // R: unit_return (empty — to be graded)
       JSON.stringify(weights || {}), // S: weights_snapshot
     ]);
+  }
+
+  if (droppedLowConf > 0) {
+    console.log(`[predictions] Dropped ${droppedLowConf} ${sport} picks below min confidence ${minConfRaw}`);
   }
 
   // Dedup totals: if GPT returned both Over and Under for the same game, keep higher confidence
@@ -787,6 +828,92 @@ function determineBetResult(market, pick, line, homeTeam, awayTeam, homeScore, a
 }
 
 /**
+ * Build a lookup map from the Closing_Odds_Snapshot sheet.
+ * Each row in the snapshot is [snapshot_ts, ...originalOddsRow], where the
+ * original odds row is: [ts, sport, home, away, commence, market, outcome, price, point, bookmaker]
+ * We pick the most recent snapshot per (sport|away|home|market|outcome) combo.
+ */
+function buildClosingOddsMap(snapshotRows) {
+  const map = {};
+  if (!snapshotRows || snapshotRows.length < 2) return map;
+  for (const row of snapshotRows.slice(1)) {
+    // row[0] = snapshot_ts (added by takeCLVSnapshot)
+    const sport = row[2] || '';
+    const home = row[3] || '';
+    const away = row[4] || '';
+    const mktRaw = row[6] || '';
+    const outcome = row[7] || '';
+    const price = parseFloat(row[8]);
+    const point = row[9] || '';
+    if (!isFinite(price)) continue;
+    // Normalize market label from Odds API -> internal
+    const market = mktRaw === 'h2h' ? 'moneyline'
+                 : mktRaw === 'spreads' ? 'spread'
+                 : mktRaw === 'totals' ? 'total' : mktRaw;
+    const key = `${sport}|${away}|${home}|${market}|${outcome}`;
+    // Keep the latest snapshot (closest to game time = closing line)
+    const existing = map[key];
+    if (!existing || String(row[0]) > String(existing.ts)) {
+      map[key] = { ts: row[0], price, point };
+    }
+  }
+  return map;
+}
+
+/**
+ * Look up the closing line for a graded bet and compute a CLV grade.
+ * Grades:
+ *   'good' = we beat the close (our price was better than the closing price)
+ *   'flat' = within 5 cents
+ *   'bad'  = we took worse-than-closing odds
+ */
+function lookupClosingOdds(closingMap, league, away, home, market, pick, line) {
+  if (!closingMap) return null;
+  const mkt = String(market || '').toLowerCase();
+  let outcome;
+  if (mkt === 'moneyline' || mkt === 'spread') {
+    // outcome is the team name we picked
+    outcome = pick.includes(away) ? away : home;
+  } else if (mkt === 'total') {
+    // "Over 8.5" -> "Over"
+    outcome = String(pick).trim().split(/\s+/)[0];
+  } else {
+    return null;
+  }
+  const key = `${league}|${away}|${home}|${mkt}|${outcome}`;
+  const close = closingMap[key];
+  if (!close) return null;
+
+  // Compute CLV grade by comparing implied probabilities
+  // (higher implied probability = worse price for the bettor)
+  // We need the original odds for this bet, which the caller has but we don't here.
+  // So we just return the closing price/point and let the caller decide; we compute
+  // a simple text grade based on price movement sign when possible.
+  const closeLine = mkt === 'total' || mkt === 'spread' ? (close.point || '') : '';
+  return {
+    closeLine,
+    closeOdds: close.price,
+    grade: '', // populated post-hoc by compareClv when the caller supplies open odds
+  };
+}
+
+/**
+ * Given the open price we took and the closing price, return a CLV grade.
+ * Positive = we beat the close (took better-than-closing odds).
+ */
+function gradeClvNumeric(openOdds, closeOdds) {
+  if (!isFinite(openOdds) || !isFinite(closeOdds)) return '';
+  const openImp = openOdds > 0 ? 100 / (openOdds + 100) : Math.abs(openOdds) / (Math.abs(openOdds) + 100);
+  const closeImp = closeOdds > 0 ? 100 / (closeOdds + 100) : Math.abs(closeOdds) / (Math.abs(closeOdds) + 100);
+  // If the closing price has a HIGHER implied probability than the open we took,
+  // the market moved toward our side -> we beat the close -> 'good'.
+  const delta = closeImp - openImp;
+  if (delta > 0.01) return 'good';
+  if (delta < -0.01) return 'bad';
+  return 'flat';
+}
+
+/**
  * Grade ungraded bets in the Performance Log using Yesterday_Results.
  * Matches ANY ungraded bet (not just yesterday's) against available results
  * by league + away team + home team. This handles backfills and missed days.
@@ -799,8 +926,13 @@ function determineBetResult(market, pick, line, homeTeam, awayTeam, homeScore, a
 async function gradePerformanceLog() {
   console.log('[predictions] Grading performance log from yesterday results...');
 
-  // Read yesterday's results
-  const resultsRows = await getValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS);
+  // Read yesterday's results + closing-odds snapshot in parallel
+  const [resultsRows, closingSnapRows] = await Promise.all([
+    getValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS),
+    getValues(SPREADSHEET_ID, SHEETS.CLV_SNAPSHOT).catch(() => []),
+  ]);
+  const closingMap = buildClosingOddsMap(closingSnapRows);
+  console.log(`[predictions] CLV snapshot keys loaded: ${Object.keys(closingMap).length}`);
   if (!resultsRows || resultsRows.length < 2) {
     console.log('[predictions] No yesterday results to grade against');
     return { graded: 0 };
@@ -845,7 +977,10 @@ async function gradePerformanceLog() {
     const pick = row[7] || '';
     const line = row[8];
     const odds = parseFloat(row[9]) || -110;
-    const units = parseFloat(row[10]) || 1;
+    // Stake: accept legitimate zeros, skip garbage/NaN. Do NOT fall back to 1 —
+    // that turned a stake-0 bug into phantom -1.00 losses in historical data.
+    const unitsRaw = parseFloat(row[10]);
+    const units = Number.isFinite(unitsRaw) ? unitsRaw : 0;
 
     if (!league || !awayTeam || !homeTeam || !pick) continue;
 
@@ -860,12 +995,22 @@ async function gradePerformanceLog() {
 
     const unitReturn = calculateUnitReturn(betResult, units, odds, market);
 
+    // CLV lookup: match this bet to the closing-odds snapshot.
+    // Key format mirrors the snapshot row layout from takeCLVSnapshot.
+    const clvInfo = lookupClosingOdds(closingMap, league, awayTeam, homeTeam, market, pick, line);
+
     // Write result + unit return back to the row
     // Column Q = index 16, Column R = index 17
-    // Ensure row has enough columns
-    while (perfRows[i].length < 18) perfRows[i].push('');
+    // Columns AD = 29 (close_line), AE = 30 (close_odds), AF = 31 (clv_grade)
+    // (these match the headers seen in the Performance Log)
+    while (perfRows[i].length < 32) perfRows[i].push('');
     perfRows[i][16] = betResult;
     perfRows[i][17] = parseFloat(unitReturn.toFixed(2));
+    if (clvInfo) {
+      perfRows[i][29] = clvInfo.closeLine;
+      perfRows[i][30] = clvInfo.closeOdds;
+      perfRows[i][31] = gradeClvNumeric(odds, clvInfo.closeOdds);
+    }
 
     graded++;
     console.log(`[predictions] Row ${i + 1}: ${betResult} — ${awayTeam} @ ${homeTeam} (${market}) — ${unitReturn.toFixed(2)} units`);
@@ -889,4 +1034,10 @@ module.exports = {
   generateNFLPredictions,
   takeCLVSnapshot,
   gradePerformanceLog,
+  // exported for tests / offline tools
+  buildClosingOddsMap,
+  lookupClosingOdds,
+  gradeClvNumeric,
+  calculateUnitReturn,
+  determineBetResult,
 };

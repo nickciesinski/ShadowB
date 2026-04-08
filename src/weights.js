@@ -2,54 +2,110 @@
 /**
  * weights.js — Weight Optimization
  * Reads/writes the Weights sheet to tune prediction model coefficients.
+ *
+ * Weights sheet schema (3 columns):
+ *   A: market   (empty for param_* rows, or "moneyline"/"spread"/"total")
+ *   B: key      (e.g. "param_min_confidence_to_bet" or "run_differential_diff")
+ *   C: weight   (numeric)
+ *
+ * parseWeightRows produces:
+ *   {
+ *     params:    { param_min_confidence_to_bet: 0.60, ... },
+ *     moneyline: { run_differential_diff: 0.85, ... },
+ *     spread:    { ... },
+ *     total:     { ... },
+ *     flat:      { <key>: <value>, ... }   // backward-compat flat merge
+ *   }
  */
-const { getValues, setValues, getSheetsClient } = require('./sheets');
+const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
-const WEIGHTS_SHEET = SHEETS.WEIGHTS; // 'Weights_MLB' (default)
+const WEIGHTS_SHEET = SHEETS.WEIGHTS; // default Weights_MLB
 
 /**
- * Read all weights from a weights sheet.
- * Returns an object like { recentForm: 0.35, headToHead: 0.25, ... }
- * @param {string} [sheetName] - Override sheet (e.g. SHEETS.WEIGHTS_NBA)
+ * Parse raw weight rows (including header) into a structured object.
+ * Accepts rows where row[0]=market, row[1]=key, row[2]=weight.
+ */
+function parseWeightRows(rows) {
+  const out = { params: {}, moneyline: {}, spread: {}, total: {}, flat: {} };
+  if (!rows || !rows.length) return out;
+  // Skip header row if first row is header-like
+  const startIdx = (rows[0] && /market/i.test(String(rows[0][0] || '')) && /key/i.test(String(rows[0][1] || ''))) ? 1 : 0;
+  for (let i = startIdx; i < rows.length; i++) {
+    const row = rows[i] || [];
+    const market = String(row[0] || '').trim().toLowerCase();
+    const key = String(row[1] || '').trim();
+    const val = parseFloat(row[2]);
+    if (!key || !isFinite(val)) continue;
+    if (key.startsWith('param_')) {
+      out.params[key] = val;
+    } else if (market === 'moneyline' || market === 'spread' || market === 'total') {
+      out[market][key] = val;
+    }
+    // flat merge: last write wins — useful for GPT prompt context
+    out.flat[key] = val;
+  }
+  return out;
+}
+
+/**
+ * Read and parse weights from a weights sheet.
+ * @param {string} [sheetName] - e.g. SHEETS.WEIGHTS_NBA
+ * @returns {Promise<{params:Object, moneyline:Object, spread:Object, total:Object, flat:Object}>}
  */
 async function readWeights(sheetName) {
   const rows = await getValues(SPREADSHEET_ID, sheetName || WEIGHTS_SHEET);
-  const weights = {};
-  for (const row of rows) {
-    const key = row[0];
-    const val = parseFloat(row[1]);
-    if (key && !isNaN(val)) {
-      weights[key] = val;
-    }
-  }
-  return weights;
+  return parseWeightRows(rows);
 }
 
 /**
- * Write updated weights back to a weights sheet.
- * @param {Object} weights - key/value pairs of weight name → numeric value
- * @param {string} [sheetName] - Override sheet (e.g. SHEETS.WEIGHTS_NBA)
+ * Backward-compat: return just the flat {key: value} map.
+ * @param {string} [sheetName]
  */
-async function writeWeights(weights, sheetName) {
-  const target = sheetName || WEIGHTS_SHEET;
-  const values = Object.entries(weights).map(([k, v]) => [k, v]);
-  await setValues(SPREADSHEET_ID, target, 'A1', values);
-  console.log('[weights] Wrote', values.length, 'weights to', target);
+async function readWeightsFlat(sheetName) {
+  const parsed = await readWeights(sheetName);
+  return parsed.flat;
 }
 
 /**
- * Optimize weights by iterating through historical graded bets and
- * finding the coefficient set that maximizes accuracy.
- * This is a simple grid search / hill-climb approach.
+ * Pick the right weights sheet for a league code.
+ */
+function sheetForLeague(league) {
+  const L = String(league || '').toUpperCase();
+  if (L === 'NBA') return SHEETS.WEIGHTS_NBA;
+  if (L === 'NFL') return SHEETS.WEIGHTS_NFL;
+  if (L === 'NHL') return SHEETS.WEIGHTS_NHL;
+  return SHEETS.WEIGHTS_MLB;
+}
+
+/**
+ * Write updated weights back to a weights sheet. Preserves the 3-col schema.
+ * @param {Array<[string,string,number]>} rows - [market, key, value] tuples
+ * @param {string} [sheetName]
+ */
+async function writeWeights(rows, sheetName) {
+  const target = sheetName || WEIGHTS_SHEET;
+  await setValues(SPREADSHEET_ID, target, 'A1',
+    [['market', 'key', 'weight'], ...rows]);
+  console.log('[weights] Wrote', rows.length, 'weights to', target);
+}
+
+/**
+ * Placeholder for future hill-climb optimization.
+ * The offline optimizer lives in scripts/offline-optimize.js and runs
+ * against an exported Performance Log rather than live Sheets.
  */
 async function optimizeWeights() {
   const current = await readWeights();
-  console.log('[weights] Current weights:', current);
-  // Placeholder: real optimization logic reads Graded Bets, runs predictions,
-  // compares outcomes, and adjusts coefficients via hill climbing or gradient descent.
-  // Return current weights unchanged until optimization logic is implemented.
+  console.log('[weights] Current params:', current.params);
   return current;
 }
 
-module.exports = { readWeights, writeWeights, optimizeWeights };
+module.exports = {
+  parseWeightRows,
+  readWeights,
+  readWeightsFlat,
+  sheetForLeague,
+  writeWeights,
+  optimizeWeights,
+};
