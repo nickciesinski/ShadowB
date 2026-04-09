@@ -29,11 +29,33 @@ function getTransporter() {
 async function sendDailyPicksEmail() {
   console.log('[emails] Sending daily picks email...');
 
-  const [mlbRows, nbaRows, propsRows] = await Promise.all([
+  const [mlbRows, nbaRows, propCombos, propsRaw] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.MLB_PREDICTIONS),
     getValues(SPREADSHEET_ID, SHEETS.NBA_PREDICTIONS),
+    getValues(SPREADSHEET_ID, SHEETS.PLATFORM_COMBOS),
     getValues(SPREADSHEET_ID, SHEETS.PLAYER_PROPS),
   ]);
+
+  // Prop_Combos columns:
+  // 0=Timestamp 1=League 2=Player 3=Market 4=Line 5=Direction 6=Book
+  // 7=BookOdds 8=BookProb 9=ConsensusProb 10=Edge 11=Game
+  const formatPropRows = () => {
+    if (propCombos && propCombos.length > 1) {
+      return propCombos.slice(1, 16).map(r => {
+        const edgeNum = parseFloat(r[10]);
+        const edgeLabel = Number.isFinite(edgeNum) ? `${edgeNum.toFixed(1)}%` : (r[10] || '');
+        const elite = Number.isFinite(edgeNum) && edgeNum >= 2 ? ' ⭐' : '';
+        return `<tr><td>${r[2] || ''}</td><td>${r[3] || ''} ${r[5] || ''} ${r[4] || ''}</td><td>${r[6] || ''} @ ${r[7] || ''}</td><td>${edgeLabel}${elite}</td></tr>`;
+      }).join('');
+    }
+    if (propsRaw && propsRaw.length > 1) {
+      // Fallback: raw Player_Props rows, no edge math
+      return propsRaw.slice(1, 16).map(r =>
+        `<tr><td>${r[3] || ''}</td><td>${r[7] || ''} ${r[4] || ''} ${r[6] || ''}</td><td>${r[2] || ''} @ ${r[5] || ''}</td><td>—</td></tr>`
+      ).join('');
+    }
+    return '<tr><td colspan="4"><em>No props today.</em></td></tr>';
+  };
 
   const formatPicks = (rows, sport) => {
     if (!rows || rows.length <= 1) return `<p><em>No ${sport} picks today.</em></p>`;
@@ -73,12 +95,11 @@ async function sendDailyPicksEmail() {
     ${formatPicks(nbaRows, 'NBA')}
   </table>
   
-  <h2>🎰 Player Props</h2>
+  <h2>🎰 Player Props — Top Picks</h2>
+  <p style="font-size:12px;color:#666;margin-top:-5px;">⭐ = elite edge (≥2% over consensus)</p>
   <table>
-    <tr><th>Player</th><th>Prop</th><th>Line</th><th>Confidence</th></tr>
-    ${propsRows && propsRows.length > 1 ? propsRows.slice(1).map(r =>
-      `<tr><td>${r[2] || ''}</td><td>${r[3] || ''}</td><td>${r[4] || ''}</td><td>${r[5] || ''}/10</td></tr>`
-    ).join('') : '<tr><td colspan="4"><em>No props today.</em></td></tr>'}
+    <tr><th>Player</th><th>Pick</th><th>Book / Odds</th><th>Edge</th></tr>
+    ${formatPropRows()}
   </table>
   
   <div class="footer">

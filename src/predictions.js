@@ -338,8 +338,7 @@ async function generateNHLPredictions() {
     return;
   }
 
-  const weights = {};
-  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+  const weights = parseWeightRows(weightRows).flat;
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
@@ -430,8 +429,7 @@ async function generateNFLPredictions() {
     return;
   }
 
-  const weights = {};
-  for (const [k, v] of weightRows.slice(1)) { weights[k] = parseFloat(v) || 0; }
+  const weights = parseWeightRows(weightRows).flat;
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
@@ -680,6 +678,96 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       '',               // R: unit_return (empty — to be graded)
       JSON.stringify(weights || {}), // S: weights_snapshot
     ]);
+  }
+
+  // COVERAGE BACKFILL: For every game in the odds data, ensure we have ML +
+  // spread + total picks. If GPT skipped a market (common for totals), synthesize
+  // a minimum-stake pick so every game is fully represented. Low confidence
+  // picks are intentionally NOT dropped — see feedback_pick_coverage_rule.
+  const minUnits = (weights && Number.isFinite(weights.param_min_units_to_bet))
+    ? weights.param_min_units_to_bet
+    : 0.01;
+  const seenByGame = {}; // gameKey -> Set of betTypes
+  for (const r of perfRows) {
+    const gk = `${r[3]}@${r[4]}`;
+    if (!seenByGame[gk]) seenByGame[gk] = new Set();
+    seenByGame[gk].add(r[6]);
+  }
+  const seenGameKeys = new Set();
+  const uniqueGames = [];
+  for (const info of Object.values(gameLookup)) {
+    if (!info || !info.gameKey || seenGameKeys.has(info.gameKey)) continue;
+    seenGameKeys.add(info.gameKey);
+    uniqueGames.push(info);
+  }
+  let backfilled = 0;
+  for (const info of uniqueGames) {
+    const gk = info.gameKey;
+    const have = seenByGame[gk] || new Set();
+
+    // ── Moneyline backfill: pick favorite (lowest price → highest implied prob)
+    if (!have.has('moneyline')) {
+      const homeEntry = oddsMap[`${info.home}|h2h`] || gameOddsMap[`${gk}|${info.home}|h2h`];
+      const awayEntry = oddsMap[`${info.away}|h2h`] || gameOddsMap[`${gk}|${info.away}|h2h`];
+      let pickTeam = '', pickOdds = -110;
+      if (homeEntry && awayEntry && homeEntry.price && awayEntry.price) {
+        if (homeEntry.price <= awayEntry.price) {
+          pickTeam = info.home; pickOdds = homeEntry.price;
+        } else {
+          pickTeam = info.away; pickOdds = awayEntry.price;
+        }
+      } else if (homeEntry && homeEntry.price) {
+        pickTeam = info.home; pickOdds = homeEntry.price;
+      } else if (awayEntry && awayEntry.price) {
+        pickTeam = info.away; pickOdds = awayEntry.price;
+      }
+      if (pickTeam) {
+        let units = minUnits;
+        if (pickOdds < -200) units = 0.01; // heavy-fav cap
+        perfRows.push([
+          dateStr, sport, 'moneyline', info.away, info.home, info.commence,
+          'moneyline', pickTeam, '', pickOdds, units, '1%', 0, 0, 0, 0, '', '',
+          JSON.stringify(weights || {}),
+        ]);
+        backfilled++;
+      }
+    }
+
+    // ── Spread backfill: pick home team at their listed spread
+    if (!have.has('spread')) {
+      const entry = oddsMap[`${info.home}|spreads`] || gameOddsMap[`${gk}|${info.home}|spreads`];
+      if (entry && entry.price) {
+        perfRows.push([
+          dateStr, sport, 'spread', info.away, info.home, info.commence,
+          'spread', info.home, entry.point || '', entry.price, minUnits, '1%', 0, 0, 0, 0, '', '',
+          JSON.stringify(weights || {}),
+        ]);
+        backfilled++;
+      }
+    }
+
+    // ── Total backfill: prefer Over at per-game listed total
+    if (!have.has('total')) {
+      let entry = gameOddsMap[`${gk}|Over|totals`] || oddsMap['Over|totals'];
+      let direction = 'Over';
+      if (!entry || !entry.price) {
+        entry = gameOddsMap[`${gk}|Under|totals`] || oddsMap['Under|totals'];
+        direction = 'Under';
+      }
+      if (entry && entry.price) {
+        const lineNum = parseFloat(entry.point) || '';
+        const pick = lineNum ? `${direction} ${lineNum}` : direction;
+        perfRows.push([
+          dateStr, sport, 'total', info.away, info.home, info.commence,
+          'total', pick, lineNum, entry.price, minUnits, '1%', 0, 0, 0, 0, '', '',
+          JSON.stringify(weights || {}),
+        ]);
+        backfilled++;
+      }
+    }
+  }
+  if (backfilled > 0) {
+    console.log(`[predictions] ${sport}: coverage backfill added ${backfilled} minimum-stake picks across ${uniqueGames.length} games`);
   }
 
   // Dedup totals: if GPT returned both Over and Under for the same game, keep higher confidence
@@ -985,15 +1073,15 @@ async function gradePerformanceLog() {
 
     // Write result + unit return back to the row
     // Column Q = index 16, Column R = index 17
-    // Columns AD = 29 (close_line), AE = 30 (close_odds), AF = 31 (clv_grade)
-    // (these match the headers seen in the Performance Log)
-    while (perfRows[i].length < 32) perfRows[i].push('');
+    // Columns AE = 30 (close_line), AF = 31 (close_odds), AG = 32 (clv_grade)
+    // Column 28 = Pulled Date, 29 = (blank). CLV triplet lives at 30/31/32.
+    while (perfRows[i].length < 33) perfRows[i].push('');
     perfRows[i][16] = betResult;
     perfRows[i][17] = parseFloat(unitReturn.toFixed(2));
     if (clvInfo) {
-      perfRows[i][29] = clvInfo.closeLine;
-      perfRows[i][30] = clvInfo.closeOdds;
-      perfRows[i][31] = gradeClvNumeric(odds, clvInfo.closeOdds);
+      perfRows[i][30] = clvInfo.closeLine;
+      perfRows[i][31] = clvInfo.closeOdds;
+      perfRows[i][32] = gradeClvNumeric(odds, clvInfo.closeOdds);
     }
 
     graded++;

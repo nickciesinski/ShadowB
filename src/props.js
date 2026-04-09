@@ -6,6 +6,17 @@
  */
 const { getValues, setValues, clearSheet } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
+const { logApiCall } = require('./monitoring');
+
+const ODDS_API_COST_PER_CALL = 0.001;
+
+// Minimum number of prop edges to surface every day, regardless of EV threshold.
+// Satisfies the "top picks of the day even if not high EV" requirement — parallel
+// to the pick-coverage rule for games.
+const PROP_TOP_PICKS_FLOOR = 30;
+// Edges above this threshold are considered "elite" and always included
+// regardless of the top-N floor.
+const PROP_ELITE_EDGE_PCT = 2.0;
 
 const PROPS_SHEET   = SHEETS.PLAYER_PROPS;    // 'Player_Props'
 const COMBOS_SHEET  = SHEETS.PLATFORM_COMBOS;  // 'Prop_Combos'
@@ -51,38 +62,58 @@ const PLATFORM_MARKETS = {
 };
 
 /**
- * Fetch player prop odds from The Odds API for a given sport and market.
+ * List events for a given sport. The Odds API requires this as step 1
+ * of the player-props flow; /events?markets=X does NOT return bookmakers,
+ * you have to fetch /events/{eventId}/odds per event.
  */
-async function fetchPropOdds(sport, market) {
-  const url = `https://api.the-odds-api.com/v4/sports/${sport}/events?apiKey=${ODDS_API_KEY}&regions=us&markets=${market}&oddsFormat=american`;
+async function listSportEvents(sport) {
+  const url = `https://api.the-odds-api.com/v4/sports/${sport}/events?apiKey=${ODDS_API_KEY}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
-  if (!res.ok) throw new Error(`Odds API error ${res.status} for ${market}`);
+  await logApiCall({ endpoint: `odds-api:/sports/${sport}/events`, costEstimate: ODDS_API_COST_PER_CALL });
+  if (!res.ok) throw new Error(`Odds API events ${res.status} for ${sport}`);
   return res.json();
 }
 
 /**
- * Parse raw event data into flat prop rows.
+ * Fetch player-prop odds for a single event across a list of markets.
+ * Returns the full event response (with .bookmakers populated) or null.
  */
-function parseProps(events, market) {
+async function fetchEventProps(sport, eventId, markets) {
+  const marketParam = Array.isArray(markets) ? markets.join(',') : markets;
+  const url = `https://api.the-odds-api.com/v4/sports/${sport}/events/${eventId}/odds`
+    + `?apiKey=${ODDS_API_KEY}&regions=us&markets=${marketParam}&oddsFormat=american`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  await logApiCall({ endpoint: `odds-api:/events/${eventId}/odds`, costEstimate: ODDS_API_COST_PER_CALL });
+  if (!res.ok) {
+    console.warn(`[props] Event ${eventId} odds ${res.status} (markets=${marketParam})`);
+    return null;
+  }
+  return res.json();
+}
+
+/**
+ * Parse a single event's odds response into flat prop rows.
+ * If marketFilter is null, accepts all prop markets present in the response.
+ */
+function parseProps(event, marketFilter = null) {
   const rows = [];
-  for (const event of events) {
-    const gameLabel = `${event.away_team} @ ${event.home_team}`;
-    const commence = event.commence_time;
-    for (const bm of (event.bookmakers || [])) {
-      for (const mkt of (bm.markets || [])) {
-        if (mkt.key !== market) continue;
-        for (const outcome of mkt.outcomes) {
-          rows.push([
-            gameLabel,
-            commence,
-            bm.title,
-            outcome.name,         // Player name
-            outcome.description || '', // Over/Under
-            outcome.price,
-            outcome.point || '',
-            market,
-          ]);
-        }
+  if (!event) return rows;
+  const gameLabel = `${event.away_team} @ ${event.home_team}`;
+  const commence = event.commence_time;
+  for (const bm of (event.bookmakers || [])) {
+    for (const mkt of (bm.markets || [])) {
+      if (marketFilter && mkt.key !== marketFilter) continue;
+      for (const outcome of (mkt.outcomes || [])) {
+        rows.push([
+          gameLabel,
+          commence,
+          bm.title,
+          outcome.description || outcome.name || '', // Player name (in per-event odds, "description" holds the player)
+          outcome.name || '',                        // Over/Under
+          outcome.price,
+          outcome.point || '',
+          mkt.key,                                   // actual market key from response
+        ]);
       }
     }
   }
@@ -146,27 +177,48 @@ function buildPropConsensus(propRows) {
  */
 async function updatePlayerProps() {
   let allRows = [['Game', 'Time', 'Book', 'Player', 'Description', 'Price', 'Line', 'Market', 'League']];
+  let totalEvents = 0;
+  let totalRows = 0;
 
   for (const [league, sportConfig] of Object.entries(SPORTS)) {
     const sportKey = sportConfig.key;
     const markets = PROP_MARKETS[sportKey] || [];
-    for (const market of markets) {
+    if (markets.length === 0) continue;
+
+    let events = [];
+    try {
+      events = await listSportEvents(sportKey);
+    } catch (err) {
+      console.warn(`[props] ${league}: listSportEvents failed:`, err.message);
+      continue;
+    }
+    if (!Array.isArray(events) || events.length === 0) {
+      console.log(`[props] ${league}: no events today`);
+      continue;
+    }
+    totalEvents += events.length;
+
+    // Fetch all markets for each event in one request (comma-separated markets param).
+    // Per Odds API docs each market in the list counts toward usage, so this is
+    // equivalent in cost to looping markets individually but way fewer round trips.
+    for (const ev of events) {
       try {
-        const events = await fetchPropOdds(sportKey, market);
-        const rows = parseProps(events, market);
-        // Add league to each row
+        const eventData = await fetchEventProps(sportKey, ev.id, markets);
+        if (!eventData) continue;
+        const rows = parseProps(eventData, null);
         for (const row of rows) row.push(league);
         allRows = allRows.concat(rows);
-        console.log(`[props] ${league}/${market}: ${rows.length} rows`);
+        totalRows += rows.length;
       } catch (err) {
-        console.warn(`[props] Failed ${league}/${market}:`, err.message);
+        console.warn(`[props] ${league}/${ev.id}: fetch failed:`, err.message);
       }
     }
+    console.log(`[props] ${league}: ${events.length} events → ${totalRows} prop rows so far`);
   }
 
   await clearSheet(SPREADSHEET_ID, PROPS_SHEET);
   await setValues(SPREADSHEET_ID, PROPS_SHEET, 'A1', allRows);
-  console.log(`[props] Wrote ${allRows.length - 1} prop rows`);
+  console.log(`[props] Wrote ${allRows.length - 1} prop rows across ${totalEvents} events`);
   return allRows;
 }
 
@@ -246,70 +298,85 @@ async function generatePropEdges() {
     // Platform market names
     const platformNames = PLATFORM_MARKETS[g.market] || {};
 
-    // For each book, compute edge on both sides
+    // For each book, compute edge on both sides. We keep ALL edges (including
+    // negative) so we can always surface the top N picks of the day even when
+    // nothing clears the elite threshold. Parallel to the pick-coverage rule.
     for (const [bookName, prices] of Object.entries(g.books)) {
       // Over edge
       if (prices.overPrice) {
         const bookProb = impliedProb(prices.overPrice);
         const edge = consensusOverProb - bookProb; // positive = book prices Over too high (good for bettor)
-        if (edge > 0.02) { // Only show 2%+ edges
-          allEdges.push({
-            player: g.player,
-            market: g.market,
-            marketDisplay: (g.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' '),
-            line: g.line,
-            direction: 'Over',
-            book: bookName,
-            bookOdds: prices.overPrice,
-            consensusProb: (consensusOverProb * 100).toFixed(1),
-            bookProb: (bookProb * 100).toFixed(1),
-            edge: (edge * 100).toFixed(1),
-            game: g.game,
-            league: g.league,
-            prizepicks: platformNames.prizepicks || '',
-            underdog: platformNames.underdog || '',
-            betr: platformNames.betr || '',
-            sleepr: platformNames.sleepr || '',
-          });
-        }
+        allEdges.push({
+          player: g.player,
+          market: g.market,
+          marketDisplay: (g.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' '),
+          line: g.line,
+          direction: 'Over',
+          book: bookName,
+          bookOdds: prices.overPrice,
+          consensusProb: (consensusOverProb * 100).toFixed(1),
+          bookProb: (bookProb * 100).toFixed(1),
+          edge: (edge * 100).toFixed(1),
+          edgeNum: edge * 100,
+          game: g.game,
+          league: g.league,
+          prizepicks: platformNames.prizepicks || '',
+          underdog: platformNames.underdog || '',
+          betr: platformNames.betr || '',
+          sleepr: platformNames.sleepr || '',
+        });
       }
 
       // Under edge
       if (prices.underPrice) {
         const bookProb = impliedProb(prices.underPrice);
         const edge = consensusUnderProb - bookProb;
-        if (edge > 0.02) {
-          allEdges.push({
-            player: g.player,
-            market: g.market,
-            marketDisplay: (g.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' '),
-            line: g.line,
-            direction: 'Under',
-            book: bookName,
-            bookOdds: prices.underPrice,
-            consensusProb: (consensusUnderProb * 100).toFixed(1),
-            bookProb: (bookProb * 100).toFixed(1),
-            edge: (edge * 100).toFixed(1),
-            game: g.game,
-            league: g.league,
-            prizepicks: platformNames.prizepicks || '',
-            underdog: platformNames.underdog || '',
-            betr: platformNames.betr || '',
-            sleepr: platformNames.sleepr || '',
-          });
-        }
+        allEdges.push({
+          player: g.player,
+          market: g.market,
+          marketDisplay: (g.market || '').replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' '),
+          line: g.line,
+          direction: 'Under',
+          book: bookName,
+          bookOdds: prices.underPrice,
+          consensusProb: (consensusUnderProb * 100).toFixed(1),
+          bookProb: (bookProb * 100).toFixed(1),
+          edge: (edge * 100).toFixed(1),
+          edgeNum: edge * 100,
+          game: g.game,
+          league: g.league,
+          prizepicks: platformNames.prizepicks || '',
+          underdog: platformNames.underdog || '',
+          betr: platformNames.betr || '',
+          sleepr: platformNames.sleepr || '',
+        });
       }
     }
   }
 
   // Sort by edge descending (biggest edges first)
-  allEdges.sort((a, b) => parseFloat(b.edge) - parseFloat(a.edge));
-  console.log(`[props] Found ${allEdges.length} prop edges (2%+ threshold)`);
+  allEdges.sort((a, b) => b.edgeNum - a.edgeNum);
+
+  // Always surface the top N picks of the day, plus every elite (2%+) edge.
+  // This guarantees the email has content even on days with no +EV edges.
+  const elite = allEdges.filter(e => e.edgeNum >= PROP_ELITE_EDGE_PCT);
+  const topN = allEdges.slice(0, PROP_TOP_PICKS_FLOOR);
+  const combined = [];
+  const seen = new Set();
+  for (const e of [...elite, ...topN]) {
+    const k = `${e.player}|${e.market}|${e.line}|${e.direction}|${e.book}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    combined.push(e);
+  }
+  combined.sort((a, b) => b.edgeNum - a.edgeNum);
+
+  console.log(`[props] Found ${allEdges.length} total edges, ${elite.length} elite (≥${PROP_ELITE_EDGE_PCT}%), writing ${combined.length} rows`);
 
   // Write to Prop_Combos sheet
   const ts = new Date().toISOString();
   const outputRows = [['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction', 'Book', 'BookOdds', 'BookProb', 'ConsensusProb', 'Edge', 'Game', 'PrizePicks', 'Underdog', 'Betr', 'Sleepr']];
-  for (const e of allEdges) {
+  for (const e of combined) {
     outputRows.push([
       ts,
       e.league,
@@ -332,7 +399,7 @@ async function generatePropEdges() {
 
   await clearSheet(SPREADSHEET_ID, COMBOS_SHEET);
   await setValues(SPREADSHEET_ID, COMBOS_SHEET, 'A1', outputRows);
-  console.log(`[props] Wrote ${allEdges.length} prop edges to ${COMBOS_SHEET}`);
+  console.log(`[props] Wrote ${combined.length} prop edges to ${COMBOS_SHEET}`);
 }
 
 /**
