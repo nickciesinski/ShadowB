@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
 const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
-const PLATFORMS = ['All', 'PrizePicks', 'Underdog', 'Betr', 'Sleepr'];
+// PLATFORMS is built dynamically from props data (see bookPills in App)
 const LEAGUE_COLORS = { NBA: '#C9082A', NHL: '#6B7280', MLB: '#2563EB', NFL: '#1D4ED8' };
 const LEAGUE_BG = { NBA: 'rgba(201,8,42,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(37,99,235,0.12)', NFL: 'rgba(29,78,216,0.12)' };
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'All Time'];
@@ -385,33 +385,15 @@ function PropsTab({ props, sf, pf }) {
     return true;
   });
 
-  // Filter by platform — show only edges from books relevant to that platform
-  // When a platform is selected, show props that have a market name for that platform
+  // Filter by sportsbook
   if (pf !== 'All') {
-    const pfKey = pf.toLowerCase();
-    filtered = filtered.filter(p => {
-      if (pfKey === 'prizepicks') return !!p.prizepicks;
-      if (pfKey === 'underdog') return !!p.underdog;
-      if (pfKey === 'betr') return !!p.betr;
-      if (pfKey === 'sleepr') return !!p.sleepr;
-      return true;
-    });
+    filtered = filtered.filter(p => p.book === pf);
   }
 
   // Sort by edge descending (already sorted from backend, but enforce here)
   filtered.sort((a, b) => b.edge - a.edge);
 
   if (!filtered.length) return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>No prop edges found</div>;
-
-  // Get platform-specific market name
-  const getPlatformMarket = (p) => {
-    const pfKey = (pf || '').toLowerCase();
-    if (pfKey === 'prizepicks') return p.prizepicks;
-    if (pfKey === 'underdog') return p.underdog;
-    if (pfKey === 'betr') return p.betr;
-    if (pfKey === 'sleepr') return p.sleepr;
-    return p.market; // "All" shows generic market name
-  };
 
   const isOver = (d) => (d || '').toLowerCase() === 'over';
 
@@ -433,7 +415,7 @@ function PropsTab({ props, sf, pf }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
                   {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
-                  <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{getPlatformMarket(p) || p.market}</span>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#F1F5F9', marginBottom: 1 }}>{p.player}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
@@ -665,7 +647,10 @@ export default function App() {
         <Pills items={sportPills} active={sf} onChange={setSf} color={TAB_ACCENTS[tab].accent} />
         {tab === 'picks' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'picks' && <Pills items={CONFIDENCE_FILTERS} active={cf} onChange={setCf} color={TAB_ACCENTS[tab].accent} />}
-        {tab === 'props' && <Pills items={PLATFORMS} active={pf} onChange={setPf} color={TAB_ACCENTS[tab].accent} />}
+        {tab === 'props' && (() => {
+          const books = data?.props ? ['All', ...new Set(data.props.map(p => p.book).filter(Boolean))] : ['All'];
+          return <Pills items={books} active={pf} onChange={setPf} color={TAB_ACCENTS[tab].accent} />;
+        })()}
         {tab === 'scores' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'results' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'results' && <Pills items={DATE_FILTERS} active={dateFilter} onChange={setDateFilter} color={TAB_ACCENTS[tab].accent} />}
