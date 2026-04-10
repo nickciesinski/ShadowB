@@ -655,6 +655,12 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       units = 0.01;
     }
 
+    // Absolute floor: no bet should ever have 0 units. If any calculation path
+    // (modifier, rounding, heavy-fav cap, etc.) produces 0, force to 0.01.
+    if (!Number.isFinite(units) || units <= 0) {
+      units = 0.01;
+    }
+
     console.log(`[predictions] Perf row: date=${dateStr} sport=${sport} betType=${betType} pick=${pick} odds=${odds} line=${line} units=${units} away=${awayTeam} home=${homeTeam}`);
 
     perfRows.push([
@@ -722,7 +728,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         pickTeam = info.away; pickOdds = awayEntry.price;
       }
       if (pickTeam) {
-        let units = minUnits;
+        let units = Math.max(minUnits, 0.01);
         if (pickOdds < -200) units = 0.01; // heavy-fav cap
         perfRows.push([
           dateStr, sport, 'moneyline', info.away, info.home, info.commence,
@@ -735,11 +741,18 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
 
     // ── Spread backfill: pick home team at their listed spread
     if (!have.has('spread')) {
-      const entry = oddsMap[`${info.home}|spreads`] || gameOddsMap[`${gk}|${info.home}|spreads`];
+      let entry = oddsMap[`${info.home}|spreads`] || gameOddsMap[`${gk}|${info.home}|spreads`];
+      // Fallback: if no spreads odds (common for NHL), use sport default puckline/spread at -110
+      const DEFAULT_SPREADS = { NHL: -1.5, NBA: -1.5, MLB: -1.5, NFL: -2.5 };
+      if (!entry || !entry.price) {
+        const defaultSpread = DEFAULT_SPREADS[sport];
+        if (defaultSpread) entry = { price: -110, point: defaultSpread };
+      }
       if (entry && entry.price) {
+        const spreadUnits = Math.max(minUnits, 0.01);
         perfRows.push([
           dateStr, sport, 'spread', info.away, info.home, info.commence,
-          'spread', info.home, entry.point || '', entry.price, minUnits, '1%', 0, 0, 0, 0, '', '',
+          'spread', info.home, entry.point || '', entry.price, spreadUnits, '1%', 0, 0, 0, 0, '', '',
           JSON.stringify(weights || {}),
         ]);
         backfilled++;
@@ -747,6 +760,8 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     }
 
     // ── Total backfill: prefer Over at per-game listed total
+    // If no totals odds exist (common for NHL where API only returns h2h),
+    // fall back to sport-specific default total lines.
     if (!have.has('total')) {
       let entry = gameOddsMap[`${gk}|Over|totals`] || oddsMap['Over|totals'];
       let direction = 'Over';
@@ -754,12 +769,22 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         entry = gameOddsMap[`${gk}|Under|totals`] || oddsMap['Under|totals'];
         direction = 'Under';
       }
+      // Fallback: if no totals odds at all, use sport default line at -110
+      const DEFAULT_TOTALS = { NHL: 6, NBA: 220, MLB: 8.5, NFL: 44.5 };
+      if (!entry || !entry.price) {
+        const defaultLine = DEFAULT_TOTALS[sport];
+        if (defaultLine) {
+          entry = { price: -110, point: defaultLine };
+          direction = 'Over';
+        }
+      }
       if (entry && entry.price) {
         const lineNum = parseFloat(entry.point) || '';
         const pick = lineNum ? `${direction} ${lineNum}` : direction;
+        const totalUnits = Math.max(minUnits, 0.01);
         perfRows.push([
           dateStr, sport, 'total', info.away, info.home, info.commence,
-          'total', pick, lineNum, entry.price, minUnits, '1%', 0, 0, 0, 0, '', '',
+          'total', pick, lineNum, entry.price, totalUnits, '1%', 0, 0, 0, 0, '', '',
           JSON.stringify(weights || {}),
         ]);
         backfilled++;
@@ -770,28 +795,34 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     console.log(`[predictions] ${sport}: coverage backfill added ${backfilled} minimum-stake picks across ${uniqueGames.length} games`);
   }
 
-  // Dedup totals: if GPT returned both Over and Under for the same game, keep higher confidence
-  const seenTotals = {};  // gameKey -> index in perfRows
+  // Dedup ALL markets: per game+market, keep the pick with highest confidence.
+  // This catches duplicate totals (Over/Under on same game) AND duplicate
+  // moneyline/spread picks (e.g. from trigger4+trigger5 overlap or GPT returning
+  // the same game twice).
+  const seenPicks = {};  // "gameKey|betType" -> index in perfRows
   const toRemove = new Set();
   for (let i = 0; i < perfRows.length; i++) {
     const row = perfRows[i];
     const betType = row[6]; // G: bet_type
-    if (betType !== 'total') continue;
     const gameKey = `${row[3]}@${row[4]}`; // D: away @ E: home
+    const dedupKey = `${gameKey}|${betType}`;
     const conf = parseFloat(String(row[11]).replace('%', '')) || 0; // L: confidence
-    if (seenTotals[gameKey] !== undefined) {
-      const prevIdx = seenTotals[gameKey];
+    const units = parseFloat(row[10]) || 0; // K: units (tiebreaker)
+    if (seenPicks[dedupKey] !== undefined) {
+      const prevIdx = seenPicks[dedupKey];
       const prevConf = parseFloat(String(perfRows[prevIdx][11]).replace('%', '')) || 0;
-      if (conf > prevConf) {
+      const prevUnits = parseFloat(perfRows[prevIdx][10]) || 0;
+      // Keep higher confidence; if tied, keep higher units (GPT-generated over backfill)
+      if (conf > prevConf || (conf === prevConf && units > prevUnits)) {
         toRemove.add(prevIdx);
-        seenTotals[gameKey] = i;
-        console.log(`[predictions] Dedup: removed duplicate total for ${gameKey} (kept conf ${conf}% over ${prevConf}%)`);
+        seenPicks[dedupKey] = i;
+        console.log(`[predictions] Dedup: removed duplicate ${betType} for ${gameKey} (kept conf ${conf}% over ${prevConf}%)`);
       } else {
         toRemove.add(i);
-        console.log(`[predictions] Dedup: removed duplicate total for ${gameKey} (kept conf ${prevConf}% over ${conf}%)`);
+        console.log(`[predictions] Dedup: removed duplicate ${betType} for ${gameKey} (kept conf ${prevConf}% over ${conf}%)`);
       }
     } else {
-      seenTotals[gameKey] = i;
+      seenPicks[dedupKey] = i;
     }
   }
   const dedupedPerfRows = perfRows.filter((_, i) => !toRemove.has(i));
@@ -801,11 +832,37 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     const existing = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
     const header = existing.length > 0 ? [existing[0]] : [];
     const oldRows = existing.slice(1);
-    const newData = [...header, ...dedupedPerfRows, ...oldRows];
-    // Clear first to avoid stale row artifacts, then write the full dataset
-    await clearSheet(SPREADSHEET_ID, SHEETS.PERFORMANCE);
-    await setValues(SPREADSHEET_ID, SHEETS.PERFORMANCE, 'A1', newData);
-    console.log(`[predictions] Logged ${dedupedPerfRows.length} ${sport} picks to top of Performance Log (${perfRows.length - dedupedPerfRows.length} duplicate totals removed)`);
+
+    // Cross-trigger dedup: skip new rows that already exist in the Performance Log
+    // (prevents duplicates if trigger4 and trigger5 both run, or if a trigger retries)
+    const existingKeys = new Set();
+    for (const row of oldRows) {
+      const eDate = String(row[0] || '').slice(0, 10);
+      const eSport = row[1] || '';
+      const eAway = row[3] || '';
+      const eHome = row[4] || '';
+      const eBetType = row[6] || '';
+      if (eSport === sport) existingKeys.add(`${eDate}|${eAway}@${eHome}|${eBetType}`);
+    }
+    const finalRows = dedupedPerfRows.filter(row => {
+      const rDate = String(row[0] || '').slice(0, 10);
+      const key = `${rDate}|${row[3]}@${row[4]}|${row[6]}`;
+      return !existingKeys.has(key);
+    });
+    const crossDupes = dedupedPerfRows.length - finalRows.length;
+    if (crossDupes > 0) {
+      console.log(`[predictions] ${sport}: skipped ${crossDupes} picks already in Performance Log`);
+    }
+
+    if (finalRows.length > 0) {
+      const newData = [...header, ...finalRows, ...oldRows];
+      // Clear first to avoid stale row artifacts, then write the full dataset
+      await clearSheet(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+      await setValues(SPREADSHEET_ID, SHEETS.PERFORMANCE, 'A1', newData);
+      console.log(`[predictions] Logged ${finalRows.length} ${sport} picks to top of Performance Log (${perfRows.length - finalRows.length} duplicates removed)`);
+    } else {
+      console.log(`[predictions] ${sport}: all picks already exist in Performance Log, nothing new to write`);
+    }
   }
 }
 

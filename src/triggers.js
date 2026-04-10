@@ -41,10 +41,11 @@ const TRIGGERS = {
     await generateNFLPredictions();
   }),
 
-  // Trigger 5: 5:30 AM ET → NHL + NFL predictions (if trigger 4 is slow)
+  // Trigger 5: DISABLED — trigger4 already runs all 4 sports sequentially.
+  // Running NHL again here caused 49 duplicate picks in the Performance Log.
+  // Kept as no-op so the workflow dispatch doesn't error.
   trigger5: withMonitoring('trigger5', async () => {
-    await generateNHLPredictions();
-    await generateNFLPredictions();
+    console.log('[trigger5] No-op — all sports handled by trigger4. See commit note.');
   }),
 
   // Trigger 6: 6:00 AM ET → Player props
