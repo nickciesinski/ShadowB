@@ -18,6 +18,15 @@ const PROP_TOP_PICKS_FLOOR = 30;
 // regardless of the top-N floor.
 const PROP_ELITE_EDGE_PCT = 2.0;
 
+// Only surface edges from books Nick actually uses. Consensus is still
+// calculated from ALL books (more data = more accurate), but Prop_Combos
+// output is filtered to actionable books only.
+const PREFERRED_BOOKS = [
+  'Bovada', 'BetOnline.ag', 'MyBookie.ag',
+  // DFS platforms aren't in the Odds API, but MyBookie lines often
+  // align with PrizePicks/Underdog/Betr/Sleepr prop lines.
+];
+
 const PROPS_SHEET   = SHEETS.PLAYER_PROPS;    // 'Player_Props'
 const COMBOS_SHEET  = SHEETS.PLATFORM_COMBOS;  // 'Prop_Combos'
 
@@ -357,10 +366,16 @@ async function generatePropEdges() {
   // Sort by edge descending (biggest edges first)
   allEdges.sort((a, b) => b.edgeNum - a.edgeNum);
 
+  // Filter to preferred books only — consensus uses all books, but we only
+  // surface actionable edges from Bovada/BetOnline/MyBookie.
+  const prefSet = new Set(PREFERRED_BOOKS.map(b => b.toLowerCase()));
+  const actionableEdges = allEdges.filter(e => prefSet.has((e.book || '').toLowerCase()));
+  console.log(`[props] ${allEdges.length} total edges, ${actionableEdges.length} from preferred books (${PREFERRED_BOOKS.join(', ')})`);
+
   // Always surface the top N picks of the day, plus every elite (2%+) edge.
   // This guarantees the email has content even on days with no +EV edges.
-  const elite = allEdges.filter(e => e.edgeNum >= PROP_ELITE_EDGE_PCT);
-  const topN = allEdges.slice(0, PROP_TOP_PICKS_FLOOR);
+  const elite = actionableEdges.filter(e => e.edgeNum >= PROP_ELITE_EDGE_PCT);
+  const topN = actionableEdges.slice(0, PROP_TOP_PICKS_FLOOR);
   const combined = [];
   const seen = new Set();
   for (const e of [...elite, ...topN]) {
@@ -371,7 +386,7 @@ async function generatePropEdges() {
   }
   combined.sort((a, b) => b.edgeNum - a.edgeNum);
 
-  console.log(`[props] Found ${allEdges.length} total edges, ${elite.length} elite (≥${PROP_ELITE_EDGE_PCT}%), writing ${combined.length} rows`);
+  console.log(`[props] ${elite.length} elite (≥${PROP_ELITE_EDGE_PCT}%), writing ${combined.length} rows`);
 
   // Write to Prop_Combos sheet
   const ts = new Date().toISOString();
