@@ -252,7 +252,7 @@ function PicksTab({ picks, sf, bf, cf, isBet, toggleBet }) {
                 borderBottom: j < g.picks.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                 opacity: dimmed && !selected ? 0.35 : 1,
                 background: selected ? 'rgba(139,92,246,0.12)' : 'transparent',
-                borderLeft: selected ? '3px solid #8B5CF6' : '3px solid transparent',
+                borderLeft: selected ? '5px solid #A78BFA' : '3px solid transparent',
                 transition: 'background 0.15s, border-left 0.15s',
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -326,7 +326,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
       else if (isPost) { statusText = 'Final'; statusColor = '#64748B'; }
 
       return (
-        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: `2px solid ${tBorder}`, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: `${hasBets ? '3px' : '2px'} solid ${tBorder}`, boxShadow: hasBets ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)' }}>
           {isClose && <div style={{ background: 'rgba(245,158,11,0.15)', color: '#FCD34D', fontSize: 11, fontWeight: 700, padding: '4px 12px', textAlign: 'center' }}>CLOSE GAME — Tune in!</div>}
           <div onClick={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))} style={{ padding: '10px 12px', cursor: 'pointer', background: tBg }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -378,7 +378,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
                 display: 'flex', justifyContent: 'space-between', padding: '7px 12px',
                 background: rowBg,
                 borderTop: '1px solid rgba(255,255,255,0.06)',
-                borderLeft: selected ? '3px solid #8B5CF6' : '3px solid transparent',
+                borderLeft: selected ? '5px solid #A78BFA' : '3px solid transparent',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ fontSize: 13 }}>{icon}</span>
