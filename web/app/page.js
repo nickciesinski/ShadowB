@@ -603,12 +603,33 @@ export default function App() {
   const [cf, setCf] = useState('All Bets');
   const [pf, setPf] = useState('All');
   const [dateFilter, setDateFilter] = useState('Last 7 Days');
-  const [myBets, setMyBets] = useState(new Set());
+  // My Bets — persisted to localStorage, auto-resets daily
+  const [myBets, setMyBets] = useState(() => {
+    try {
+      const saved = typeof window !== 'undefined' && localStorage.getItem('shadowbets_mybets');
+      if (saved) {
+        const { date, bets } = JSON.parse(saved);
+        const today = new Date().toLocaleDateString();
+        if (date === today) return new Set(bets);
+      }
+    } catch (e) {}
+    return new Set();
+  });
   const [data, setData] = useState(null);
   const [liveGames, setLiveGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  // Persist myBets to localStorage on change
+  useEffect(() => {
+    try {
+      localStorage.setItem('shadowbets_mybets', JSON.stringify({
+        date: new Date().toLocaleDateString(),
+        bets: [...myBets],
+      }));
+    } catch (e) {}
+  }, [myBets]);
 
   // Pick key for "my bets" selection
   const pickKey = (p) => `${p.league}|${p.away}|${p.home}|${(p.betType||p.market||'').toLowerCase()}|${p.pick}|${p.line}`;
@@ -623,12 +644,21 @@ export default function App() {
   const isBet = (p) => myBets.has(pickKey(p));
 
   // Fetch sheet data
-  useEffect(() => {
+  const fetchData = useCallback(() => {
     fetch('/api/data')
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); setLastUpdated(new Date()); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Re-fetch data when app becomes visible (switching back to tab/app)
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchData(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchData]);
 
   // Fetch live scores every 30s
   const refreshScores = useCallback(async () => {

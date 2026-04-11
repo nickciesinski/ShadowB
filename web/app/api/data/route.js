@@ -1,6 +1,10 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 
+// Force dynamic — never cache this route
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 async function getSheetsClient() {
@@ -121,6 +125,8 @@ export async function GET() {
       props,
       todayGames,
       lastUpdated: new Date().toISOString(),
+    }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
     });
   } catch (err) {
     console.error('API error:', err);
