@@ -438,13 +438,18 @@ function PropsTab({ props, sf, pf }) {
                   {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
                 </div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#F1F5F9', marginBottom: 1 }}>{p.player}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: dirColor }}>{p.direction}</span>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: '#F1F5F9' }}>{p.line}</span>
-                  <span style={{ fontSize: 11, color: '#64748B' }}>({fmt(p.bookOdds)})</span>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#F1F5F9', marginBottom: 3 }}>{p.player}</div>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 4,
+                  background: isOver(p.direction) ? 'rgba(16,185,129,0.12)' : 'rgba(248,113,113,0.12)',
+                  border: `1px solid ${isOver(p.direction) ? 'rgba(16,185,129,0.25)' : 'rgba(248,113,113,0.25)'}`,
+                  padding: '3px 10px', borderRadius: 6,
+                }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: dirColor, textTransform: 'uppercase' }}>{p.direction}</span>
+                  <span style={{ fontSize: 15, fontWeight: 900, color: '#F1F5F9' }}>{p.line}</span>
+                  <span style={{ fontSize: 11, color: '#94A3B8' }}>{fmt(p.bookOdds)}</span>
                 </div>
-                <div style={{ fontSize: 10, color: '#64748B' }}>{p.game}</div>
+                <div style={{ fontSize: 10, color: '#94A3B8' }}>{p.game}</div>
                 <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>via {p.book} · consensus {p.consensusProb}% vs book {p.bookProb}%</div>
               </div>
               <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
