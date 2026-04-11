@@ -746,17 +746,17 @@ export default function App() {
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
         width: '100%', maxWidth: 480, background: '#0B0F1A', borderTop: '1px solid rgba(255,255,255,0.08)',
         display: 'flex', justifyContent: 'space-around',
-        padding: '5px 0 env(safe-area-inset-bottom, 6px)', zIndex: 30,
+        padding: '8px 0 env(safe-area-inset-bottom, 10px)', zIndex: 30,
       }}>
         {tabs.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: 'none', border: 'none', cursor: 'pointer',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-            padding: '3px 16px', color: tab === t.id ? TAB_ACCENTS[t.id].accent : '#475569',
-            position: 'relative',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            padding: '6px 20px', color: tab === t.id ? TAB_ACCENTS[t.id].accent : '#475569',
+            position: 'relative', minHeight: 44,
           }}>
-            <span style={{ fontSize: 17 }}>{t.icon}</span>
-            <span style={{ fontSize: 10, fontWeight: 700, borderBottom: tab === t.id ? `2px solid ${TAB_ACCENTS[t.id].accent}` : '2px solid transparent', paddingBottom: 1 }}>{t.label}</span>
+            <span style={{ fontSize: 20 }}>{t.icon}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, borderBottom: tab === t.id ? `2px solid ${TAB_ACCENTS[t.id].accent}` : '2px solid transparent', paddingBottom: 1 }}>{t.label}</span>
             {tab === t.id && <span style={{ position: 'absolute', bottom: -4, width: '90%', height: 8, borderRadius: 4, boxShadow: `0 -2px 10px ${TAB_ACCENTS[t.id].glow}` }} />}
             {t.id === 'scores' && closeCount > 0 && (
               <span style={{ position: 'absolute', top: 0, right: 8, background: '#F59E0B', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{closeCount}</span>
