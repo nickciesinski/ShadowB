@@ -399,7 +399,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
-function PropsTab({ props, sf, pf }) {
+function PropsTab({ props, sf, pf, isPropBet, toggleProp }) {
   // Filter by sport
   let filtered = props.filter(p => {
     if (sf !== 'All' && sf !== 'Live' && p.league !== sf) return false;
@@ -429,12 +429,20 @@ function PropsTab({ props, sf, pf }) {
         const edgeColor = edgeNum >= 8 ? '#34D399' : edgeNum >= 5 ? '#FBBF24' : '#64748B';
         const edgeBg = edgeNum >= 8 ? 'rgba(16,185,129,0.15)' : edgeNum >= 5 ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.08)';
         const dirColor = isOver(p.direction) ? '#34D399' : '#F87171';
+        const selected = isPropBet(p);
 
         return (
-          <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 6, padding: '10px 12px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', borderLeft: `3px solid ${edgeColor}` }}>
+          <div key={i} onClick={() => toggleProp(p)} style={{
+            background: selected ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 6, padding: '10px 12px',
+            border: selected ? '2px solid rgba(139,92,246,0.4)' : '1px solid rgba(255,255,255,0.08)',
+            boxShadow: selected ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
+            borderLeft: selected ? '5px solid #A78BFA' : `3px solid ${edgeColor}`,
+            cursor: 'pointer', transition: 'background 0.15s, border-left 0.15s',
+          }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                  {selected && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                   {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
                 </div>
@@ -465,7 +473,7 @@ function PropsTab({ props, sf, pf }) {
 }
 
 // ── Results Tab ─────────────────────────────────────────────────────
-function ResultsTab({ results, sf, bf, dateFilter }) {
+function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults }) {
   // Date filtering
   const now = new Date();
   const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
@@ -481,6 +489,7 @@ function ResultsTab({ results, sf, bf, dateFilter }) {
   };
 
   const filtered = results.filter(r => {
+    if (sf === 'My Bets') return isBet(r);
     if (sf !== 'All' && r.league !== sf) return false;
     if (bf !== 'All' && (r.betType || r.market || '').toLowerCase() !== bf.toLowerCase()) return false;
     if (dateFilter === 'Today') return r.date === todayStr;
@@ -526,14 +535,17 @@ function ResultsTab({ results, sf, bf, dateFilter }) {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#94A3B8' }}>{date}</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: dayReturn >= 0 ? '#34D399' : '#F87171' }}>{dayReturn >= 0 ? '+' : ''}{dayReturn.toFixed(2)}u</span>
             </div>
-            {bets.map((r, j) => (
+            {bets.map((r, j) => {
+              const isMyBet = isBet(r);
+              return (
               <div key={j} style={{
-                background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 3, padding: '8px 12px',
-                border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between',
-                borderLeft: `3px solid ${r.result === 'W' ? '#34D399' : r.result === 'L' ? '#F87171' : '#64748B'}`
+                background: isMyBet ? 'rgba(139,92,246,0.08)' : 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 3, padding: '8px 12px',
+                border: isMyBet ? '1px solid rgba(139,92,246,0.2)' : '1px solid rgba(255,255,255,0.08)', boxShadow: isMyBet ? '0 2px 10px rgba(139,92,246,0.15)' : '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between',
+                borderLeft: isMyBet ? '5px solid #A78BFA' : `3px solid ${r.result === 'W' ? '#34D399' : r.result === 'L' ? '#F87171' : '#64748B'}`
               }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
+                    {isMyBet && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>MY BET</span>}
                     <span style={{ background: LEAGUE_COLORS[r.league], color: 'white', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{r.league}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3, textTransform: 'uppercase' }}>{r.betType || r.market}</span>
                   </div>
@@ -545,7 +557,8 @@ function ResultsTab({ results, sf, bf, dateFilter }) {
                   <div style={{ fontSize: 11, fontWeight: 600, color: r.unitReturn >= 0 ? '#34D399' : '#F87171' }}>{r.unitReturn >= 0 ? '+' : ''}{(r.unitReturn || 0).toFixed(2)}u</div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         );
       })}
@@ -638,6 +651,7 @@ export default function App() {
 
   // Pick key for "my bets" selection
   const pickKey = (p) => `${p.league}|${p.away}|${p.home}|${(p.betType||p.market||'').toLowerCase()}|${p.pick}|${p.line}`;
+  const propKey = (p) => `prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`;
   const toggleBet = (p) => {
     const key = pickKey(p);
     setMyBets(prev => {
@@ -646,7 +660,16 @@ export default function App() {
       return next;
     });
   };
+  const toggleProp = (p) => {
+    const key = propKey(p);
+    setMyBets(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
   const isBet = (p) => myBets.has(pickKey(p));
+  const isPropBet = (p) => myBets.has(propKey(p));
 
   // Fetch sheet data
   const fetchData = useCallback(() => {
@@ -684,6 +707,8 @@ export default function App() {
   const betCount = myBets.size;
   const sportPills = tab === 'scores'
     ? (betCount > 0 ? ['All', 'My Bets', 'Live', 'NBA', 'NHL', 'MLB', 'NFL'] : ['All', 'Live', 'NBA', 'NHL', 'MLB', 'NFL'])
+    : tab === 'results'
+    ? (betCount > 0 ? ['All', 'My Bets', 'NBA', 'NHL', 'MLB', 'NFL'] : SPORTS)
     : SPORTS;
 
   const tabs = [
@@ -742,8 +767,8 @@ export default function App() {
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
         {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} toggleBet={toggleBet} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} />}
-        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} />}
-        {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} />}
+        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} isPropBet={isPropBet} toggleProp={toggleProp} />}
+        {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} isBet={isBet} isPropBet={isPropBet} />}
       </div>
 
       {/* Tab Bar */}
@@ -767,6 +792,9 @@ export default function App() {
               <span style={{ position: 'absolute', top: 0, right: 8, background: '#F59E0B', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{closeCount}</span>
             )}
             {t.id === 'scores' && betCount > 0 && closeCount === 0 && (
+              <span style={{ position: 'absolute', top: 0, right: 8, background: '#8B5CF6', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{betCount}</span>
+            )}
+            {t.id === 'results' && betCount > 0 && (
               <span style={{ position: 'absolute', top: 0, right: 8, background: '#8B5CF6', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{betCount}</span>
             )}
           </button>
