@@ -7,8 +7,26 @@
 const { getValues, setValues, clearSheet } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
 const { logApiCall } = require('./monitoring');
+const { getAllPropModifiers, DEFAULT_MODIFIER } = require('./prop-weights');
+const { getStatusImpacts } = require('./prop-status');
 
 const ODDS_API_COST_PER_CALL = 0.001;
+
+/**
+ * Prop confidence → unit sizing.
+ * Same scale as the main picks system (confidenceToUnits in predictions.js).
+ * 1-2 → 0.01, 3-4 → 0.05, 5 → 0.1, 6-7 → 0.15, 8 → 0.2, 9 → 0.4, 10 → 0.5
+ */
+function propConfidenceToUnits(confidence) {
+  const c = parseInt(confidence) || 5;
+  if (c <= 2) return 0.01;
+  if (c <= 4) return 0.05;
+  if (c === 5) return 0.1;
+  if (c <= 7) return 0.15;
+  if (c === 8) return 0.2;
+  if (c === 9) return 0.4;
+  return 0.5;
+}
 
 // Minimum number of prop edges to surface every day, regardless of EV threshold.
 // Satisfies the "top picks of the day even if not high EV" requirement — parallel
@@ -372,9 +390,70 @@ async function generatePropEdges() {
   const actionableEdges = allEdges.filter(e => prefSet.has((e.book || '').toLowerCase()));
   console.log(`[props] ${allEdges.length} total edges, ${actionableEdges.length} from preferred books (${PREFERRED_BOOKS.join(', ')})`);
 
+  // ── PHASE 2: Apply weights, status impacts, and confidence scoring ──
+
+  // Load market weights per league (CLV-based modifiers)
+  const weightsByLeague = {};
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+    try {
+      weightsByLeague[league] = await getAllPropModifiers(league);
+    } catch (err) {
+      console.warn(`[props] Could not load ${league} prop weights: ${err.message}`);
+      weightsByLeague[league] = {};
+    }
+  }
+
+  // Load status impacts (injury/scratch teammate bumps)
+  let statusImpacts = {};
+  try {
+    statusImpacts = await getStatusImpacts();
+  } catch (err) {
+    console.warn(`[props] Could not load status impacts: ${err.message}`);
+  }
+
+  // Apply weights + status to each edge
+  for (const e of actionableEdges) {
+    // Market weight modifier (default 1.0 until CLV data accumulates)
+    const leagueWeights = weightsByLeague[e.league] || {};
+    const weightMod = leagueWeights[e.market] || DEFAULT_MODIFIER;
+    e.weightModifier = weightMod;
+
+    // Status impact (teammate bump from key player scratch)
+    const statusKey = `${e.league}|${e.player}`;
+    const impact = statusImpacts[statusKey];
+    let statusBump = 0;
+    if (impact && impact.affectedMarkets.includes(e.market)) {
+      statusBump = impact.edgeBump;
+    }
+    e.statusBump = statusBump;
+
+    // Adjusted edge = raw edge × weight modifier + status bump
+    e.adjustedEdge = parseFloat(((e.edgeNum * weightMod) + statusBump).toFixed(2));
+
+    // Confidence scoring (1-10):
+    //   Base from edge magnitude: <1% → 2, 1-2% → 4, 2-4% → 6, 4-6% → 7, 6%+ → 8
+    //   Bonus: +1 if weight modifier > 1.1 (CLV-proven market)
+    //   Bonus: +1 if status bump > 0 (teammate scratch edge)
+    //   Cap at 10
+    let conf = 2;
+    const absEdge = Math.abs(e.adjustedEdge);
+    if (absEdge >= 6) conf = 8;
+    else if (absEdge >= 4) conf = 7;
+    else if (absEdge >= 2) conf = 6;
+    else if (absEdge >= 1) conf = 4;
+    if (weightMod > 1.1) conf = Math.min(10, conf + 1);
+    if (statusBump > 0) conf = Math.min(10, conf + 1);
+    e.confidence = conf;
+
+    // Unit sizing (same scale as main picks)
+    e.units = propConfidenceToUnits(conf);
+  }
+
+  // Re-sort by adjusted edge
+  actionableEdges.sort((a, b) => b.adjustedEdge - a.adjustedEdge);
+
   // Always surface the top N picks of the day, plus every elite (2%+) edge.
-  // This guarantees the email has content even on days with no +EV edges.
-  const elite = actionableEdges.filter(e => e.edgeNum >= PROP_ELITE_EDGE_PCT);
+  const elite = actionableEdges.filter(e => e.adjustedEdge >= PROP_ELITE_EDGE_PCT);
   const topN = actionableEdges.slice(0, PROP_TOP_PICKS_FLOOR);
   const combined = [];
   const seen = new Set();
@@ -384,13 +463,16 @@ async function generatePropEdges() {
     seen.add(k);
     combined.push(e);
   }
-  combined.sort((a, b) => b.edgeNum - a.edgeNum);
+  combined.sort((a, b) => b.adjustedEdge - a.adjustedEdge);
 
   console.log(`[props] ${elite.length} elite (≥${PROP_ELITE_EDGE_PCT}%), writing ${combined.length} rows`);
 
-  // Write to Prop_Combos sheet
+  // Write to Prop_Combos sheet (expanded schema with weights, confidence, units)
   const ts = new Date().toISOString();
-  const outputRows = [['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction', 'Book', 'BookOdds', 'BookProb', 'ConsensusProb', 'Edge', 'Game', 'PrizePicks', 'Underdog', 'Betr', 'Sleepr']];
+  const outputRows = [['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction',
+    'Book', 'BookOdds', 'BookProb', 'ConsensusProb', 'Edge', 'Game',
+    'PrizePicks', 'Underdog', 'Betr', 'Sleepr',
+    'WeightModifier', 'StatusBump', 'AdjustedEdge', 'Confidence', 'Units']];
   for (const e of combined) {
     outputRows.push([
       ts,
@@ -409,6 +491,11 @@ async function generatePropEdges() {
       e.underdog,
       e.betr,
       e.sleepr,
+      e.weightModifier,
+      e.statusBump,
+      e.adjustedEdge,
+      e.confidence,
+      e.units,
     ]);
   }
 

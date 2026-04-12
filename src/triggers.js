@@ -11,6 +11,8 @@ const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, 
 const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
 const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
+const { updatePlayerStatus } = require('./prop-status');
+const { snapPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
 const { withMonitoring } = require('./monitoring');
 
 // ── Trigger Map ──────────────────────────────────────────────────
@@ -48,11 +50,17 @@ const TRIGGERS = {
     console.log('[trigger5] No-op — all sports handled by trigger4. See commit note.');
   }),
 
-  // Trigger 6: 6:00 AM ET → Player props
-  trigger6: withMonitoring('trigger6', updatePlayerProps),
+  // Trigger 6: 6:00 AM ET → Status check + Player props
+  trigger6: withMonitoring('trigger6', async () => {
+    await updatePlayerStatus();   // detect scratches/injuries before fetching props
+    await updatePlayerProps();
+  }),
 
-  // Trigger 7: 6:15 AM ET → Compute prop edges (consensus vs book lines)
-  trigger7: withMonitoring('trigger7', generatePropEdges),
+  // Trigger 7: 6:15 AM ET → Compute prop edges + snapshot opening lines for CLV
+  trigger7: withMonitoring('trigger7', async () => {
+    await generatePropEdges();
+    await snapPropLines();  // archive opening edges for CLV comparison tonight
+  }),
 
   // Trigger 8: 6:20 AM ET → Player tiers
   trigger8: withMonitoring('trigger8', updatePlayerTiers),
@@ -69,14 +77,18 @@ const TRIGGERS = {
     await takeCLVSnapshot();
   }),
 
-  // Trigger 12: 11:00 PM ET → Fetch yesterday's scores + grade bets
+  // Trigger 12: 11:00 PM ET → Fetch yesterday's scores + grade bets + grade prop CLV
   trigger12: withMonitoring('trigger12', async () => {
     await fetchYesterdayResults();
     await gradePerformanceLog();
+    await gradePropEdges();  // compare opening vs closing prop lines for CLV grading
   }),
 
   // Trigger 13: Sunday 8:00 PM ET → Weekly performance summary
   trigger13: withMonitoring('trigger13', sendPerformanceSummary),
+
+  // Trigger 14: 11:30 PM ET → Nightly prop weight auto-update (CLV-based)
+  trigger14: withMonitoring('trigger14', updateAllPropWeights),
 };
 
 // ── Main Entry Point ─────────────────────────────────────────────

@@ -47,6 +47,12 @@ const SHEETS = {
   PROP_COMBOS:         'Prop_Combos',
   PLATFORM_COMBOS:     'Prop_Combos',
   PROP_PERFORMANCE:    'Prop_Performance',
+  PROP_STATUS:         'Prop_Status',
+  PROP_CLV_OPENING:    'Prop_CLV_Opening',
+  PROP_WEIGHTS_MLB:    'PropWeights_MLB',
+  PROP_WEIGHTS_NBA:    'PropWeights_NBA',
+  PROP_WEIGHTS_NFL:    'PropWeights_NFL',
+  PROP_WEIGHTS_NHL:    'PropWeights_NHL',
   DAILY_COMBOS:        'Daily_Combos',
 
   // Predictions (write output here)
