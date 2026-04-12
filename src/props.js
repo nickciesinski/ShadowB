@@ -28,12 +28,13 @@ function propConfidenceToUnits(confidence) {
   return 0.5;
 }
 
-// Minimum number of prop edges to surface every day, regardless of EV threshold.
-// Satisfies the "top picks of the day even if not high EV" requirement — parallel
-// to the pick-coverage rule for games.
-const PROP_TOP_PICKS_FLOOR = 30;
+// Minimum prop edges PER LEAGUE per day so no sport gets squeezed out.
+// MLB's volume advantage used to consume all 30 global slots; now each
+// active league gets its own floor.  Total output = sum of per-league floors
+// + any elite edges above PROP_ELITE_EDGE_PCT that didn't fit.
+const PROP_PER_LEAGUE_FLOOR = 10;
 // Edges above this threshold are considered "elite" and always included
-// regardless of the top-N floor.
+// regardless of the per-league floor.
 const PROP_ELITE_EDGE_PCT = 2.0;
 
 // Only surface edges from books Nick actually uses. Consensus is still
@@ -452,20 +453,35 @@ async function generatePropEdges() {
   // Re-sort by adjusted edge
   actionableEdges.sort((a, b) => b.adjustedEdge - a.adjustedEdge);
 
-  // Always surface the top N picks of the day, plus every elite (2%+) edge.
-  const elite = actionableEdges.filter(e => e.adjustedEdge >= PROP_ELITE_EDGE_PCT);
-  const topN = actionableEdges.slice(0, PROP_TOP_PICKS_FLOOR);
+  // Per-league floor: guarantee each active sport gets representation,
+  // then add any remaining elite edges that didn't already make the cut.
   const combined = [];
   const seen = new Set();
-  for (const e of [...elite, ...topN]) {
+  const addEdge = (e) => {
     const k = `${e.player}|${e.market}|${e.line}|${e.direction}|${e.book}`;
-    if (seen.has(k)) continue;
+    if (seen.has(k)) return;
     seen.add(k);
     combined.push(e);
+  };
+
+  // 1. Top N per league (sorted by adjustedEdge within each league)
+  const byLeague = {};
+  for (const e of actionableEdges) {
+    if (!byLeague[e.league]) byLeague[e.league] = [];
+    byLeague[e.league].push(e);
   }
+  for (const [league, edges] of Object.entries(byLeague)) {
+    edges.sort((a, b) => b.adjustedEdge - a.adjustedEdge);
+    for (const e of edges.slice(0, PROP_PER_LEAGUE_FLOOR)) addEdge(e);
+  }
+
+  // 2. Any elite edge (≥ threshold) that wasn't already included
+  const elite = actionableEdges.filter(e => e.adjustedEdge >= PROP_ELITE_EDGE_PCT);
+  for (const e of elite) addEdge(e);
+
   combined.sort((a, b) => b.adjustedEdge - a.adjustedEdge);
 
-  console.log(`[props] ${elite.length} elite (≥${PROP_ELITE_EDGE_PCT}%), writing ${combined.length} rows`);
+  console.log(`[props] ${Object.keys(byLeague).length} leagues, ${elite.length} elite (≥${PROP_ELITE_EDGE_PCT}%), writing ${combined.length} rows`);
 
   // Write to Prop_Combos sheet (expanded schema with weights, confidence, units)
   const ts = new Date().toISOString();
