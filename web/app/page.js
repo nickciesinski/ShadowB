@@ -399,7 +399,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
-function PropsTab({ props, sf, pf, isPropBet, toggleProp }) {
+function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
   // Filter by sport
   let filtered = props.filter(p => {
     if (sf !== 'All' && sf !== 'Live' && p.league !== sf) return false;
@@ -430,19 +430,45 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp }) {
         const edgeBg = edgeNum >= 8 ? 'rgba(16,185,129,0.15)' : edgeNum >= 5 ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.08)';
         const dirColor = isOver(p.direction) ? '#34D399' : '#F87171';
         const selected = isPropBet(p);
+        const live = selected ? liveStats[`prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`] : null;
+        const lineNum = parseFloat(p.line) || 0;
+        const isOverBet = isOver(p.direction);
+
+        // Live stat status
+        let statStatus = null, statColor = '#64748B', statLabel = '';
+        if (live) {
+          const cur = live.current;
+          const isGameOver = live.gameStatus === 'post';
+          const diff = lineNum - cur;
+
+          if (isOverBet) {
+            if (cur >= lineNum) { statStatus = 'hit'; statColor = '#34D399'; statLabel = isGameOver ? 'HIT ✅' : 'OVER ✅'; }
+            else if (isGameOver) { statStatus = 'miss'; statColor = '#F87171'; statLabel = 'MISSED ❌'; }
+            else if (diff <= 3) { statStatus = 'close'; statColor = '#FCD34D'; statLabel = `NEEDS ${diff % 1 === 0 ? diff : diff.toFixed(1)} MORE`; }
+            else { statStatus = 'behind'; statColor = '#94A3B8'; statLabel = `NEEDS ${diff % 1 === 0 ? diff : diff.toFixed(1)} MORE`; }
+          } else {
+            if (isGameOver && cur <= lineNum) { statStatus = 'hit'; statColor = '#34D399'; statLabel = 'HIT ✅'; }
+            else if (cur > lineNum) { statStatus = 'miss'; statColor = '#F87171'; statLabel = isGameOver ? 'MISSED ❌' : 'OVER LINE ⚠️'; }
+            else if (diff <= 2) { statStatus = 'close'; statColor = '#FCD34D'; statLabel = 'CLOSE'; }
+            else { statStatus = 'safe'; statColor = '#34D399'; statLabel = 'ON PACE'; }
+          }
+        }
 
         return (
           <div key={i} onClick={() => toggleProp(p)} style={{
-            background: selected ? 'rgba(139,92,246,0.12)' : 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 6, padding: '10px 12px',
-            border: selected ? '2px solid rgba(139,92,246,0.4)' : '1px solid rgba(255,255,255,0.08)',
+            background: selected ? (live && statStatus === 'close' ? 'rgba(252,211,77,0.08)' : 'rgba(139,92,246,0.12)') : 'rgba(255,255,255,0.04)',
+            borderRadius: 12, marginBottom: 6, padding: '10px 12px',
+            border: selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(139,92,246,0.4)') : '1px solid rgba(255,255,255,0.08)',
             boxShadow: selected ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
-            borderLeft: selected ? '5px solid #A78BFA' : `3px solid ${edgeColor}`,
+            borderLeft: selected ? (live ? `5px solid ${statColor}` : '5px solid #A78BFA') : `3px solid ${edgeColor}`,
             cursor: 'pointer', transition: 'background 0.15s, border-left 0.15s',
           }}>
+            {live && statStatus === 'close' && <div style={{ background: 'rgba(252,211,77,0.15)', color: '#FCD34D', fontSize: 10, fontWeight: 700, padding: '3px 10px', marginBottom: 6, marginLeft: -12, marginRight: -12, marginTop: -10, textAlign: 'center', borderRadius: '12px 12px 0 0' }}>🔥 CLOSE — {isOverBet ? `${(lineNum - live.current) % 1 === 0 ? (lineNum - live.current) : (lineNum - live.current).toFixed(1)} away` : 'approaching line'}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
                   {selected && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                  {live && <span style={{ width: 6, height: 6, borderRadius: 3, background: live.gameStatus === 'in' ? '#34D399' : '#64748B', display: 'inline-block' }} />}
                   {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
                 </div>
@@ -460,10 +486,22 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp }) {
                 <div style={{ fontSize: 10, color: '#94A3B8' }}>{p.game}</div>
                 <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>via {p.book} · consensus {p.consensusProb}% vs book {p.bookProb}%</div>
               </div>
-              <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
-                <div style={{ fontSize: 22, fontWeight: 900, color: edgeColor }}>{p.edge}%</div>
-                <div style={{ fontSize: 9, fontWeight: 700, color: edgeColor, background: edgeBg, padding: '2px 8px', borderRadius: 10 }}>EDGE</div>
-              </div>
+              {live ? (
+                <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0, minWidth: 60 }}>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: statColor, lineHeight: 1 }}>{live.current}</div>
+                  <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>/ {p.line}</div>
+                  {/* Progress bar */}
+                  <div style={{ width: 50, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, margin: '4px auto', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, (live.current / (lineNum || 1)) * 100)}%`, background: statColor, borderRadius: 2, transition: 'width 0.3s' }} />
+                  </div>
+                  <div style={{ fontSize: 8, fontWeight: 700, color: statColor, marginTop: 2 }}>{statLabel}</div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: edgeColor }}>{p.edge}%</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: edgeColor, background: edgeBg, padding: '2px 8px', borderRadius: 10 }}>EDGE</div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -592,6 +630,7 @@ async function fetchLiveScores() {
 
         games.push({
           league,
+          eventId: event.id,
           home: homeTeam?.team?.displayName || '',
           away: awayTeam?.team?.displayName || '',
           homeScore: parseInt(homeTeam?.score) || 0,
@@ -605,6 +644,107 @@ async function fetchLiveScores() {
     } catch (e) { /* skip */ }
   }
   return games;
+}
+
+// ── Live Prop Stats (ESPN Box Scores) ───────────────────────────────
+function extractStat(market, labels, stats) {
+  const m = (market || '').toLowerCase().replace(/\s+/g, '_');
+  const getStat = (label) => {
+    const idx = labels.indexOf(label);
+    if (idx === -1) return 0;
+    const val = stats[idx];
+    if (!val || val === '-' || val === '--') return 0;
+    // Handle "made-attempted" format like "3-7" for 3PT, FG
+    if (typeof val === 'string' && val.includes('-') && !val.startsWith('-') && !val.includes(':')) {
+      return parseInt(val.split('-')[0]) || 0;
+    }
+    return parseFloat(val) || 0;
+  };
+
+  // Combo markets (check these first)
+  if (m.includes('points') && m.includes('rebounds') && m.includes('assists')) return getStat('PTS') + getStat('REB') + getStat('AST');
+  if (m.includes('points') && m.includes('rebounds')) return getStat('PTS') + getStat('REB');
+  if (m.includes('points') && m.includes('assists')) return getStat('PTS') + getStat('AST');
+  if (m.includes('rebounds') && m.includes('assists')) return getStat('REB') + getStat('AST');
+  // Single stat markets
+  if (m.includes('points') || m.includes('pts')) return getStat('PTS');
+  if (m.includes('rebounds') || m.includes('reb')) return getStat('REB');
+  if (m.includes('assists') || m.includes('ast')) return getStat('AST') || getStat('A');
+  if (m.includes('threes') || m.includes('three') || m.includes('3pt')) return getStat('3PT');
+  if (m.includes('steals')) return getStat('STL');
+  if (m.includes('blocks') || m.includes('blk')) return getStat('BLK');
+  if (m.includes('turnovers')) return getStat('TO');
+  if (m.includes('hits') || m === 'batter_hits') return getStat('H');
+  if (m.includes('total_bases')) return getStat('TB');
+  if (m.includes('home_runs') || m.includes('hr')) return getStat('HR');
+  if (m.includes('rbis') || m.includes('rbi')) return getStat('RBI');
+  if (m.includes('strikeouts') || m === 'pitcher_strikeouts') return getStat('K') || getStat('SO');
+  if (m.includes('goals')) return getStat('G');
+  if (m.includes('shots_on_goal') || m.includes('sog')) return getStat('SOG') || getStat('S');
+  if (m.includes('saves')) return getStat('SV');
+  return null;
+}
+
+async function fetchBoxScore(eventId, sport, leagueKey) {
+  try {
+    const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/${leagueKey}/summary?event=${eventId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const players = {};
+    const boxPlayers = data?.boxscore?.players || [];
+    for (const team of boxPlayers) {
+      for (const statGroup of (team.statistics || [])) {
+        const labels = statGroup.labels || [];
+        for (const athlete of (statGroup.athletes || [])) {
+          const name = athlete.athlete?.displayName || '';
+          const shortName = athlete.athlete?.shortName || '';
+          const statVals = athlete.stats || [];
+          if (name && labels.length) {
+            const entry = { labels, stats: statVals, name };
+            players[name.toLowerCase()] = entry;
+            if (shortName) players[shortName.toLowerCase()] = entry;
+            // Last name for fuzzy matching
+            const parts = name.split(' ');
+            if (parts.length > 1) {
+              const last = parts.slice(-1)[0].toLowerCase();
+              if (!players[last]) players[last] = entry;
+            }
+          }
+        }
+      }
+    }
+    return players;
+  } catch (e) { return null; }
+}
+
+function matchPropToGame(prop, liveGames) {
+  const gameStr = (prop.game || '').toLowerCase();
+  return liveGames.find(g => {
+    if (g.league !== prop.league) return false;
+    const homeShort = g.home.split(' ').pop().toLowerCase();
+    const awayShort = g.away.split(' ').pop().toLowerCase();
+    return gameStr.includes(homeShort) && gameStr.includes(awayShort);
+  });
+}
+
+function findPlayerStat(playerName, market, boxPlayers) {
+  if (!boxPlayers || !playerName) return null;
+  const name = playerName.toLowerCase().trim();
+  // Try exact, then short name, then last name
+  let found = boxPlayers[name];
+  if (!found) {
+    const lastName = name.split(' ').pop();
+    found = boxPlayers[lastName];
+    if (!found) {
+      // Partial match
+      for (const [key, val] of Object.entries(boxPlayers)) {
+        if (key.includes(name) || name.includes(key)) { found = val; break; }
+      }
+    }
+  }
+  if (!found) return null;
+  const val = extractStat(market, found.labels, found.stats);
+  return val !== null ? { current: val, playerFound: found.name } : null;
 }
 
 // ── Main App ────────────────────────────────────────────────────────
@@ -635,6 +775,7 @@ export default function App() {
   });
   const [data, setData] = useState(null);
   const [liveGames, setLiveGames] = useState([]);
+  const [liveStats, setLiveStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -700,6 +841,52 @@ export default function App() {
     const interval = setInterval(refreshScores, 30000);
     return () => clearInterval(interval);
   }, [refreshScores]);
+
+  // Fetch box scores for games with prop bets (every 30s)
+  useEffect(() => {
+    if (!data?.props || !liveGames.length || myBets.size === 0) return;
+    const myProps = data.props.filter(p => myBets.has(propKey(p)));
+    if (!myProps.length) return;
+
+    const fetchStats = async () => {
+      // Find unique games that need box scores
+      const gameMap = new Map(); // eventId → { sport, leagueKey, game }
+      for (const prop of myProps) {
+        const game = matchPropToGame(prop, liveGames);
+        if (game && game.eventId && (game.status === 'in' || game.status === 'post')) {
+          const cfg = ESPN_SPORTS[game.league];
+          if (cfg && !gameMap.has(game.eventId)) {
+            gameMap.set(game.eventId, { sport: cfg.key, leagueKey: cfg.league, game });
+          }
+        }
+      }
+
+      if (!gameMap.size) return;
+
+      // Fetch all box scores in parallel
+      const boxScores = {};
+      const entries = [...gameMap.entries()];
+      const results = await Promise.all(entries.map(([eid, { sport, leagueKey }]) => fetchBoxScore(eid, sport, leagueKey)));
+      entries.forEach(([eid], i) => { if (results[i]) boxScores[eid] = results[i]; });
+
+      // Extract stats for each prop bet
+      const newStats = {};
+      for (const prop of myProps) {
+        const game = matchPropToGame(prop, liveGames);
+        if (!game || !game.eventId || !boxScores[game.eventId]) continue;
+        const result = findPlayerStat(prop.player, prop.market, boxScores[game.eventId]);
+        if (result !== null) {
+          const key = propKey(prop);
+          newStats[key] = { current: result.current, gameStatus: game.status, period: game.period, clock: game.clock };
+        }
+      }
+      setLiveStats(newStats);
+    };
+
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, [data?.props, liveGames, myBets]);
 
   const liveCount = liveGames.filter(g => g.status === 'in').length;
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;
@@ -767,7 +954,7 @@ export default function App() {
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
         {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} toggleBet={toggleBet} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} />}
-        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} isPropBet={isPropBet} toggleProp={toggleProp} />}
+        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} isPropBet={isPropBet} toggleProp={toggleProp} liveStats={liveStats} />}
         {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} isBet={isBet} isPropBet={isPropBet} />}
       </div>
 
