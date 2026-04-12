@@ -89,8 +89,8 @@ export async function GET() {
       getValues(sheets, 'Today_Odds', 'A1:J5000'),
     ]);
 
-    // Parse Performance Log
-    const today = new Date();
+    // Parse Performance Log (use PST/PDT to match sheet dates)
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
     const mm = today.getMonth() + 1;
     const dd = today.getDate();
     const yyyy = today.getFullYear();

@@ -430,7 +430,7 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
         const edgeBg = edgeNum >= 8 ? 'rgba(16,185,129,0.15)' : edgeNum >= 5 ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.08)';
         const dirColor = isOver(p.direction) ? '#34D399' : '#F87171';
         const selected = isPropBet(p);
-        const live = selected ? liveStats[`prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`] : null;
+        const live = liveStats[`prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`] || null;
         const lineNum = parseFloat(p.line) || 0;
         const isOverBet = isOver(p.direction);
 
@@ -484,17 +484,23 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
                   <span style={{ fontSize: 11, color: '#94A3B8' }}>{fmt(p.bookOdds)}</span>
                 </div>
                 <div style={{ fontSize: 10, color: '#94A3B8' }}>{p.game}</div>
-                <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>via {p.book} · consensus {p.consensusProb}% vs book {p.bookProb}%</div>
+                <div style={{ fontSize: 10, color: '#64748B', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                  <span>via {p.book}</span>
+                  {live ? (
+                    <span>· <span style={{ color: edgeColor, fontWeight: 700 }}>{p.edge}% edge</span> · consensus {p.consensusProb}% vs book {p.bookProb}%</span>
+                  ) : (
+                    <span>· consensus {p.consensusProb}% vs book {p.bookProb}%</span>
+                  )}
+                </div>
               </div>
               {live ? (
-                <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0, minWidth: 60 }}>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: statColor, lineHeight: 1 }}>{live.current}</div>
+                <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0, minWidth: 55 }}>
+                  <div style={{ fontSize: 26, fontWeight: 900, color: statColor, lineHeight: 1 }}>{live.current}</div>
                   <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>/ {p.line}</div>
-                  {/* Progress bar */}
-                  <div style={{ width: 50, height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, margin: '4px auto', overflow: 'hidden' }}>
+                  <div style={{ width: 46, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, margin: '3px auto', overflow: 'hidden' }}>
                     <div style={{ height: '100%', width: `${Math.min(100, (live.current / (lineNum || 1)) * 100)}%`, background: statColor, borderRadius: 2, transition: 'width 0.3s' }} />
                   </div>
-                  <div style={{ fontSize: 8, fontWeight: 700, color: statColor, marginTop: 2 }}>{statLabel}</div>
+                  <div style={{ fontSize: 8, fontWeight: 700, color: statColor, marginTop: 1 }}>{statLabel}</div>
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
@@ -842,16 +848,14 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refreshScores]);
 
-  // Fetch box scores for games with prop bets (every 30s)
+  // Fetch box scores for ALL props with live/finished games (every 30s)
   useEffect(() => {
-    if (!data?.props || !liveGames.length || myBets.size === 0) return;
-    const myProps = data.props.filter(p => myBets.has(propKey(p)));
-    if (!myProps.length) return;
+    if (!data?.props || !liveGames.length) return;
 
     const fetchStats = async () => {
-      // Find unique games that need box scores
-      const gameMap = new Map(); // eventId → { sport, leagueKey, game }
-      for (const prop of myProps) {
+      // Find unique live/post games that have props
+      const gameMap = new Map();
+      for (const prop of data.props) {
         const game = matchPropToGame(prop, liveGames);
         if (game && game.eventId && (game.status === 'in' || game.status === 'post')) {
           const cfg = ESPN_SPORTS[game.league];
@@ -869,9 +873,9 @@ export default function App() {
       const results = await Promise.all(entries.map(([eid, { sport, leagueKey }]) => fetchBoxScore(eid, sport, leagueKey)));
       entries.forEach(([eid], i) => { if (results[i]) boxScores[eid] = results[i]; });
 
-      // Extract stats for each prop bet
+      // Extract stats for ALL props
       const newStats = {};
-      for (const prop of myProps) {
+      for (const prop of data.props) {
         const game = matchPropToGame(prop, liveGames);
         if (!game || !game.eventId || !boxScores[game.eventId]) continue;
         const result = findPlayerStat(prop.player, prop.market, boxScores[game.eventId]);
@@ -886,7 +890,7 @@ export default function App() {
     fetchStats();
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
-  }, [data?.props, liveGames, myBets]);
+  }, [data?.props, liveGames]);
 
   const liveCount = liveGames.filter(g => g.status === 'in').length;
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;
