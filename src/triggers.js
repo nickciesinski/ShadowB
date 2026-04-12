@@ -68,8 +68,16 @@ const TRIGGERS = {
   // Trigger 9: 6:30 AM ET → Send daily picks email
   trigger9: withMonitoring('trigger9', sendDailyPicksEmail),
 
-  // Trigger 10: 12:00 PM ET → Midday odds refresh
-  trigger10: withMonitoring('trigger10', fetchOddsAndGrade),
+  // Trigger 10: 12:00 PM ET → Midday odds refresh + props re-fetch
+  // Most books haven't posted NBA/NHL player props by the 6 AM fetch.
+  // This midday cycle catches late-posted lines without touching the
+  // CLV opening snapshot (morning baseline stays intact for grading).
+  trigger10: withMonitoring('trigger10', async () => {
+    await fetchOddsAndGrade();
+    await updatePlayerStatus();
+    await updatePlayerProps();
+    await generatePropEdges();
+  }),
 
   // Trigger 11: 6:00 PM ET → Evening odds refresh + CLV
   trigger11: withMonitoring('trigger11', async () => {
