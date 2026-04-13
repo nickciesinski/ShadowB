@@ -13,6 +13,7 @@ const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./prop
 const { updatePlayerTiers } = require('./player-tiers');
 const { updatePlayerStatus } = require('./prop-status');
 const { snapPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
+const { runAllOptimizations, syncPerformanceLog, seedPropWeights } = require('./optimize');
 const { withMonitoring } = require('./monitoring');
 
 // ── Trigger Map ──────────────────────────────────────────────────
@@ -95,8 +96,17 @@ const TRIGGERS = {
   // Trigger 13: Sunday 8:00 PM ET → Weekly performance summary
   trigger13: withMonitoring('trigger13', sendPerformanceSummary),
 
-  // Trigger 14: 11:30 PM ET → Nightly prop weight auto-update (CLV-based)
-  trigger14: withMonitoring('trigger14', updateAllPropWeights),
+  // Trigger 14: 11:30 PM ET → Full nightly optimization cycle
+  // Syncs Performance Log to Supabase, auto-updates modifiers,
+  // applies CLV penalties, updates prop weights.
+  trigger14: withMonitoring('trigger14', runAllOptimizations),
+
+  // Trigger 15: One-time bootstrap — sync historical data + seed prop weights
+  // Run manually via workflow_dispatch after Supabase setup.
+  trigger15: withMonitoring('trigger15', async () => {
+    await syncPerformanceLog();
+    await seedPropWeights();
+  }),
 };
 
 // ── Main Entry Point ─────────────────────────────────────────────

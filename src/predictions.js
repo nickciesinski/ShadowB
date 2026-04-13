@@ -8,6 +8,7 @@ const OpenAI = require('openai');
 const { SPREADSHEET_ID, SHEETS, OPENAI_API_KEY, IS_TEST } = require('./config');
 const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
 const { parseWeightRows, sheetForLeague } = require('./weights');
+const db = require('./db');
 
 // Lazy-init so importing this module for testing/tools doesn't require a key.
 let _openai = null;
@@ -111,8 +112,32 @@ const PERFORMANCE_MODIFIERS = {
   'NFL|total':      0.9,
 };
 
+// Cache for Supabase modifiers (loaded once per trigger run)
+let _dbModifiers = null;
+let _dbModifiersLoaded = false;
+
+async function loadDbModifiers() {
+  if (_dbModifiersLoaded) return _dbModifiers;
+  _dbModifiersLoaded = true;
+  if (!db.isEnabled()) return null;
+  try {
+    _dbModifiers = await db.readModifiers();
+    if (_dbModifiers && Object.keys(_dbModifiers).length > 0) {
+      console.log(`[predictions] Loaded ${Object.keys(_dbModifiers).length} modifiers from Supabase`);
+    } else {
+      _dbModifiers = null;
+    }
+  } catch (err) {
+    console.warn('[predictions] Could not load Supabase modifiers:', err.message);
+    _dbModifiers = null;
+  }
+  return _dbModifiers;
+}
+
 function getPerformanceModifier(league, betType) {
   const key = `${league}|${betType.toLowerCase()}`;
+  // Prefer Supabase modifiers if loaded, fall back to hardcoded
+  if (_dbModifiers && _dbModifiers[key] !== undefined) return _dbModifiers[key];
   return PERFORMANCE_MODIFIERS[key] || 1.0;
 }
 
@@ -127,6 +152,7 @@ function getPerformanceModifier(league, betType) {
  */
 async function generateMLBPredictions() {
   console.log('[predictions] Generating MLB predictions...');
+  await loadDbModifiers();  // load Supabase modifiers (cached for subsequent sports)
 
   const [oddsRows, weightRows, teamRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
@@ -862,6 +888,29 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       console.log(`[predictions] Logged ${finalRows.length} ${sport} picks to top of Performance Log (${perfRows.length - finalRows.length} duplicates removed)`);
     } else {
       console.log(`[predictions] ${sport}: all picks already exist in Performance Log, nothing new to write`);
+    }
+
+    // Dual-write to Supabase (non-blocking — log errors but don't fail the trigger)
+    if (db.isEnabled() && finalRows && finalRows.length > 0) {
+      try {
+        const dbRows = finalRows.map(r => ({
+          date: String(r[0] || '').replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'), // MM/DD/YYYY → YYYY-MM-DD
+          league: r[1] || '',
+          game: `${r[3]} @ ${r[4]}`,
+          market: r[6] || '',
+          pick: r[7] || '',
+          line: parseFloat(r[8]) || null,
+          odds: parseInt(r[9]) || null,
+          confidence: parseInt(String(r[11]).replace('%', '')) || null,
+          final_units: parseFloat(r[10]) || 0,
+          modifier: getPerformanceModifier(r[1], r[6]),
+          trigger_name: `trigger4_${sport}`,
+        }));
+        await db.insertPerformanceRows(dbRows);
+        console.log(`[predictions] Dual-wrote ${dbRows.length} ${sport} picks to Supabase`);
+      } catch (err) {
+        console.warn(`[predictions] Supabase dual-write failed for ${sport}:`, err.message);
+      }
     }
   }
 }
