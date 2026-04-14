@@ -16,6 +16,9 @@ const { snapPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-
 const { runAllOptimizations, syncPerformanceLog, seedPropWeights } = require('./optimize');
 const { withMonitoring } = require('./monitoring');
 
+/** Small delay to spread Sheets writes across the quota window. */
+const pause = (ms) => new Promise(r => setTimeout(r, ms));
+
 // ── Trigger Map ──────────────────────────────────────────────────
 // Maps trigger names (passed as CLI arg) to their functions.
 // Each trigger corresponds to one GitHub Actions workflow file.
@@ -73,10 +76,16 @@ const TRIGGERS = {
   // Most books haven't posted NBA/NHL player props by the 6 AM fetch.
   // This midday cycle catches late-posted lines without touching the
   // CLV opening snapshot (morning baseline stays intact for grading).
+  //
+  // Pauses between major steps to stay under the 60 writes/min Sheets quota.
+  // With buffered API logging this is mostly belt-and-suspenders.
   trigger10: withMonitoring('trigger10', async () => {
     await fetchOddsAndGrade();
+    await pause(5000);
     await updatePlayerStatus();
+    await pause(3000);
     await updatePlayerProps();
+    await pause(5000);
     await generatePropEdges();
   }),
 
