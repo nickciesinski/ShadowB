@@ -330,6 +330,55 @@ async function syncPerformanceLog() {
 }
 
 /**
+ * Seed PERFORMANCE_MODIFIERS into Supabase so predictions.js can read them
+ * dynamically instead of relying on hardcoded values.
+ * Run once to bootstrap, then nightly optimizeModifiers() keeps them updated.
+ */
+async function seedModifiers() {
+  console.log('[optimize] Seeding performance modifiers into Supabase...');
+
+  if (!db.isEnabled()) {
+    console.warn('[optimize] Supabase not configured — skipping modifier seed');
+    return;
+  }
+
+  // Mirror the hardcoded PERFORMANCE_MODIFIERS from predictions.js
+  const defaults = [
+    { league: 'NHL', market: 'spread',     modifier: 1.15, win_rate: 53.2, roi: 10.6, sample_size: 250 },
+    { league: 'NHL', market: 'moneyline',  modifier: 1.15, win_rate: 56.4, roi: 13.5, sample_size: 250 },
+    { league: 'NHL', market: 'total',      modifier: 1.35, win_rate: 52.8, roi: 13.0, sample_size: 196 },
+    { league: 'NBA', market: 'spread',     modifier: 1.05, win_rate: 55.3, roi: 6.9,  sample_size: 204 },
+    { league: 'NBA', market: 'moneyline',  modifier: 0.3,  win_rate: null, roi: null,  sample_size: 0   },
+    { league: 'NBA', market: 'total',      modifier: 0.7,  win_rate: 45.5, roi: -11.6, sample_size: 167 },
+    { league: 'MLB', market: 'spread',     modifier: 0.7,  win_rate: 44.2, roi: -17.3, sample_size: 138 },
+    { league: 'MLB', market: 'moneyline',  modifier: 0.6,  win_rate: 52.2, roi: -3.6, sample_size: 136 },
+    { league: 'MLB', market: 'total',      modifier: 0.5,  win_rate: 53.8, roi: -2.1, sample_size: 92  },
+    { league: 'NFL', market: 'spread',     modifier: 1.0,  win_rate: null, roi: null,  sample_size: 0   },
+    { league: 'NFL', market: 'moneyline',  modifier: 0.8,  win_rate: null, roi: null,  sample_size: 0   },
+    { league: 'NFL', market: 'total',      modifier: 0.9,  win_rate: null, roi: null,  sample_size: 0   },
+  ];
+
+  for (const d of defaults) {
+    await db.upsertModifier(d);
+  }
+
+  // Also sync to Sheets for visibility
+  try {
+    const ts = new Date().toISOString();
+    const sheetRows = [['League', 'Market', 'Modifier', 'SampleSize', 'WinRate', 'ROI', 'UpdatedAt']];
+    for (const d of defaults) {
+      sheetRows.push([d.league, d.market, d.modifier, d.sample_size, d.win_rate || '', d.roi || '', ts]);
+    }
+    await setValues(SPREADSHEET_ID, SHEETS.CLV_MODIFIERS, 'A1', sheetRows);
+  } catch (err) {
+    console.warn('[optimize] Could not sync seeded modifiers to Sheets:', err.message);
+  }
+
+  console.log(`[optimize] Seeded ${defaults.length} performance modifiers into Supabase`);
+  return defaults.length;
+}
+
+/**
  * Seed prop weights with sensible defaults based on main model ROI data.
  * Run once to bootstrap the prop engine's weight system.
  */
@@ -418,6 +467,7 @@ module.exports = {
   optimizePropWeights,
   syncPerformanceLog,
   seedPropWeights,
+  seedModifiers,
   runAllOptimizations,
   computeModifier,
 };

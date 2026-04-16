@@ -49,6 +49,7 @@ const SHEETS = {
   PROP_PERFORMANCE:    'Prop_Performance',
   PROP_STATUS:         'Prop_Status',
   PROP_CLV_OPENING:    'Prop_CLV_Opening',
+  PROP_CLV_CLOSING:    'Prop_CLV_Closing',
   PROP_WEIGHTS_MLB:    'PropWeights_MLB',
   PROP_WEIGHTS_NBA:    'PropWeights_NBA',
   PROP_WEIGHTS_NFL:    'PropWeights_NFL',

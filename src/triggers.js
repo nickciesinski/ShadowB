@@ -12,8 +12,8 @@ const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
 const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
 const { updatePlayerStatus } = require('./prop-status');
-const { snapPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
-const { runAllOptimizations, syncPerformanceLog, seedPropWeights } = require('./optimize');
+const { snapPropLines, snapClosingPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
+const { runAllOptimizations, syncPerformanceLog, seedPropWeights, seedModifiers } = require('./optimize');
 const { withMonitoring } = require('./monitoring');
 
 /** Small delay to spread Sheets writes across the quota window. */
@@ -89,17 +89,19 @@ const TRIGGERS = {
     await generatePropEdges();
   }),
 
-  // Trigger 11: 6:00 PM ET → Evening odds refresh + CLV
+  // Trigger 11: 6:00 PM ET → Evening odds refresh + CLV + cache closing prop lines
   trigger11: withMonitoring('trigger11', async () => {
     await fetchOddsAndGrade();
     await takeCLVSnapshot();
+    await snapClosingPropLines();  // cache prop lines before events expire from Odds API
   }),
 
-  // Trigger 12: 11:00 PM ET → Fetch yesterday's scores + grade bets + grade prop CLV
+  // Trigger 12: 11:00 PM ET → Fetch yesterday's scores + grade bets + grade props + grade prop CLV
   trigger12: withMonitoring('trigger12', async () => {
     await fetchYesterdayResults();
     await gradePerformanceLog();
-    await gradePropEdges();  // compare opening vs closing prop lines for CLV grading
+    await gradePropPicks();   // grade prop W/L against ESPN box scores
+    await gradePropEdges();   // compare opening vs closing prop lines for CLV grading
   }),
 
   // Trigger 13: Sunday 8:00 PM ET → Weekly performance summary
@@ -110,11 +112,12 @@ const TRIGGERS = {
   // applies CLV penalties, updates prop weights.
   trigger14: withMonitoring('trigger14', runAllOptimizations),
 
-  // Trigger 15: One-time bootstrap — sync historical data + seed prop weights
+  // Trigger 15: One-time bootstrap — sync historical data + seed weights + modifiers
   // Run manually via workflow_dispatch after Supabase setup.
   trigger15: withMonitoring('trigger15', async () => {
     await syncPerformanceLog();
     await seedPropWeights();
+    await seedModifiers();  // populate performance_modifiers table for dynamic loading
   }),
 };
 

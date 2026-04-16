@@ -83,6 +83,47 @@ async function snapPropLines() {
  * When the Odds API no longer has lines for completed events, we mark those
  * as "expired" and use the last available snapshot as closing.
  */
+/**
+ * Cache the current Player_Props sheet as a closing-line snapshot.
+ * Called from trigger11 (6 PM ET) when the Odds API still has lines.
+ * By the time trigger12 runs at 11 PM, completed events may have been
+ * removed from the API — this snapshot provides a reliable fallback.
+ */
+async function snapClosingPropLines() {
+  console.log('[prop-clv] Caching closing prop lines...');
+
+  const props = await getValues(SPREADSHEET_ID, SHEETS.PLAYER_PROPS);
+  if (!props || props.length < 2) {
+    console.log('[prop-clv] No prop lines to cache as closing snapshot.');
+    return;
+  }
+
+  await clearSheet(SPREADSHEET_ID, SHEETS.PROP_CLV_CLOSING);
+  await setValues(SPREADSHEET_ID, SHEETS.PROP_CLV_CLOSING, 'A1', props);
+  console.log(`[prop-clv] Cached ${props.length - 1} closing prop lines to ${SHEETS.PROP_CLV_CLOSING}`);
+}
+
+/**
+ * Build a closing-line index from prop rows.
+ * Key: "player|market|line|direction|book" → closing price
+ */
+function buildClosingIndex(rows) {
+  const index = {};
+  if (!rows || rows.length < 2) return index;
+  for (const row of rows.slice(1)) {
+    const player = row[3] || '';
+    const direction = row[4] || '';
+    const price = parseFloat(row[5]);
+    const line = row[6] || '';
+    const market = row[7] || '';
+    const book = row[2] || '';
+    if (!player || isNaN(price)) continue;
+    const key = `${player}|${market}|${line}|${direction}|${book}`;
+    index[key] = price;
+  }
+  return index;
+}
+
 async function gradePropEdges() {
   console.log('[prop-clv] Grading prop edges against closing lines...');
 
@@ -92,22 +133,25 @@ async function gradePropEdges() {
     return;
   }
 
-  // Read current Player_Props as "closing" lines (fetched by trigger11 or trigger12)
-  const closingProps = await getValues(SPREADSHEET_ID, SHEETS.PLAYER_PROPS);
-  const closingIndex = {}; // "player|market|line|direction|book" → closing price
-  if (closingProps && closingProps.length > 1) {
-    for (const row of closingProps.slice(1)) {
-      const player = row[3] || '';
-      const direction = row[4] || '';
-      const price = parseFloat(row[5]);
-      const line = row[6] || '';
-      const market = row[7] || '';
-      const book = row[2] || '';
-      if (!player || isNaN(price)) continue;
-      const key = `${player}|${market}|${line}|${direction}|${book}`;
-      closingIndex[key] = price;
-    }
+  // Build closing-line index from multiple sources (layered fallback):
+  // 1. Primary: Prop_CLV_Closing (cached by trigger11 at 6 PM, before events expire)
+  // 2. Fallback: live Player_Props (may be stale or missing completed events)
+  const [closingSnap, liveProps] = await Promise.all([
+    getValues(SPREADSHEET_ID, SHEETS.PROP_CLV_CLOSING).catch(() => []),
+    getValues(SPREADSHEET_ID, SHEETS.PLAYER_PROPS).catch(() => []),
+  ]);
+
+  // Start with the cached snapshot (most complete), overlay with live data
+  const closingIndex = buildClosingIndex(closingSnap);
+  const liveIndex = buildClosingIndex(liveProps);
+
+  // Merge: live overwrites cached (live is more recent if still available)
+  for (const [key, price] of Object.entries(liveIndex)) {
+    closingIndex[key] = price;
   }
+
+  const closingCount = Object.keys(closingIndex).length;
+  console.log(`[prop-clv] Closing index: ${Object.keys(buildClosingIndex(closingSnap)).length} cached + ${Object.keys(liveIndex).length} live = ${closingCount} total`);
 
   const impliedProb = (odds) => {
     const o = parseFloat(odds);
@@ -148,10 +192,8 @@ async function gradePropEdges() {
       // CLV hit: closing line implies MORE probability on our side
       // (meaning the market moved our way, confirming our edge)
       if (direction === 'Over') {
-        // Over bet: if closing over-prob > opening over-prob → CLV hit
         clvGrade = closeProb > openProb ? 'HIT' : 'MISS';
       } else {
-        // Under bet: same logic (closing under-prob > opening under-prob)
         clvGrade = closeProb > openProb ? 'HIT' : 'MISS';
       }
 
@@ -253,4 +295,4 @@ async function updateAllPropWeights() {
   }
 }
 
-module.exports = { snapPropLines, gradePropEdges, updateAllPropWeights };
+module.exports = { snapPropLines, snapClosingPropLines, gradePropEdges, updateAllPropWeights };

@@ -520,14 +520,167 @@ async function generatePropEdges() {
   console.log(`[props] Wrote ${combined.length} prop edges to ${COMBOS_SHEET}`);
 }
 
+// ── ESPN Box Score Fetching ──────────────────────────────────────
+
+const ESPN_SPORT_MAP = {
+  NBA: { path: 'basketball/nba', type: 'basketball' },
+  MLB: { path: 'baseball/mlb', type: 'baseball' },
+  NHL: { path: 'hockey/nhl', type: 'hockey' },
+  NFL: { path: 'football/nfl', type: 'football' },
+};
+
+// Map Odds API prop market keys → ESPN stat extraction functions.
+// Each extractor returns the numeric stat value from a player's stats array.
+const PROP_STAT_EXTRACTORS = {
+  // NBA
+  player_points: (stats) => findStat(stats, 'points'),
+  player_rebounds: (stats) => findStat(stats, 'rebounds'),
+  player_assists: (stats) => findStat(stats, 'assists'),
+  player_threes: (stats) => findStat(stats, 'threePointFieldGoalsMade'),
+  player_points_rebounds_assists: (stats) => {
+    const p = findStat(stats, 'points');
+    const r = findStat(stats, 'rebounds');
+    const a = findStat(stats, 'assists');
+    return (p !== null && r !== null && a !== null) ? p + r + a : null;
+  },
+  // MLB batting
+  batter_total_bases: (stats) => findStat(stats, 'totalBases'),
+  batter_hits: (stats) => findStat(stats, 'hits'),
+  batter_home_runs: (stats) => findStat(stats, 'homeRuns'),
+  // MLB pitching
+  pitcher_strikeouts: (stats) => findStat(stats, 'strikeouts'),
+  pitcher_outs: (stats) => findStat(stats, 'pitchingOuts') ?? findStat(stats, 'innings'), // fallback
+  // NHL
+  player_shots_on_goal: (stats) => findStat(stats, 'shotsOnGoal') ?? findStat(stats, 'shots'),
+  // player_points and player_assists already defined above — NHL reuses them
+  // NFL
+  player_pass_yds: (stats) => findStat(stats, 'passingYards'),
+  player_rush_yds: (stats) => findStat(stats, 'rushingYards'),
+  player_reception_yds: (stats) => findStat(stats, 'receivingYards'),
+  player_pass_tds: (stats) => findStat(stats, 'passingTouchdowns'),
+  player_anytime_td: (stats) => {
+    const rush = findStat(stats, 'rushingTouchdowns') || 0;
+    const rec = findStat(stats, 'receivingTouchdowns') || 0;
+    const pass = findStat(stats, 'passingTouchdowns') || 0;
+    return rush + rec + pass > 0 ? 1 : 0; // binary: scored or not
+  },
+};
+
+/** Find a named stat in ESPN's stats array or categories structure. */
+function findStat(statsObj, name) {
+  if (!statsObj) return null;
+  // ESPN API returns stats in different formats depending on endpoint.
+  // Format 1: array of { name, value } or { abbreviation, displayValue }
+  if (Array.isArray(statsObj)) {
+    for (const s of statsObj) {
+      if (s.name === name || s.abbreviation === name) {
+        const v = parseFloat(s.displayValue ?? s.value ?? s.stat);
+        return isFinite(v) ? v : null;
+      }
+    }
+    return null;
+  }
+  // Format 2: flat object { points: "24", rebounds: "10" }
+  if (typeof statsObj === 'object') {
+    const v = parseFloat(statsObj[name]);
+    return isFinite(v) ? v : null;
+  }
+  return null;
+}
+
 /**
- * Grade prop edges against actual player stats.
- * Reads Prop_Combos (today's edges), compares against actual performance,
- * writes results to Prop_Performance sheet to create feedback loop.
- * Trigger 8: ~11 PM ET daily (after games end).
+ * Fetch box score player stats from ESPN for yesterday's games.
+ * Returns: { "PlayerName|LEAGUE": { stats: [...], allStats: {} } }
+ */
+async function fetchBoxScoreStats(leagues) {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateStr = yesterday.toISOString().slice(0, 10).replace(/-/g, '');
+
+  const playerStats = {}; // "normalizedName|LEAGUE" → flat stats object
+
+  for (const league of leagues) {
+    const espn = ESPN_SPORT_MAP[league];
+    if (!espn) continue;
+
+    try {
+      // Step 1: Get scoreboard for yesterday
+      const sbUrl = `https://site.api.espn.com/apis/site/v2/sports/${espn.path}/scoreboard?dates=${dateStr}`;
+      const sbRes = await fetch(sbUrl, { signal: AbortSignal.timeout(30000) });
+      if (!sbRes.ok) { console.warn(`[props-grade] ESPN scoreboard ${league}: ${sbRes.status}`); continue; }
+      const sbData = await sbRes.json();
+      const events = sbData.events || [];
+      console.log(`[props-grade] ${league}: ${events.length} events on ${dateStr}`);
+
+      // Step 2: For each completed event, fetch box score
+      for (const event of events) {
+        const status = event.status?.type?.completed;
+        if (!status) continue;
+        const eventId = event.id;
+
+        try {
+          const boxUrl = `https://site.api.espn.com/apis/site/v2/sports/${espn.path}/summary?event=${eventId}`;
+          const boxRes = await fetch(boxUrl, { signal: AbortSignal.timeout(30000) });
+          if (!boxRes.ok) continue;
+          const boxData = await boxRes.json();
+
+          // Extract player stats from boxscore
+          const boxscore = boxData.boxscore;
+          if (!boxscore) continue;
+
+          // ESPN structure: boxscore.players = [ { team, statistics: [ { athletes: [ { athlete, stats } ] } ] } ]
+          for (const teamBlock of (boxscore.players || [])) {
+            for (const statGroup of (teamBlock.statistics || [])) {
+              const statNames = (statGroup.names || []).map(n => String(n));
+              for (const athlete of (statGroup.athletes || [])) {
+                const name = athlete.athlete?.displayName || '';
+                if (!name) continue;
+                const normalizedName = normalizeName(name);
+                const key = `${normalizedName}|${league}`;
+                const statValues = athlete.stats || [];
+
+                // Build a flat stats object from parallel arrays
+                const flatStats = {};
+                for (let si = 0; si < statNames.length && si < statValues.length; si++) {
+                  flatStats[statNames[si]] = statValues[si];
+                }
+
+                // Merge if player appeared in multiple stat groups (pitching + batting)
+                if (!playerStats[key]) playerStats[key] = {};
+                Object.assign(playerStats[key], flatStats);
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[props-grade] Box score ${league}/${eventId} failed:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error(`[props-grade] ESPN ${league} scoreboard error:`, err.message);
+    }
+  }
+
+  console.log(`[props-grade] Fetched stats for ${Object.keys(playerStats).length} players`);
+  return playerStats;
+}
+
+/** Normalize player name for fuzzy matching: lowercase, strip accents, trim suffixes. */
+function normalizeName(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // strip accents
+    .toLowerCase()
+    .replace(/\s+(jr|sr|ii|iii|iv)\.?$/i, '')           // strip suffixes
+    .trim();
+}
+
+/**
+ * Grade prop edges against actual player stats from ESPN box scores.
+ * Reads Prop_Combos (today's edges), fetches ESPN box scores,
+ * compares actual stats vs prop lines, writes W/L results to Prop_Performance.
+ * Called by trigger12 (11 PM ET daily, after games end).
  */
 async function gradePropPicks() {
-  console.log('[props] Grading prop edges...');
+  console.log('[props] Grading prop edges against ESPN box scores...');
   const combos = await getValues(SPREADSHEET_ID, COMBOS_SHEET);
   if (!combos || combos.length < 2) {
     console.warn('[props] No prop edges to grade.');
@@ -535,41 +688,108 @@ async function gradePropPicks() {
   }
 
   const edges = combos.slice(1);
-  // TODO: Fetch actual player stats from ESPN or stats API to compare against edges
-  // For now, log what needs grading
-  console.log(`[props] ${edges.length} prop edges pending grading.`);
-  console.log('[props] Grading requires stats API integration — logging for manual review.');
 
-  // Write a summary to Prop_Performance
+  // Determine which leagues have edges to grade
+  const activeLeagues = [...new Set(edges.map(r => r[1]).filter(Boolean))];
+  console.log(`[props] Active leagues: ${activeLeagues.join(', ')}`);
+
+  // Fetch box score stats from ESPN
+  const playerStats = await fetchBoxScoreStats(activeLeagues);
+  if (Object.keys(playerStats).length === 0) {
+    console.warn('[props] No box score stats available — cannot grade props.');
+    return;
+  }
+
+  // Map Prop_Combos market display names back to API keys for stat extraction.
+  // Prop_Combos col 3 is the display name (e.g., "points" not "player_points").
+  // We need the original API market key for PROP_STAT_EXTRACTORS.
+  const displayToKey = {};
+  for (const [apiKey, platforms] of Object.entries(PLATFORM_MARKETS)) {
+    const display = apiKey.replace(/^(player_|pitcher_|batter_)/, '').replace(/_/g, ' ');
+    displayToKey[display] = apiKey;
+    // Also map platform-specific names
+    for (const pName of Object.values(platforms || {})) {
+      displayToKey[pName.toLowerCase()] = apiKey;
+    }
+  }
+
   const perfSheet = SHEETS.PROP_PERFORMANCE || 'Prop_Performance';
   const ts = new Date().toISOString();
-  const summaryRows = [['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction', 'Book', 'Edge', 'Actual', 'Result']];
+  const perfRows = [];
+  let wins = 0, losses = 0, pushes = 0, unmatched = 0;
+
   for (const row of edges) {
-    summaryRows.push([
-      ts,
-      row[1] || '', // league
-      row[2] || '', // player
-      row[3] || '', // market
-      row[4] || '', // line
-      row[5] || '', // direction
-      row[6] || '', // book
-      row[10] || '', // edge
-      'PENDING',     // actual - needs stats API
-      'PENDING',     // result - needs comparison
+    const league = row[1] || '';
+    const player = row[2] || '';
+    const marketDisplay = row[3] || '';
+    const line = parseFloat(row[4]);
+    const direction = row[5] || '';   // 'Over' or 'Under'
+    const book = row[6] || '';
+    const edge = row[10] || '';
+    const adjustedEdge = row[18] || edge;
+    const confidence = row[19] || '';
+    const units = row[20] || '';
+
+    // Look up the market API key
+    const marketKey = displayToKey[marketDisplay.toLowerCase()] || displayToKey[marketDisplay] || '';
+
+    // Look up player stats
+    const normalizedPlayer = normalizeName(player);
+    const statsKey = `${normalizedPlayer}|${league}`;
+    const stats = playerStats[statsKey];
+
+    let actual = null;
+    let result = 'UNMATCHED';
+
+    if (stats && marketKey && PROP_STAT_EXTRACTORS[marketKey]) {
+      actual = PROP_STAT_EXTRACTORS[marketKey](stats);
+    }
+
+    if (actual !== null && isFinite(line)) {
+      // Special case: anytime TD is binary (1 = scored, 0 = didn't)
+      if (marketKey === 'player_anytime_td') {
+        if (direction === 'Over') {
+          result = actual >= 1 ? 'W' : 'L';
+        } else {
+          result = actual === 0 ? 'W' : 'L';
+        }
+      } else if (direction === 'Over') {
+        result = actual > line ? 'W' : actual === line ? 'P' : 'L';
+      } else {
+        result = actual < line ? 'W' : actual === line ? 'P' : 'L';
+      }
+
+      if (result === 'W') wins++;
+      else if (result === 'L') losses++;
+      else if (result === 'P') pushes++;
+    } else {
+      unmatched++;
+    }
+
+    perfRows.push([
+      ts, league, player, marketDisplay, line || '', direction, book,
+      edge, actual !== null ? actual : '', result,
+      adjustedEdge, confidence, units,
     ]);
   }
 
-  // Append rather than clear — keep history
+  // Write results to Prop_Performance (append to keep history)
+  const header = ['Timestamp', 'League', 'Player', 'Market', 'Line', 'Direction',
+    'Book', 'Edge', 'Actual', 'Result', 'AdjustedEdge', 'Confidence', 'Units'];
+
   const existing = await getValues(SPREADSHEET_ID, perfSheet);
   if (!existing || existing.length === 0) {
-    await setValues(SPREADSHEET_ID, perfSheet, 'A1', summaryRows);
+    await setValues(SPREADSHEET_ID, perfSheet, 'A1', [header, ...perfRows]);
   } else {
-    // Append without header
-    const appendRows = summaryRows.slice(1);
     const nextRow = existing.length + 1;
-    await setValues(SPREADSHEET_ID, perfSheet, `A${nextRow}`, appendRows);
+    await setValues(SPREADSHEET_ID, perfSheet, `A${nextRow}`, perfRows);
   }
-  console.log(`[props] Wrote ${edges.length} edges to ${perfSheet} for grading.`);
+
+  console.log(`[props] Graded ${perfRows.length} prop edges: ${wins}W ${losses}L ${pushes}P, ${unmatched} unmatched`);
+  if (wins + losses > 0) {
+    console.log(`[props] Prop win rate: ${(wins / (wins + losses) * 100).toFixed(1)}%`);
+  }
+  return { wins, losses, pushes, unmatched };
 }
 
 module.exports = { updatePlayerProps, generatePropEdges, gradePropPicks };
