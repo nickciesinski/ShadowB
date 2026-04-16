@@ -1,3 +1,6 @@
 node_modules/
 .env
 .DS_Store
+weight-reviews/*.md
+weight-reviews/*.json
+!weight-reviews/README.md
