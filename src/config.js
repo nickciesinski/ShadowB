@@ -133,7 +133,7 @@ function validateConfig() {
   const required = [
     'SPREADSHEET_ID',
     'ODDS_API_KEY',
-    'OPENAI_API_KEY',
+    // OPENAI_API_KEY removed — predictions are now deterministic (April 2026)
     'GMAIL_USER',
     'GMAIL_APP_PASSWORD',
     'GOOGLE_SERVICE_ACCOUNT_JSON',
