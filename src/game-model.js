@@ -5,6 +5,10 @@
 // on all 3 markets (moneyline, spread, total) using formula-based
 // projections compared against market odds.
 //
+// Sprint 2 (April 2026): Now consumes enriched stats via
+// stat-features.js instead of raw W-L only. Uses offensive/
+// defensive ratings, pace, recent form, and rest data.
+//
 // Inputs:  game objects (from buildGameObjects), team stats, weights
 // Outputs: array of pick objects ready for logPicksToPerformanceLog
 // =============================================================
@@ -24,18 +28,16 @@ const {
   scoreUncertainty,
 } = require('./market-pricing');
 
-// ââ League-specific constants ââââââââââââââââââââââââââââââââââââ
+const {
+  teamStrength: computeTeamStrength,
+  restAdjustment: computeRestAdj,
+  homeAdvantage: getHomeAdvantage,
+  recentForm,
+  paceAdjustment,
+  dataCompleteness,
+} = require('./stat-features');
 
-/**
- * Home advantage expressed as points/runs/goals added to the home team's
- * projected margin. These are well-established historical averages.
- */
-const HOME_ADVANTAGE = {
-  NBA: 3.0,    // ~3 points home edge in modern NBA (declining)
-  NFL: 2.5,    // ~2.5 points, lower post-COVID
-  MLB: 0.35,   // ~0.35 runs, slight home edge
-  NHL: 0.25,   // ~0.25 goals home edge
-};
+// ââ League-specific constants ââââââââââââââââââââââââââââââââ
 
 /**
  * Average total points/runs/goals per game by league.
@@ -51,132 +53,74 @@ const AVG_TOTAL = {
 /**
  * Points/runs/goals per unit of win% differential.
  * Maps a team strength gap (in win% terms) to expected margin.
- * e.g., NBA: a 10% win% gap â 4.0 point expected margin.
+ * e.g., NBA: a 10% win% gap â 4.0 point expected margin.
  */
 const STRENGTH_TO_MARGIN = {
   NBA: 40.0,   // 0.10 win% diff â 4.0 point margin
   NFL: 28.0,   // 0.10 win% diff â 2.8 point margin
-  MLB: 8.0,    // 0.10 win% diff â 0.8 run margin
-  NHL: 5.0,    // 0.10 win% diff â 0.5 goal margin
+  MLB:  8.0,   // 0.10 win% diff â 0.8 run margin
+  NHL:  5.0,   // 0.10 win% diff â 0.5 goal margin
 };
 
-// ââ Team Strength Model ââââââââââââââââââââââââââââââââââââââââââ
-
-/**
- * Compute a team's strength rating from available stats.
- * Returns a normalized value centered around 0.5.
- *
- * Currently uses win%: simple but available for all 4 sports.
- * Sprint 2 will add offensive/defensive ratings, pace, etc.
- *
- * @param {Object} teamStats - { wins, losses, pct, offRating, defRating, ... }
- * @param {Object} weights - League-specific weights from Weights_* sheet
- * @returns {number} strength 0-1 (0.5 = average)
- */
-function teamStrength(teamStats, weights) {
-  if (!teamStats) return 0.5;
-
-  // Primary signal: win percentage
-  let winPct = parseFloat(teamStats.pct) || 0.5;
-  // Clamp extreme values (small sample / bad data)
-  winPct = Math.max(0.2, Math.min(0.8, winPct));
-
-  // Weight-based adjustments from the Weights sheet.
-  // These weights were previously passed to GPT as context but never
-  // actually used in any formula. Now they directly modify the rating.
-  let adjustment = 0;
-
-  if (weights) {
-    // Offense/defense weights shift the rating if stats are available
-    const offWeight = weights.offensive_strength || weights.run_differential_diff || 0;
-    const defWeight = weights.defensive_strength || 0;
-
-    // If team has o/d ratings, blend them in
-    if (teamStats.offRating && offWeight) {
-      // Normalize off rating to 0-centered adjustment (100 = league average for NBA)
-      const offAdj = ((parseFloat(teamStats.offRating) || 100) - 100) / 100;
-      adjustment += offAdj * offWeight * 0.1;
-    }
-    if (teamStats.defRating && defWeight) {
-      // Lower defensive rating = better. Invert so positive = good.
-      const defAdj = (100 - (parseFloat(teamStats.defRating) || 100)) / 100;
-      adjustment += defAdj * defWeight * 0.1;
-    }
-  }
-
-  return Math.max(0.15, Math.min(0.85, winPct + adjustment));
-}
-
-/**
- * Compute rest advantage adjustment.
- * More rest = slight advantage; back-to-back = penalty.
- *
- * @param {Object} scheduleInfo - { homeDaysOff, awayDaysOff } if available
- * @param {string} league
- * @returns {number} margin adjustment in points/runs/goals (positive = home advantage)
- */
-function restAdjustment(scheduleInfo, league) {
-  if (!scheduleInfo) return 0;
-
-  const homeDays = parseFloat(scheduleInfo.homeDaysOff) || 1;
-  const awayDays = parseFloat(scheduleInfo.awayDaysOff) || 1;
-
-  // Rest advantage per day difference, scaled by sport
-  const REST_IMPACT = { NBA: 0.8, NFL: 0, MLB: 0.1, NHL: 0.5 };
-  const impact = REST_IMPACT[league] || 0;
-
-  const restDiff = Math.max(-3, Math.min(3, homeDays - awayDays));
-  return restDiff * impact;
-}
-
-// ââ Core Projection Functions ââââââââââââââââââââââââââââââââââââ
+// ââ Core Projection Functions ââââââââââââââââââââââââââââââââ
 
 /**
  * Project the point margin for a game.
  * Positive = home team favored.
  *
- * @param {number} homeStrength - 0-1 rating
- * @param {number} awayStrength - 0-1 rating
+ * Sprint 2: Now uses stat-features for strength, rest, home advantage,
+ * and recent form instead of inline calculations.
+ *
+ * @param {number} homeStrength - 0-1 rating from stat-features
+ * @param {number} awayStrength - 0-1 rating from stat-features
  * @param {string} league
- * @param {number} restAdj - rest-based margin adjustment
+ * @param {number} restAdj - rest-based margin adjustment from stat-features
+ * @param {number} homeFormAdj - recent form modifier for home team
+ * @param {number} awayFormAdj - recent form modifier for away team
  * @returns {number} projected margin (home perspective)
  */
-function projectMargin(homeStrength, awayStrength, league, restAdj) {
+function projectMargin(homeStrength, awayStrength, league, restAdj, homeFormAdj, awayFormAdj) {
   const strengthDiff = homeStrength - awayStrength;
   const rawMargin = strengthDiff * (STRENGTH_TO_MARGIN[league] || 20);
-  const homeAdv = HOME_ADVANTAGE[league] || 0;
-  return rawMargin + homeAdv + (restAdj || 0);
+  const homeAdv = getHomeAdvantage(league);
+
+  // Recent form: convert form differential to margin points
+  // A +0.05 form advantage â 0.5-2 points depending on sport
+  const formDiff = (homeFormAdj || 0) - (awayFormAdj || 0);
+  const formMargin = formDiff * (STRENGTH_TO_MARGIN[league] || 20) * 0.5;
+
+  return rawMargin + homeAdv + (restAdj || 0) + formMargin;
 }
 
 /**
  * Project the total points/runs/goals for a game.
- * Uses market total as anchor, adjusted by team strength.
- * Stronger teams in high-pace matchups â higher totals.
+ * Uses market total as anchor, adjusted by team strength and pace.
+ *
+ * Sprint 2: Now incorporates pace data for NBA.
  *
  * @param {number} homeStrength
  * @param {number} awayStrength
  * @param {number} marketTotal - The market's posted total line
  * @param {string} league
+ * @param {number} paceAdj - pace-based total adjustment from stat-features
  * @returns {number} projected total
  */
-function projectTotal(homeStrength, awayStrength, marketTotal, league) {
-  // Use the market total as the primary anchor â it's the best available
-  // estimate of the game's expected scoring. We only adjust if our strength
-  // model suggests the market is off.
+function projectTotal(homeStrength, awayStrength, marketTotal, league, paceAdj) {
   const avgTotal = AVG_TOTAL[league] || marketTotal;
 
   // Combined team strength: two strong teams â more scoring (slightly),
   // two weak teams â less scoring. This is a mild adjustment.
   const combinedStrength = (homeStrength + awayStrength) / 2;
-  const strengthDeviation = combinedStrength - 0.5; // positive = both strong
+  const strengthDeviation = combinedStrength - 0.5;
 
   // Total adjustment: scale by league average total to get appropriate magnitude
-  // A 5% strength deviation â ~1% total adjustment
-  const adjustment = strengthDeviation * avgTotal * 0.04;
+  const strengthAdj = strengthDeviation * avgTotal * 0.04;
+
+  // Pace adjustment (mainly NBA â other sports return 0)
+  const totalPaceAdj = (paceAdj || 0) * 0.3; // Dampen pace signal â market already prices pace
 
   // Anchor heavily to market total (80%), blend in our adjustment (20%).
-  // The market is efficient for totals â we're only nudging.
-  return marketTotal + adjustment;
+  return marketTotal + strengthAdj + totalPaceAdj;
 }
 
 /**
@@ -188,48 +132,54 @@ function projectTotal(homeStrength, awayStrength, marketTotal, league) {
  * @returns {number} home win probability (0-1)
  */
 function projectWinProb(projectedMargin, league) {
-  // Use the same logistic model as marginToSpreadCoverProb
-  // but with spread = 0 (pure win probability)
   return marginToSpreadCoverProb(projectedMargin, 0, league);
 }
 
-// ââ Pick Generation ââââââââââââââââââââââââââââââââââââââââââââââ
+// ââ Pick Generation ââââââââââââââââââââââââââââââââââââââââââ
 
 /**
  * Generate all 3 picks (ML, spread, total) for a single game.
  *
+ * Sprint 2: Uses stat-features for team strength, rest, form, and pace.
+ *
  * @param {Object} game - From buildGameObjects: { home, away, commence, markets }
- * @param {Object} teamsMap - { teamName: { wins, losses, pct, ... } }
- * @param {Object} weights - Parsed weights { flat: {}, moneyline: {}, spread: {}, total: {} }
+ * @param {Object} teamsMap - { teamName: { wins, losses, pct, offRating, defRating, ... } }
+ * @param {Object} weights - Parsed weights (currently unused, reserved for Sprint 5)
  * @param {string} league - 'MLB', 'NBA', 'NHL', 'NFL'
- * @param {Object} [scheduleInfo] - Optional: { homeDaysOff, awayDaysOff }
+ * @param {Object} [scheduleInfo] - Optional: { homeDaysOff, awayDaysOff, homeB2B, awayB2B }
  * @returns {Array} Array of 3 pick objects
  */
 function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
-  const flatWeights = weights.flat || weights || {};
-
   // Team stats
   const homeStats = teamsMap[game.home] || {};
   const awayStats = teamsMap[game.away] || {};
 
-  // Team strengths
-  const homeStr = teamStrength(homeStats, flatWeights);
-  const awayStr = teamStrength(awayStats, flatWeights);
+  // ââ Sprint 2: Use stat-features for all computations ââ
 
-  // Rest adjustment
-  const restAdj = restAdjustment(scheduleInfo, league);
+  // Team strengths (now using off/def ratings, scoring diff, not just W-L)
+  const homeStr = computeTeamStrength(homeStats, league);
+  const awayStr = computeTeamStrength(awayStats, league);
+
+  // Rest adjustment (now includes back-to-back detection)
+  const restAdj = computeRestAdj(scheduleInfo, league);
+
+  // Recent form modifiers
+  const homeFormAdj = recentForm(homeStats);
+  const awayFormAdj = recentForm(awayStats);
+
+  // Pace adjustment for totals
+  const paceAdj = paceAdjustment(homeStats, awayStats, league);
 
   // Core projection: margin (home perspective, positive = home favored)
-  const margin = projectMargin(homeStr, awayStr, league, restAdj);
+  const margin = projectMargin(homeStr, awayStr, league, restAdj, homeFormAdj, awayFormAdj);
 
-  // Data quality flags for uncertainty scoring
-  const uncertaintyFlags = {
-    hasTeamStats: !!(homeStats.pct && awayStats.pct),
-    hasRecentForm: !!(homeStats.recentForm || awayStats.recentForm),
-    hasRestData: !!scheduleInfo,
-    hasInjuryData: false, // Sprint 4 will populate this
-  };
-  const uncertainty = scoreUncertainty(uncertaintyFlags);
+  // Data completeness scoring (replaces manual flag checks)
+  const { score: completenessScore, flags: completenessFlags } = dataCompleteness(
+    homeStats, awayStats, scheduleInfo
+  );
+
+  // Uncertainty: inverse of data completeness (more data = less uncertainty)
+  const uncertainty = scoreUncertainty(completenessFlags);
 
   // Parse market odds for this game
   const h2hMarket = game.markets.h2h || [];
@@ -238,16 +188,16 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
 
   const picks = [];
 
-  // ââ Moneyline Pick ââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Moneyline Pick ââââââââââââââââââââââââââââââââââââââââ
   const mlPick = generateMLPick(game, margin, league, h2hMarket, uncertainty);
   if (mlPick) picks.push(mlPick);
 
-  // ââ Spread Pick âââââââââââââââââââââââââââââââââââââââââââââââ
+  // ââ Spread Pick âââââââââââââââââââââââââââââââââââââââââââ
   const spreadPick = generateSpreadPick(game, margin, league, spreadsMarket, uncertainty);
   if (spreadPick) picks.push(spreadPick);
 
-  // ââ Total Pick ââââââââââââââââââââââââââââââââââââââââââââââââ
-  const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty);
+  // ââ Total Pick ââââââââââââââââââââââââââââââââââââââââââââ
+  const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj);
   if (totalPick) picks.push(totalPick);
 
   return picks;
@@ -262,7 +212,7 @@ function generateMLPick(game, margin, league, h2hMarket, uncertainty) {
   const awayOdds = h2hMarket.find(o => o.outcome === game.away);
 
   if (!homeOdds && !awayOdds) {
-    // No ML odds available â create a minimum pick based on margin direction
+    // No ML odds available â create a minimum pick based on margin direction
     const pickTeam = margin >= 0 ? game.home : game.away;
     return {
       team: pickTeam,
@@ -317,7 +267,7 @@ function generateMLPick(game, margin, league, h2hMarket, uncertainty) {
     _modelProb: modelProb,
     _marketImpliedProb: marketProb,
     _edge: edge,
-    _units: 0, // calculated below after heavy-fav cap
+    _units: 0,  // calculated below after heavy-fav cap
     _odds: odds,
     _uncertainty: uncertainty,
     _mktQuality: mktQuality,
@@ -332,7 +282,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
   const homeLine = spreadsMarket.find(o => o.outcome === game.home);
   const awayLine = spreadsMarket.find(o => o.outcome === game.away);
 
-  // Default spreads if not available (common for NHL where puckline isn't always posted)
+  // Default spreads if not available
   const DEFAULT_SPREADS = { NHL: -1.5, NBA: -1.5, MLB: -1.5, NFL: -2.5 };
 
   let pickTeam, spreadNum, odds, modelProb, marketProb;
@@ -367,7 +317,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
       marketProb = awayNoVig;
     }
   } else {
-    // No spread data â use default puckline/spread, pick the model favorite
+    // No spread data â use default, pick the model favorite
     const defaultSpread = DEFAULT_SPREADS[league] || -1.5;
     if (margin >= 0) {
       pickTeam = game.home;
@@ -407,8 +357,9 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
 
 /**
  * Generate total (over/under) pick for a game.
+ * Sprint 2: Now accepts paceAdj from stat-features.
  */
-function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty) {
+function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj) {
   // Find over and under lines
   const overLine = totalsMarket.find(o => o.outcome === 'Over');
   const underLine = totalsMarket.find(o => o.outcome === 'Under');
@@ -416,7 +367,6 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
   const DEFAULT_TOTALS = { NHL: 6, NBA: 220, MLB: 8.5, NFL: 44.5 };
 
   let marketTotal, overOdds, underOdds;
-
   if (overLine) {
     marketTotal = parseFloat(overLine.point) || DEFAULT_TOTALS[league] || 6;
     overOdds = overLine.price;
@@ -426,14 +376,13 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
     overOdds = -110;
     underOdds = underLine.price;
   } else {
-    // No totals data at all â use default
     marketTotal = DEFAULT_TOTALS[league] || 6;
     overOdds = -110;
     underOdds = -110;
   }
 
-  // Project the total
-  const projTotal = projectTotal(homeStr, awayStr, marketTotal, league);
+  // Project the total (now with pace adjustment)
+  const projTotal = projectTotal(homeStr, awayStr, marketTotal, league, paceAdj);
 
   // Over/under probabilities
   const overProb = totalToOverProb(projTotal, marketTotal, league);
@@ -482,28 +431,38 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
   };
 }
 
-// ââ Main Entry Point âââââââââââââââââââââââââââââââââââââââââââââ
+// ââ Main Entry Point âââââââââââââââââââââââââââââââââââââââââ
 
 /**
  * Generate deterministic picks for all games in a league.
  * Drop-in replacement for the GPT-based generate*Predictions functions.
  *
+ * Sprint 2: Now passes schedule info through to generateGamePicks,
+ * which uses stat-features for enriched team strength calculations.
+ *
  * @param {Array} games - From buildGameObjects()
- * @param {Object} teamsMap - { teamName: { wins, losses, pct, ... } }
+ * @param {Object} teamsMap - { teamName: { wins, losses, pct, offRating, ... } }
  * @param {Object} weights - From parseWeightRows()
  * @param {string} league - 'MLB', 'NBA', 'NHL', 'NFL'
  * @param {Function} getPerformanceModifier - (league, betType) => number
+ * @param {Object} [scheduleMap] - Optional: { teamName: { homeDaysOff, awayDaysOff, homeB2B, awayB2B } }
  * @returns {Array} Flat array of pick objects with team, betType, line, confidence, rationale
  */
-function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier) {
+function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap) {
   const allPicks = [];
 
   for (const game of games) {
-    const picks = generateGamePicks(game, teamsMap, weights, league);
+    // Look up schedule info for this game's teams
+    const scheduleInfo = scheduleMap
+      ? (scheduleMap[game.home] || scheduleMap[game.away] || null)
+      : null;
+
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo);
 
     for (const pick of picks) {
-      // Calculate final units using the new sizing model
-      const betTypeNorm = pick.betType === 'over' || pick.betType === 'under' ? 'total' : pick.betType;
+      // Calculate final units using the sizing model
+      const betTypeNorm = pick.betType === 'over' || pick.betType === 'under'
+        ? 'total' : pick.betType;
       const perfMod = getPerformanceModifier(league, betTypeNorm);
 
       let units = calcUnits(
@@ -523,7 +482,6 @@ function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifi
 
       pick._units = units;
       pick.confidence = edgeToDisplayConfidence(pick._edge);
-
       allPicks.push(pick);
     }
   }
@@ -534,14 +492,10 @@ function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifi
 
 module.exports = {
   generateAllPicks,
-  generateGamePicks,
-  // Exported for testing / calibration
-  teamStrength,
-  restAdjustment,
+  generateGamePicks,    // Exported for testing / calibration
   projectMargin,
   projectTotal,
   projectWinProb,
-  HOME_ADVANTAGE,
   AVG_TOTAL,
   STRENGTH_TO_MARGIN,
 };
