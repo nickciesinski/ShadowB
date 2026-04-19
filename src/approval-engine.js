@@ -1,13 +1,13 @@
 'use strict';
 // =============================================================
-// src/approval-engine.js â Pick approval / filtering layer
-// Sprint 3: Candidate â Approved split
+// src/approval-engine.js — Pick approval / filtering layer
+// Sprint 3: Candidate → Approved split
 //
 // Every pick passes through; nothing is discarded. Each pick is
 // tagged with approval_status ('approved' | 'tracking_only') and
 // a human-readable approval_reason string explaining why.
 //
-// Thresholds are intentionally conservative at launch â the goal
+// Thresholds are intentionally conservative at launch — the goal
 // is to separate signal from noise so the daily email surfaces
 // only high-conviction plays while the full card still logs to
 // Performance_Log for analysis.
@@ -17,16 +17,16 @@
  * Default approval thresholds per league.
  * Override per-league where we have enough ROI data to justify it.
  *
- * minEdgePct        â minimum model edge vs market (%). Derived from
+ * minEdgePct        — minimum model edge vs market (%). Derived from
  *                     game-model _edge field.
- * minMarketQuality  â minimum market quality score (0-1). Markets with
+ * minMarketQuality  — minimum market quality score (0-1). Markets with
  *                     thin liquidity or stale lines score low.
- * minDataCompleteness â minimum data completeness (0-1). Ensures we
+ * minDataCompleteness — minimum data completeness (0-1). Ensures we
  *                       had enough stat inputs to trust the projection.
- * minConfidence     â minimum raw confidence from game-model (1-10).
+ * minConfidence     — minimum raw confidence from game-model (1-10).
  *                     Catches low-signal picks even if edge looks OK.
- * maxUncertainty    â maximum model uncertainty (0-1). High uncertainty
- *                     means wide projection spread â tracking only.
+ * maxUncertainty    — maximum model uncertainty (0-1). High uncertainty
+ *                     means wide projection spread → tracking only.
  */
 const DEFAULT_THRESHOLDS = {
   minEdgePct:          1.5,
@@ -38,23 +38,23 @@ const DEFAULT_THRESHOLDS = {
 
 const LEAGUE_OVERRIDES = {
   NHL: {
-    // NHL has been our strongest league â loosen slightly
+    // NHL has been our strongest league — loosen slightly
     minEdgePct:       1.0,
     minConfidence:    3,
   },
   NBA: {
-    // NBA moneyline is contaminated (stake=0 bug) â tighten ML via
+    // NBA moneyline is contaminated (stake=0 bug) — tighten ML via
     // per-market logic in shouldApprove, but keep defaults here
     minEdgePct:       1.5,
   },
   MLB: {
-    // MLB has been bleeding â tighten
+    // MLB has been bleeding — tighten
     minEdgePct:       2.0,
-    minConfidence:    5,
+    minConfidence:    6,
     minMarketQuality: 0.35,
   },
   NFL: {
-    // Limited recent data â use defaults
+    // Limited recent data — use defaults
   },
 };
 
@@ -103,14 +103,14 @@ function shouldApprove(pick, thresholds, league) {
     reasons.push(`uncertainty ${uncertainty.toFixed(2)} > max ${thresholds.maxUncertainty}`);
   }
 
-  // 6. Special case: NBA moneyline is contaminated â tracking only
+  // 6. Special case: NBA moneyline is contaminated — tracking only
   if (league === 'NBA' && betType === 'moneyline') {
     reasons.push('NBA moneyline data contaminated (stake=0 bug)');
   }
 
   // 7. Backfill picks (confidence 1%, units 0.01) are always tracking
   if (confidence <= 1) {
-    reasons.push('backfill pick (confidence â¤1%)');
+    reasons.push('backfill pick (confidence ≤1%)');
   }
 
   return {
