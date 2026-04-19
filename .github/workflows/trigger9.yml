@@ -14,6 +14,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: 'npm' }
       - run: npm ci
+
+      - name: Smoke-test approval engine
+        run: node -e "require('./src/approval-engine')"
+
       - name: Send daily picks email
         run: node src/triggers.js trigger9
         env:
