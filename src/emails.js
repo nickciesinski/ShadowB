@@ -49,7 +49,7 @@ async function sendDailyPicksEmail() {
   // Performance_Log columns (0-indexed):
   //   0: date, 1: league, 2: market, 3: away, 4: home, 5: start_time,
   //   6: bet_type, 7: pick, 8: line, 9: odds, 10: units, 11: confidence,
-  //   19: approval_status, 20: approval_reason
+  //   19: Notes, 20: actual_result, 21: approval_status, 22: approval_reason
   const today = new Date();
   const mm = String(today.getMonth() + 1);
   const dd = String(today.getDate());
@@ -65,7 +65,7 @@ async function sendDailyPicksEmail() {
     return normalized === todayStr;
   });
 
-  const approved = todayPicks.filter(r => (r[19] || '').toString().trim() === 'approved');
+  const approved = todayPicks.filter(r => (r[21] || '').toString().trim() === 'approved');
   const allPicks = todayPicks;
 
   console.log(`[emails] Today's picks: ${allPicks.length} total, ${approved.length} approved`);
@@ -114,7 +114,7 @@ async function sendDailyPicksEmail() {
     let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<tr style="background:#333;color:white;"><th style="padding:4px;">League</th><th style="padding:4px;">Pick</th><th style="padding:4px;">Market</th><th style="padding:4px;">Line</th><th style="padding:4px;">Odds</th><th style="padding:4px;">Units</th><th style="padding:4px;">Status</th></tr>';
     for (const r of allPicks) {
-      const status = (r[19] || 'tracking_only').toString().trim();
+      const status = (r[21] || 'tracking_only').toString().trim();
       const statusLabel = status === 'approved' ? '&#9989;' : '&#128065;';
       const rowBg = status === 'approved' ? 'background:#f0fdf4;' : '';
       html += `<tr style="${rowBg}">`;
