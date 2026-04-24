@@ -9,7 +9,7 @@
 //
 // ── Sprint 3: Approval Layer ──
 // All picks now pass through approval-engine.js before logging.
-// Each pick gets approval_status + approval_reason (cols T, U).
+// Each pick gets approval_status + approval_reason (cols V, W).
 // Approved picks are also written to Daily_Combos sheet.
 // =============================================================
 
@@ -340,7 +340,7 @@ async function generateNFLPredictions() {
  *   G: bet_type, H: pick, I: line, J: odds, K: units, L: confidence,
  *   M: prediction_score, N: preAwayScore, O: preHomeScore, P: preTotal,
  *   Q: result, R: unit_return, S: weights_snapshot,
- *   T: approval_status, U: approval_reason
+ *   T: Notes (skip), U: actual_result (skip), V: approval_status, W: approval_reason
  */
 async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
   if (!picks || picks.length === 0) return;
@@ -429,8 +429,10 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         dateStr, sport, betType, game.away || '', game.home || '', game.commence || '',
         betType, pick, line, odds, units, `${confidence}%`, 0, 0, 0, 0, '', '',
         JSON.stringify(weights || {}),
-        approvalStatus,    // T: approval_status
-        approvalReason,    // U: approval_reason
+        '',                // T: Notes (leave empty)
+        '',                // U: actual_result (leave empty)
+        approvalStatus,    // V: approval_status
+        approvalReason,    // W: approval_reason
       ]);
       continue;
     }
@@ -553,8 +555,10 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       '',               // Q: result (empty — to be graded)
       '',               // R: unit_return (empty — to be graded)
       JSON.stringify(weights || {}), // S: weights_snapshot
-      approvalStatus,   // T: approval_status
-      approvalReason,   // U: approval_reason
+      '',               // T: Notes (leave empty)
+      '',               // U: actual_result (leave empty)
+      approvalStatus,   // V: approval_status
+      approvalReason,   // W: approval_reason
     ]);
   }
 
@@ -606,8 +610,9 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           dateStr, sport, 'moneyline', info.away, info.home, info.commence,
           'moneyline', pickTeam, '', pickOdds, units, '1%', 0, 0, 0, 0, '', '',
           JSON.stringify(weights || {}),
-          'tracking_only',                // T: backfill picks are always tracking
-          'backfill pick (confidence ≤1%)', // U: approval_reason
+          '', '',           // T: Notes, U: actual_result (skip)
+          'tracking_only',                // V: backfill picks are always tracking
+          'backfill pick (confidence ≤1%)', // W: approval_reason
         ]);
         backfilled++;
       }
@@ -628,8 +633,9 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           dateStr, sport, 'spread', info.away, info.home, info.commence,
           'spread', info.home, entry.point || '', entry.price, spreadUnits, '1%', 0, 0, 0, 0, '', '',
           JSON.stringify(weights || {}),
-          'tracking_only',                // T: backfill picks are always tracking
-          'backfill pick (confidence ≤1%)', // U: approval_reason
+          '', '',           // T: Notes, U: actual_result (skip)
+          'tracking_only',                // V: backfill picks are always tracking
+          'backfill pick (confidence ≤1%)', // W: approval_reason
         ]);
         backfilled++;
       }
@@ -662,8 +668,9 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           dateStr, sport, 'total', info.away, info.home, info.commence,
           'total', pick, lineNum, entry.price, totalUnits, '1%', 0, 0, 0, 0, '', '',
           JSON.stringify(weights || {}),
-          'tracking_only',                // T: backfill picks are always tracking
-          'backfill pick (confidence ≤1%)', // U: approval_reason
+          '', '',           // T: Notes, U: actual_result (skip)
+          'tracking_only',                // V: backfill picks are always tracking
+          'backfill pick (confidence ≤1%)', // W: approval_reason
         ]);
         backfilled++;
       }
@@ -757,7 +764,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           final_units: parseFloat(r[10]) || 0,
           modifier: getPerformanceModifier(r[1], r[6]),
           trigger_name: `trigger4_${sport}`,
-          approval_status: r[19] || 'tracking_only',  // Sprint 3
+          approval_status: r[21] || 'tracking_only',  // Sprint 3 (col V)
         }));
         await db.insertPerformanceRows(dbRows);
         console.log(`[predictions] Dual-wrote ${dbRows.length} ${sport} picks to Supabase`);
@@ -1001,7 +1008,7 @@ function gradeClvNumeric(openOdds, closeOdds) {
  * Performance Log columns (0-indexed):
  *   0: date, 1: league, 2: market, 3: awayTeam, 4: homeTeam,
  *   7: pick, 8: line, 9: odds, 10: units, 16: result (W/L/P), 17: unit_return,
- *   19: approval_status, 20: approval_reason
+ *   19: Notes, 20: actual_result, 21: approval_status, 22: approval_reason
  */
 async function gradePerformanceLog() {
   console.log('[predictions] Grading performance log from yesterday results...');
