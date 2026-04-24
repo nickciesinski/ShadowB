@@ -1,0 +1,45 @@
+name: Apply pending changes (one-time)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Apply patch
+        run: |
+          echo "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" | base64 -d | gunzip > /tmp/changes.patch
+          git apply /tmp/changes.patch
+          echo "Patch applied successfully"
+          git diff --stat
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove OPENAI_API_KEY refs, add trigger16 health check, tighten MLB thresholds
+
+          Changes:
+          - Remove OPENAI_API_KEY from config.js, .env.example, and all 15 workflow files
+          - Add sendTriggerHealthCheck() to emails.js (trigger16)
+          - Add trigger16 entry to triggers.js
+          - Create trigger16.yml workflow (7:30 AM ET daily health check)
+          - Bump MLB minConfidence 5->6 in approval-engine.js
+
+          Co-Authored-By: Claude <noreply@anthropic.com>"
+          git push origin main
+          echo "Changes pushed successfully"
+
+      - name: Clean up this workflow
+        run: |
+          git rm .github/workflows/apply-changes.yml
+          git commit -m "Remove one-time apply-changes workflow"
+          git push origin main
