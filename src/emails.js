@@ -281,17 +281,15 @@ async function sendTriggerHealthCheck() {
     return;
   }
 
-  // Today's date boundaries (UTC, since timestamps are ISO)
+  // Look back 24 hours from now to catch all triggers regardless of timezone.
+  // Triggers run on ET but timestamps are UTC — calendar-day matching misses them.
   const now = new Date();
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  // Filter to today's runs
+  // Filter to runs within the last 24 hours
   const todayRuns = monitorRows.slice(1).filter(row => {
     const ts = new Date(row[0]);
-    return ts >= todayStart && ts <= todayEnd;
+    return ts >= windowStart && ts <= now;
   });
 
   // Build a map of trigger name → { status, error, duration }
