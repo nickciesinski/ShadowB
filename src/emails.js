@@ -199,7 +199,7 @@ async function sendDailyPicksEmail() {
   await transporter.sendMail({
     from: GMAIL_USER,
     to: EMAIL_RECIPIENTS.join(', '),
-    subject: `&#127919; Shadow Bets — ${approved.length} Recommended Plays — ${todayFmt}`,
+    subject: `🎯 Shadow Bets — ${approved.length} Recommended Plays — ${todayFmt}`,
     html,
   });
 
@@ -245,7 +245,7 @@ async function sendPerformanceSummary() {
   await transporter.sendMail({
     from: GMAIL_USER,
     to: EMAIL_RECIPIENTS.join(', '),
-    subject: '&#128202; Shadow Bets Weekly Performance Summary',
+    subject: '📊 Shadow Bets Weekly Performance Summary',
     html,
   });
 

@@ -6,7 +6,7 @@
 // =============================================================
 
 const { validateConfig } = require('./config');
-const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults } = require('./data-collection');
+const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults, updateScheduleContext } = require('./data-collection');
 const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, generateNFLPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
 const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
 const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
@@ -30,8 +30,11 @@ const TRIGGERS = {
   // Trigger 1: 3:30 AM ET → Update player stats from ESPN
   trigger1: withMonitoring('trigger1', updatePlayerStats),
 
-  // Trigger 2: 4:00 AM ET → Update team stats from ESPN
-  trigger2: withMonitoring('trigger2', updateTeamStats),
+  // Trigger 2: 4:00 AM ET → Update team stats + schedule context from ESPN
+  trigger2: withMonitoring('trigger2', async () => {
+    await updateTeamStats();
+    await updateScheduleContext();
+  }),
 
   // Trigger 3: 4:30 AM ET → Fetch odds, grade yesterday, CLV snapshot
   trigger3: withMonitoring('trigger3', async () => {

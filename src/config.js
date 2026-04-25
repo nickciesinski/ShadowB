@@ -106,7 +106,6 @@ const SHEETS = {
 
 // ── API Keys ────────────────────────────────────────────────────
 const ODDS_API_KEY    = process.env.ODDS_API_KEY;
-const OPENAI_API_KEY  = process.env.OPENAI_API_KEY;
 const ODDS_API_BASE   = 'https://api.the-odds-api.com/v4';
 
 // ── Email ────────────────────────────────────────────────────────
@@ -149,7 +148,6 @@ module.exports = {
   SHEETS,
   ODDS_API_KEY,
   ODDS_API_BASE,
-  OPENAI_API_KEY,
   GMAIL_USER,
   GMAIL_APP_PASSWORD,
   EMAIL_RECIPIENTS,

@@ -200,6 +200,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj);
   if (totalPick) picks.push(totalPick);
 
+  // Attach data completeness to all picks (computed in this scope)
+  for (const pick of picks) {
+    pick._dataCompleteness = completenessScore;
+  }
+
   return picks;
 }
 

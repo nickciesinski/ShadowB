@@ -147,6 +147,30 @@ function getPerformanceModifier(league, betType) {
 // No minimum confidence filter — every game gets all 3 market picks.
 // Low-confidence picks use minimal units (0.01) instead of being excluded.
 
+
+/**
+ * Build a schedule map from Schedule_Context rows for rest/B2B adjustments.
+ * Returns { homeTeamName: { homeDaysOff, awayDaysOff, homeB2B, awayB2B } }
+ */
+function buildScheduleMap(scheduleRows, sportFilter) {
+  const map = {};
+  if (!scheduleRows) return map;
+  for (const row of scheduleRows.slice(1)) {
+    if (row[1] !== sportFilter) continue;
+    const homeTeam = row[2] || '';
+    const awayTeam = row[3] || '';
+    const info = {
+      homeDaysOff: parseInt(row[4]) || 1,
+      awayDaysOff: parseInt(row[5]) || 1,
+      homeB2B: row[6] === 'TRUE',
+      awayB2B: row[7] === 'TRUE',
+    };
+    if (homeTeam) map[homeTeam] = info;
+    if (awayTeam) map[awayTeam] = info;
+  }
+  return map;
+}
+
 // ── MLB Predictions ─────────────────────────────────────────────
 
 /**
@@ -157,10 +181,11 @@ async function generateMLBPredictions() {
   console.log('[predictions] Generating MLB predictions (deterministic)...');
   await loadDbModifiers();
 
-  const [oddsRows, weightRows, teamRows] = await Promise.all([
+  const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
     getValues(SPREADSHEET_ID, SHEETS.WEIGHTS),
     getValues(SPREADSHEET_ID, SHEETS.TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'MLB');
@@ -171,14 +196,23 @@ async function generateMLBPredictions() {
   }
 
   const parsedWeights = parseWeightRows(weightRows);
+  const scheduleMap = buildScheduleMap(scheduleRows, 'MLB');
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
-    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+    teamsMap[row[2]] = {
+        wins: row[4], losses: row[5], pct: row[6],
+        // Sprint 2 enriched stats (columns 7-18 from updateTeamStats)
+        offRating: row[7] || '', defRating: row[8] || '', pace: row[9] || '',
+        runsPerGame: row[10] || '', runsAllowedPerGame: row[11] || '',
+        goalsFor: row[12] || '', goalsAgainst: row[13] || '',
+        pointsFor: row[14] || '', pointsAgainst: row[15] || '',
+        recentFormPct: row[16] || '',
+      };
   }
 
-  // Deterministic pick generation — no OpenAI
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier);
+  // Deterministic pick generation with schedule context
+  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] MLB: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
@@ -208,10 +242,11 @@ async function generateMLBPredictions() {
 async function generateNBAPredictions() {
   console.log('[predictions] Generating NBA predictions (deterministic)...');
 
-  const [oddsRows, weightRows, teamRows] = await Promise.all([
+  const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
     getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NBA),
     getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'NBA');
@@ -222,13 +257,22 @@ async function generateNBAPredictions() {
   }
 
   const parsedWeights = parseWeightRows(weightRows);
+  const scheduleMap = buildScheduleMap(scheduleRows, 'NBA');
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
-    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+    teamsMap[row[2]] = {
+        wins: row[4], losses: row[5], pct: row[6],
+        // Sprint 2 enriched stats (columns 7-18 from updateTeamStats)
+        offRating: row[7] || '', defRating: row[8] || '', pace: row[9] || '',
+        runsPerGame: row[10] || '', runsAllowedPerGame: row[11] || '',
+        goalsFor: row[12] || '', goalsAgainst: row[13] || '',
+        pointsFor: row[14] || '', pointsAgainst: row[15] || '',
+        recentFormPct: row[16] || '',
+      };
   }
 
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NBA', getPerformanceModifier);
+  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NBA', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] NBA: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
@@ -258,10 +302,11 @@ async function generateNBAPredictions() {
 async function generateNHLPredictions() {
   console.log('[predictions] Generating NHL predictions (deterministic)...');
 
-  const [oddsRows, weightRows, teamRows] = await Promise.all([
+  const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
     getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NHL),
     getValues(SPREADSHEET_ID, SHEETS.NHL_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'NHL');
@@ -275,10 +320,19 @@ async function generateNHLPredictions() {
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
-    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+    teamsMap[row[2]] = {
+        wins: row[4], losses: row[5], pct: row[6],
+        // Sprint 2 enriched stats (columns 7-18 from updateTeamStats)
+        offRating: row[7] || '', defRating: row[8] || '', pace: row[9] || '',
+        runsPerGame: row[10] || '', runsAllowedPerGame: row[11] || '',
+        goalsFor: row[12] || '', goalsAgainst: row[13] || '',
+        pointsFor: row[14] || '', pointsAgainst: row[15] || '',
+        recentFormPct: row[16] || '',
+      };
   }
 
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NHL', getPerformanceModifier);
+  const scheduleMap = buildScheduleMap(scheduleRows, 'NHL');
+  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NHL', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] NHL: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
@@ -298,10 +352,11 @@ async function generateNHLPredictions() {
 async function generateNFLPredictions() {
   console.log('[predictions] Generating NFL predictions (deterministic)...');
 
-  const [oddsRows, weightRows, teamRows] = await Promise.all([
+  const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
     getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NFL),
     getValues(SPREADSHEET_ID, SHEETS.NFL_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'NFL');
@@ -315,10 +370,19 @@ async function generateNFLPredictions() {
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
-    teamsMap[row[2]] = { wins: row[4], losses: row[5], pct: row[6] };
+    teamsMap[row[2]] = {
+        wins: row[4], losses: row[5], pct: row[6],
+        // Sprint 2 enriched stats (columns 7-18 from updateTeamStats)
+        offRating: row[7] || '', defRating: row[8] || '', pace: row[9] || '',
+        runsPerGame: row[10] || '', runsAllowedPerGame: row[11] || '',
+        goalsFor: row[12] || '', goalsAgainst: row[13] || '',
+        pointsFor: row[14] || '', pointsAgainst: row[15] || '',
+        recentFormPct: row[16] || '',
+      };
   }
 
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NFL', getPerformanceModifier);
+  const scheduleMap = buildScheduleMap(scheduleRows, 'NFL');
+  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NFL', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] NFL: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
