@@ -143,7 +143,14 @@ module.exports = {
  */
 async function trimSheet(spreadsheetId, sheetName, maxRows) {
   const all = await getValues(spreadsheetId, sheetName);
-  if (all.length <= maxRows + 1) return 0; // +1 for header, nothing to trim
+  if (all.length <= maxRows + 1) {
+    // No rows to trim, but still shrink grid if oversized from prior runs
+    try {
+      const cols = all[0] ? all[0].length : 1;
+      await shrinkGrid(spreadsheetId, sheetName, all.length, cols);
+    } catch (e) { /* ignore */ }
+    return 0;
+  }
 
   const header = all[0] ? [all[0]] : [];
   const dataRows = all.slice(1);
