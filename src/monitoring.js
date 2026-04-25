@@ -229,16 +229,20 @@ const { trimSheet } = require('./sheets');
 
 // Max data rows to keep per sheet (header excluded)
 const TRIM_TARGETS = [
-  { sheet: SHEETS.TRIGGER_MONITOR,  keep: 500 },   // ~30 days × 16 triggers
+  { sheet: SHEETS.TRIGGER_MONITOR,  keep: 500 },   // ~30 days x 16 triggers
   { sheet: SHEETS.SIMPLE_MONITOR,   keep: 500 },
   { sheet: SHEETS.API_USAGE_LOG,    keep: 500 },
-  { sheet: SHEETS.HISTORICAL_ODDS,  keep: 3000 },   // ~60 days of odds
-  { sheet: SHEETS.CLV_SNAPSHOT,     keep: 2000 },
-  { sheet: SHEETS.PROP_CLV_OPENING, keep: 2000 },
-  { sheet: SHEETS.PROP_CLV_CLOSING, keep: 2000 },
-  { sheet: SHEETS.PROP_PERFORMANCE, keep: 3000 },
-  { sheet: SHEETS.PLAYER_PROPS,     keep: 3000 },
-  { sheet: SHEETS.DAILY_COMBOS,     keep: 500 },
+  { sheet: SHEETS.HISTORICAL_ODDS,  keep: 2000 },   // ~45 days of odds
+  { sheet: SHEETS.CLV_SNAPSHOT,     keep: 1500 },
+  { sheet: SHEETS.PROP_CLV_OPENING, keep: 1500 },
+  { sheet: SHEETS.PROP_PERFORMANCE, keep: 2000 },
+  { sheet: SHEETS.PLAYER_PROPS,     keep: 2000 },
+  { sheet: SHEETS.DAILY_COMBOS,     keep: 300 },
+  { sheet: SHEETS.PERFORMANCE,      keep: 5000 },   // Main picks log
+  { sheet: SHEETS.PROP_COMBOS,      keep: 1000 },
+  { sheet: SHEETS.ODDS_RAW,         keep: 2000 },
+  { sheet: SHEETS.PROP_STATUS,      keep: 1000 },
+  { sheet: SHEETS.YESTERDAY_RESULTS,keep: 500 },
 ];
 
 /**
