@@ -133,8 +133,8 @@ module.exports = {
 
 /**
  * Trim a sheet to keep only the header row + the most recent `maxRows` data rows.
- * Reads the sheet, slices to keep header + last maxRows, clears, and rewrites.
- * Returns the number of rows removed.
+ * Reads the sheet, keeps header + last maxRows, clears, rewrites, then SHRINKS
+ * the grid to reclaim cells from the 10M workbook limit.
  *
  * @param {string} spreadsheetId
  * @param {string} sheetName
@@ -151,9 +151,64 @@ async function trimSheet(spreadsheetId, sheetName, maxRows) {
   const removed = dataRows.length - kept.length;
 
   await clearSheet(spreadsheetId, sheetName);
-  if (header.length > 0 || kept.length > 0) {
-    await setValues(spreadsheetId, sheetName, 'A1', [...header, ...kept]);
+  const newData = [...header, ...kept];
+  if (newData.length > 0) {
+    await setValues(spreadsheetId, sheetName, 'A1', newData);
   }
+
+  // Shrink the grid to reclaim cells from the workbook 10M limit.
+  // clearSheet only removes values; the grid rows/columns stay allocated.
+  try {
+    await shrinkGrid(spreadsheetId, sheetName, newData.length, newData[0] ? newData[0].length : 1);
+  } catch (e) {
+    console.warn(`[sheets] Grid shrink failed for ${sheetName}: ${e.message}`);
+  }
+
   console.log(`[sheets] Trimmed ${sheetName}: removed ${removed} old rows, kept ${kept.length}`);
   return removed;
+}
+
+/**
+ * Shrink a sheet's grid to exactly targetRows x targetCols.
+ * Deletes excess rows and columns that waste the 10M cell budget.
+ */
+async function shrinkGrid(spreadsheetId, sheetName, targetRows, targetCols) {
+  const sheets = await getSheetsClient();
+
+  // Get sheet ID from name
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const sheetMeta = meta.data.sheets.find(s => s.properties.title === sheetName);
+  if (!sheetMeta) return;
+
+  const sheetId = sheetMeta.properties.sheetId;
+  const currentRows = sheetMeta.properties.gridProperties.rowCount;
+  const currentCols = sheetMeta.properties.gridProperties.columnCount;
+
+  const requests = [];
+
+  // Keep at least 1 row and data + small buffer
+  const safeRows = Math.max(targetRows + 10, 2);
+  if (currentRows > safeRows) {
+    requests.push({
+      deleteDimension: {
+        range: { sheetId, dimension: 'ROWS', startIndex: safeRows, endIndex: currentRows },
+      },
+    });
+  }
+
+  // Keep at least data cols + small buffer
+  const safeCols = Math.max(targetCols + 2, 5);
+  if (currentCols > safeCols + 10) {
+    requests.push({
+      deleteDimension: {
+        range: { sheetId, dimension: 'COLUMNS', startIndex: safeCols, endIndex: currentCols },
+      },
+    });
+  }
+
+  if (requests.length > 0) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+    const savedCells = (currentRows * currentCols) - (safeRows * Math.min(currentCols, safeCols));
+    console.log(`[sheets] Shrunk ${sheetName} grid: ${currentRows}x${currentCols} → ${safeRows}x${Math.min(currentCols, safeCols)} (freed ~${savedCells} cells)`);
+  }
 }
