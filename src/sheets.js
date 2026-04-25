@@ -121,6 +121,7 @@ async function setCell(spreadsheetId, sheetName, cellA1, value) {
 }
 
 module.exports = {
+  trimSheet,
   getSheetsClient,
   getValues,
   setValues,
@@ -129,3 +130,30 @@ module.exports = {
   getCell,
   setCell,
 };
+
+/**
+ * Trim a sheet to keep only the header row + the most recent `maxRows` data rows.
+ * Reads the sheet, slices to keep header + last maxRows, clears, and rewrites.
+ * Returns the number of rows removed.
+ *
+ * @param {string} spreadsheetId
+ * @param {string} sheetName
+ * @param {number} maxRows - Maximum data rows to keep (excludes header)
+ * @returns {number} - Number of rows removed
+ */
+async function trimSheet(spreadsheetId, sheetName, maxRows) {
+  const all = await getValues(spreadsheetId, sheetName);
+  if (all.length <= maxRows + 1) return 0; // +1 for header, nothing to trim
+
+  const header = all[0] ? [all[0]] : [];
+  const dataRows = all.slice(1);
+  const kept = dataRows.slice(dataRows.length - maxRows); // keep most recent (bottom)
+  const removed = dataRows.length - kept.length;
+
+  await clearSheet(spreadsheetId, sheetName);
+  if (header.length > 0 || kept.length > 0) {
+    await setValues(spreadsheetId, sheetName, 'A1', [...header, ...kept]);
+  }
+  console.log(`[sheets] Trimmed ${sheetName}: removed ${removed} old rows, kept ${kept.length}`);
+  return removed;
+}

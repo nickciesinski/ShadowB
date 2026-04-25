@@ -13,6 +13,8 @@
 const nodemailer = require('nodemailer');
 const { SPREADSHEET_ID, SHEETS, GMAIL_USER, GMAIL_APP_PASSWORD, EMAIL_RECIPIENTS } = require('./config');
 const { getValues, appendRows } = require('./sheets');
+let _emailDb = null;
+function getEmailDb() { if (!_emailDb) _emailDb = require('./db'); return _emailDb; }
 
 let _transporter = null;
 
@@ -275,32 +277,56 @@ module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealt
 async function sendTriggerHealthCheck() {
   console.log('[emails] Running daily trigger health check...');
 
-  const monitorRows = await getValues(SPREADSHEET_ID, SHEETS.TRIGGER_MONITOR);
-  if (!monitorRows || monitorRows.length <= 1) {
-    console.warn('[emails] No Trigger_Monitor data found');
-    return;
-  }
-
-  // Look back 24 hours from now to catch all triggers regardless of timezone.
-  // Triggers run on ET but timestamps are UTC — calendar-day matching misses them.
   const now = new Date();
   const windowStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  // Filter to runs within the last 24 hours
-  const todayRuns = monitorRows.slice(1).filter(row => {
-    const ts = new Date(row[0]);
-    return ts >= windowStart && ts <= now;
-  });
-
-  // Build a map of trigger name → { status, error, duration }
-  // If a trigger ran multiple times, keep the latest
+  // Build runMap from Sheets first, then Supabase as fallback.
+  // When the workbook hits 10M cells, Trigger_Monitor writes fail silently
+  // and the sheet has no recent entries. Supabase trigger_log is the backup.
   const runMap = {};
-  for (const row of todayRuns) {
-    const name = row[1] || '';
-    const status = row[2] || '';
-    const duration = row[5] || '';
-    const error = row[7] || '';
-    runMap[name] = { status, duration, error };
+
+  // Try Sheets first
+  try {
+    const monitorRows = await getValues(SPREADSHEET_ID, SHEETS.TRIGGER_MONITOR);
+    if (monitorRows && monitorRows.length > 1) {
+      const todayRuns = monitorRows.slice(1).filter(row => {
+        const ts = new Date(row[0]);
+        return !isNaN(ts.getTime()) && ts >= windowStart && ts <= now;
+      });
+      for (const row of todayRuns) {
+        const name = row[1] || '';
+        const status = row[2] || '';
+        const duration = row[5] || '';
+        const error = row[7] || '';
+        runMap[name] = { status, duration, error };
+      }
+    }
+  } catch (e) {
+    console.warn('[emails] Trigger_Monitor read failed:', e.message);
+  }
+
+  // If Sheets had few results, try Supabase as fallback
+  if (Object.keys(runMap).length < 3) {
+    console.log('[emails] Few Sheets results, checking Supabase trigger_log...');
+    const db = getEmailDb();
+    const dbRuns = await db.getRecentTriggerRuns(24);
+    if (dbRuns && dbRuns.length > 0) {
+      for (const row of dbRuns) {
+        const name = row.trigger_name || '';
+        if (runMap[name]) continue; // Sheets data takes precedence
+        runMap[name] = {
+          status: row.status || '',
+          duration: row.duration_sec != null ? String(row.duration_sec) : '',
+          error: row.error_message || '',
+        };
+      }
+      console.log(`[emails] Supabase added ${dbRuns.length} trigger entries`);
+    }
+  }
+
+  if (Object.keys(runMap).length === 0) {
+    console.warn('[emails] No trigger data found in Sheets or Supabase');
+    return;
   }
 
   // Expected triggers for today

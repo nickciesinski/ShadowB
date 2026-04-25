@@ -133,6 +133,22 @@ async function insertPropStatus(rows) {
 
 // ── Trigger Log ─────────────────────────────────────────────────
 
+/**
+ * Get trigger runs from the last N hours. Used by health check as fallback
+ * when Sheets Trigger_Monitor is unavailable (cell limit).
+ */
+async function getRecentTriggerRuns(hours = 24) {
+  const sb = getClient();
+  if (!sb) return null;
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const { data, error } = await sb.from('trigger_log')
+    .select('trigger_name, status, start_time, end_time, duration_sec, error_message')
+    .gte('start_time', since)
+    .order('start_time', { ascending: false });
+  if (error) { console.warn('[db] getRecentTriggerRuns:', error.message); return null; }
+  return data;
+}
+
 async function logTrigger({ trigger_name, status, start_time, end_time, duration_sec, records_processed, error_message, memory_mb }) {
   const sb = getClient();
   if (!sb) return;
@@ -170,6 +186,7 @@ async function rawSelect(table, { columns = '*', filters = {}, limit, orderBy } 
 }
 
 module.exports = {
+  getRecentTriggerRuns,
   isEnabled,
   getClient,
   // Performance

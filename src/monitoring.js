@@ -211,6 +211,7 @@ function withMonitoring(name, fn) {
 }
 
 module.exports = {
+  trimAccumulatingSheets,
   logTriggerRun,
   logSimple,
   logApiCall,
@@ -218,3 +219,44 @@ module.exports = {
   refreshDashboardHeader,
   withMonitoring,
 };
+
+// ── Sheet Capacity Management ───────────────────────────────────
+// The Google Sheets workbook has a 10M cell limit.  Accumulating sheets
+// (monitors, logs, historical data) must be trimmed periodically or
+// writes start failing.  This runs as part of the nightly trigger14 cycle.
+
+const { trimSheet } = require('./sheets');
+
+// Max data rows to keep per sheet (header excluded)
+const TRIM_TARGETS = [
+  { sheet: SHEETS.TRIGGER_MONITOR,  keep: 500 },   // ~30 days × 16 triggers
+  { sheet: SHEETS.SIMPLE_MONITOR,   keep: 500 },
+  { sheet: SHEETS.API_USAGE_LOG,    keep: 500 },
+  { sheet: SHEETS.HISTORICAL_ODDS,  keep: 3000 },   // ~60 days of odds
+  { sheet: SHEETS.CLV_SNAPSHOT,     keep: 2000 },
+  { sheet: SHEETS.PROP_CLV_OPENING, keep: 2000 },
+  { sheet: SHEETS.PROP_CLV_CLOSING, keep: 2000 },
+  { sheet: SHEETS.PROP_PERFORMANCE, keep: 3000 },
+  { sheet: SHEETS.PLAYER_PROPS,     keep: 3000 },
+  { sheet: SHEETS.DAILY_COMBOS,     keep: 500 },
+];
+
+/**
+ * Trim all accumulating sheets to keep only recent data.
+ * Run this at the start of trigger14 (nightly optimization) so
+ * subsequent writes don't hit the 10M cell ceiling.
+ */
+async function trimAccumulatingSheets() {
+  console.log('[monitoring] Starting sheet capacity trim...');
+  let totalRemoved = 0;
+  for (const { sheet, keep } of TRIM_TARGETS) {
+    try {
+      const removed = await trimSheet(SPREADSHEET_ID, sheet, keep);
+      totalRemoved += removed;
+    } catch (e) {
+      console.warn(`[monitoring] Failed to trim ${sheet}: ${e.message}`);
+    }
+  }
+  console.log(`[monitoring] Sheet trim complete — removed ${totalRemoved} total rows`);
+  return totalRemoved;
+}

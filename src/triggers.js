@@ -14,7 +14,7 @@ const { updatePlayerTiers } = require('./player-tiers');
 const { updatePlayerStatus } = require('./prop-status');
 const { snapPropLines, snapClosingPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
 const { runAllOptimizations, syncPerformanceLog, seedPropWeights, seedModifiers } = require('./optimize');
-const { withMonitoring } = require('./monitoring');
+const { withMonitoring, trimAccumulatingSheets } = require('./monitoring');
 
 /** Small delay to spread Sheets writes across the quota window. */
 const pause = (ms) => new Promise(r => setTimeout(r, ms));
@@ -113,7 +113,10 @@ const TRIGGERS = {
   // Trigger 14: 11:30 PM ET → Full nightly optimization cycle
   // Syncs Performance Log to Supabase, auto-updates modifiers,
   // applies CLV penalties, updates prop weights.
-  trigger14: withMonitoring('trigger14', runAllOptimizations),
+  trigger14: withMonitoring('trigger14', async () => {
+    await trimAccumulatingSheets();
+    await runAllOptimizations();
+  }),
 
   // Trigger 15: One-time bootstrap — sync historical data + seed weights + modifiers
   // Run manually via workflow_dispatch after Supabase setup.
@@ -127,6 +130,9 @@ const TRIGGERS = {
   // Compares today's Trigger_Monitor entries against expected schedule.
   // Alerts if any triggers failed or never ran.
   trigger16: withMonitoring('trigger16', sendTriggerHealthCheck),
+
+  // Trigger 17: Manual sheet capacity cleanup
+  trigger17: withMonitoring('trigger17', trimAccumulatingSheets),
 };
 
 // ── Main Entry Point ─────────────────────────────────────────────
