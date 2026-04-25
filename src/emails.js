@@ -257,4 +257,128 @@ async function sendPerformanceSummary() {
   console.log('[emails] Performance summary sent');
 }
 
-module.exports = { sendDailyPicksEmail, sendPerformanceSummary };
+module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck };
+
+// ── Trigger Health Check ─────────────────────────────────────────
+
+/**
+ * Daily health check: compare today's Trigger_Monitor entries against
+ * the expected schedule. Alert via email if any triggers are missing or failed.
+ *
+ * Trigger 16: runs at midnight ET (after all daily triggers complete).
+ *
+ * Expected daily triggers (weekdays):
+ *   trigger1-4, trigger6-12, trigger14
+ * Sunday only: trigger13
+ * Manual only: trigger5 (no-op), trigger15 (bootstrap), trigger16 (this)
+ */
+async function sendTriggerHealthCheck() {
+  console.log('[emails] Running daily trigger health check...');
+
+  const monitorRows = await getValues(SPREADSHEET_ID, SHEETS.TRIGGER_MONITOR);
+  if (!monitorRows || monitorRows.length <= 1) {
+    console.warn('[emails] No Trigger_Monitor data found');
+    return;
+  }
+
+  // Today's date boundaries (UTC, since timestamps are ISO)
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date(now);
+  todayEnd.setHours(23, 59, 59, 999);
+
+  // Filter to today's runs
+  const todayRuns = monitorRows.slice(1).filter(row => {
+    const ts = new Date(row[0]);
+    return ts >= todayStart && ts <= todayEnd;
+  });
+
+  // Build a map of trigger name → { status, error, duration }
+  // If a trigger ran multiple times, keep the latest
+  const runMap = {};
+  for (const row of todayRuns) {
+    const name = row[1] || '';
+    const status = row[2] || '';
+    const duration = row[5] || '';
+    const error = row[7] || '';
+    runMap[name] = { status, duration, error };
+  }
+
+  // Expected triggers for today
+  const dayOfWeek = now.getDay(); // 0=Sun
+  const expectedDaily = [
+    'trigger1', 'trigger2', 'trigger3', 'trigger4',
+    'trigger6', 'trigger7', 'trigger8', 'trigger9',
+    'trigger10', 'trigger11', 'trigger12', 'trigger14',
+  ];
+  if (dayOfWeek === 0) expectedDaily.push('trigger13'); // Sunday weekly summary
+
+  // Categorize
+  const passed = [];
+  const failed = [];
+  const missing = [];
+
+  for (const name of expectedDaily) {
+    const run = runMap[name];
+    if (!run) {
+      missing.push(name);
+    } else if (run.status === 'FAILED') {
+      failed.push({ name, error: run.error, duration: run.duration });
+    } else {
+      passed.push({ name, duration: run.duration });
+    }
+  }
+
+  const allGood = failed.length === 0 && missing.length === 0;
+  const statusEmoji = allGood ? '✅' : '🚨';
+  const statusText = allGood ? 'All Clear' : `${failed.length} Failed, ${missing.length} Missing`;
+
+  // Build email
+  const todayFmt = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  let html = `
+<div style="font-family:'Segoe UI',Roboto,sans-serif;max-width:600px;margin:auto;padding:20px;">
+  <h1 style="color:${allGood ? '#2d6a4f' : '#d00000'};">${statusEmoji} Shadow Bets — Daily Health Check</h1>
+  <p style="color:#666;">${todayFmt}</p>
+  <p style="font-size:18px;font-weight:bold;padding:10px;background:${allGood ? '#d8f3dc' : '#ffd6d6'};border-radius:8px;">
+    ${statusText} — ${passed.length}/${expectedDaily.length} triggers ran successfully
+  </p>`;
+
+  if (failed.length > 0) {
+    html += `<h2 style="color:#d00000;">Failed Triggers</h2>
+<table style="width:100%;border-collapse:collapse;">
+<tr style="background:#d00000;color:white;"><th style="padding:6px;">Trigger</th><th style="padding:6px;">Duration</th><th style="padding:6px;">Error</th></tr>`;
+    for (const f of failed) {
+      const errShort = (f.error || 'Unknown error').substring(0, 120);
+      html += `<tr style="background:#fff0f0;"><td style="padding:6px;border:1px solid #ddd;">${f.name}</td><td style="padding:6px;border:1px solid #ddd;">${f.duration}s</td><td style="padding:6px;border:1px solid #ddd;font-size:12px;">${errShort}</td></tr>`;
+    }
+    html += '</table>';
+  }
+
+  if (missing.length > 0) {
+    html += `<h2 style="color:#e85d04;">Missing Triggers</h2>
+<p>These triggers were expected today but never ran:</p>
+<p style="font-size:16px;"><strong>${missing.join(', ')}</strong></p>`;
+  }
+
+  if (passed.length > 0) {
+    html += `<h2 style="color:#2d6a4f;">Passed (${passed.length})</h2>
+<p style="color:#666;font-size:13px;">${passed.map(p => `${p.name} (${p.duration}s)`).join(' · ')}</p>`;
+  }
+
+  html += `
+  <hr style="margin-top:20px;border:none;border-top:1px solid #eee;">
+  <p style="font-size:11px;color:#999;">Shadow Bets Health Check — trigger16</p>
+</div>`;
+
+  const transporter = getTransporter();
+  await transporter.sendMail({
+    from: GMAIL_USER,
+    to: EMAIL_RECIPIENTS.join(', '),
+    subject: `${statusEmoji} Shadow Bets Health — ${statusText} — ${todayFmt}`,
+    html,
+  });
+
+  console.log(`[emails] Health check sent: ${statusText} (${passed.length} passed, ${failed.length} failed, ${missing.length} missing)`);
+}

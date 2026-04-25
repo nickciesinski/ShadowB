@@ -8,7 +8,7 @@
 const { validateConfig } = require('./config');
 const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults, updateScheduleContext } = require('./data-collection');
 const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, generateNFLPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
-const { sendDailyPicksEmail, sendPerformanceSummary } = require('./emails');
+const { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck } = require('./emails');
 const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
 const { updatePlayerStatus } = require('./prop-status');
@@ -122,6 +122,11 @@ const TRIGGERS = {
     await seedPropWeights();
     await seedModifiers();  // populate performance_modifiers table for dynamic loading
   }),
+
+  // Trigger 16: Midnight ET → Daily health check email
+  // Compares today's Trigger_Monitor entries against expected schedule.
+  // Alerts if any triggers failed or never ran.
+  trigger16: withMonitoring('trigger16', sendTriggerHealthCheck),
 };
 
 // ── Main Entry Point ─────────────────────────────────────────────
