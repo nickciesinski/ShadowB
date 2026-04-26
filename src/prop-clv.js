@@ -15,7 +15,7 @@
  * This is the same feedback loop the main picks system uses, but adapted
  * for the prop domain where markets are more granular (batter_hits, player_points, etc.).
  */
-const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
+const { getValues, setValues, clearSheet, appendRows, ensureSheet } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
 const { readPropWeights, writePropWeights, computeWeightUpdates, propSheetForLeague } = require('./prop-weights');
 const { logApiCall } = require('./monitoring');
@@ -98,6 +98,7 @@ async function snapClosingPropLines() {
     return;
   }
 
+  await ensureSheet(SPREADSHEET_ID, SHEETS.PROP_CLV_CLOSING);
   await clearSheet(SPREADSHEET_ID, SHEETS.PROP_CLV_CLOSING);
   await setValues(SPREADSHEET_ID, SHEETS.PROP_CLV_CLOSING, 'A1', props);
   console.log(`[prop-clv] Cached ${props.length - 1} closing prop lines to ${SHEETS.PROP_CLV_CLOSING}`);

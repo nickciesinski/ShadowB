@@ -120,7 +120,26 @@ async function setCell(spreadsheetId, sheetName, cellA1, value) {
   await setValues(spreadsheetId, sheetName, cellA1, [[value]]);
 }
 
+/**
+ * Ensure a sheet tab exists in the workbook. Creates it if missing.
+ */
+async function ensureSheet(spreadsheetId, sheetName) {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const exists = meta.data.sheets.some(s => s.properties.title === sheetName);
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: sheetName } } }],
+      },
+    });
+    console.log(`[sheets] Created missing sheet: ${sheetName}`);
+  }
+}
+
 module.exports = {
+  ensureSheet,
   trimSheet,
   getSheetsClient,
   getValues,
@@ -194,7 +213,7 @@ async function shrinkGrid(spreadsheetId, sheetName, targetRows, targetCols) {
   const requests = [];
 
   // Keep at least 1 row and data + small buffer
-  const safeRows = Math.max(targetRows + 10, 2);
+  const safeRows = Math.max(targetRows + 500, 2);
   if (currentRows > safeRows) {
     requests.push({
       deleteDimension: {
