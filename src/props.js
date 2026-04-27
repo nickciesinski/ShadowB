@@ -41,9 +41,7 @@ const PROP_ELITE_EDGE_PCT = 2.0;
 // calculated from ALL books (more data = more accurate), but Prop_Combos
 // output is filtered to actionable books only.
 const PREFERRED_BOOKS = [
-  'Bovada', 'BetOnline.ag', 'MyBookie.ag',
-  // DFS platforms aren't in the Odds API, but MyBookie lines often
-  // align with PrizePicks/Underdog/Betr/Sleepr prop lines.
+  'Bovada', 'MyBookie.ag', 'FanDuel', 'DraftKings',
 ];
 
 const PROPS_SHEET   = SHEETS.PLAYER_PROPS;    // 'Player_Props'

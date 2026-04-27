@@ -637,6 +637,7 @@ async function fetchLiveScores() {
         games.push({
           league,
           eventId: event.id,
+          gameDate: event.date || comp.date || '',
           home: homeTeam?.team?.displayName || '',
           away: awayTeam?.team?.displayName || '',
           homeScore: parseInt(homeTeam?.score) || 0,
@@ -853,11 +854,19 @@ export default function App() {
     if (!data?.props || !liveGames.length) return;
 
     const fetchStats = async () => {
-      // Find unique live/post games that have props
+      // Only consider games from today (prevents stale yesterday stats)
+      const todayDate = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+      const isToday = (g) => {
+        if (!g.gameDate) return g.status === 'in'; // no date = only trust live games
+        try { return new Date(g.gameDate).toLocaleDateString('en-CA') === todayDate; }
+        catch { return false; }
+      };
+
+      // Find unique live/post games that have props AND are from today
       const gameMap = new Map();
       for (const prop of data.props) {
         const game = matchPropToGame(prop, liveGames);
-        if (game && game.eventId && (game.status === 'in' || game.status === 'post')) {
+        if (game && game.eventId && (game.status === 'in' || game.status === 'post') && isToday(game)) {
           const cfg = ESPN_SPORTS[game.league];
           if (cfg && !gameMap.has(game.eventId)) {
             gameMap.set(game.eventId, { sport: cfg.key, leagueKey: cfg.league, game });
