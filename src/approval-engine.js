@@ -45,12 +45,17 @@ const LEAGUE_OVERRIDES = {
   NBA: {
     // NBA moneyline is contaminated (stake=0 bug) — tighten ML via
     // per-market logic in shouldApprove, but keep defaults here
-    minEdgePct:       1.5,
+    // 2026-04-26: total ROI -11.6% on 167 bets (45.5% win rate)
+    // Raised minEdgePct 1.5→2.0, lowered maxUncertainty 0.75→0.65
+    minEdgePct:       2.0,
+    maxUncertainty:   0.65,
   },
   MLB: {
     // MLB has been bleeding — tighten
-    minEdgePct:       2.0,
-    minConfidence:    6,
+    // 2026-04-26: spread ROI -17.3% on 138 bets, overall ROI -3.6 to -17.3%
+    // Raised minEdgePct 2.0→2.5, minConfidence 6→7
+    minEdgePct:       2.5,
+    minConfidence:    7,
     minMarketQuality: 0.35,
   },
   NFL: {
