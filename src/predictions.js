@@ -1111,6 +1111,7 @@ async function gradePerformanceLog() {
   }
 
   let graded = 0;
+  const gradedForDb = [];
   const maxRows = Math.min(500, perfRows.length);
 
   for (let i = 1; i < maxRows; i++) {
@@ -1164,6 +1165,19 @@ async function gradePerformanceLog() {
     }
 
     graded++;
+    // Collect for Supabase sync
+    const rowDate = String(row[0] || '').trim();
+    const dbDate = rowDate.replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'); // MM/DD/YYYY → YYYY-MM-DD
+    gradedForDb.push({
+      date: dbDate,
+      league,
+      game: `${awayTeam} @ ${homeTeam}`,
+      market,
+      pick,
+      result: betResult,
+      units_returned: parseFloat(unitReturn.toFixed(2)),
+      clv_grade: clvInfo ? gradeClvNumeric(odds, clvInfo.closeOdds) : null,
+    });
     console.log(`[predictions] Row ${i + 1}: ${betResult} — ${awayTeam} @ ${homeTeam} (${market}) — ${unitReturn.toFixed(2)} units`);
   }
 
@@ -1171,6 +1185,15 @@ async function gradePerformanceLog() {
     // Write back the full Performance Log with grades applied
     await setValues(SPREADSHEET_ID, SHEETS.PERFORMANCE, 'A1', perfRows);
     console.log(`[predictions] Grading complete: ${graded} bets graded`);
+
+    // Sync graded results to Supabase so the optimizer has real data
+    if (db.isEnabled() && gradedForDb.length > 0) {
+      try {
+        await db.updatePerformanceResults(gradedForDb);
+      } catch (err) {
+        console.warn('[predictions] Supabase grade sync failed:', err.message);
+      }
+    }
   } else {
     console.log('[predictions] No bets matched yesterday\'s results');
   }
