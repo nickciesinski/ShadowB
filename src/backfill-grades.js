@@ -74,8 +74,6 @@ async function backfillGrades() {
       market,
       pick,
       result,
-      units_returned: parseFloat(unitReturn.toFixed(2)),
-      clv_grade: clvGrade,
     });
   }
 

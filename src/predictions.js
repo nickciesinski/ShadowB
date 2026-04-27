@@ -1175,8 +1175,6 @@ async function gradePerformanceLog() {
       market,
       pick,
       result: betResult,
-      units_returned: parseFloat(unitReturn.toFixed(2)),
-      clv_grade: clvInfo ? gradeClvNumeric(odds, clvInfo.closeOdds) : null,
     });
     console.log(`[predictions] Row ${i + 1}: ${betResult} — ${awayTeam} @ ${homeTeam} (${market}) — ${unitReturn.toFixed(2)} units`);
   }

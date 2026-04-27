@@ -136,7 +136,7 @@ async function insertPropStatus(rows) {
 /**
  * Batch-update graded results into performance_log.
  * Each row is matched by date + league + game + market + pick.
- * @param {Array<Object>} gradedRows - [{date, league, game, market, pick, result, units_returned, clv_grade}]
+ * @param {Array<Object>} gradedRows - [{date, league, game, market, pick, result}]
  */
 async function updatePerformanceResults(gradedRows) {
   const sb = getClient();
@@ -148,8 +148,6 @@ async function updatePerformanceResults(gradedRows) {
     const { error } = await sb.from('performance_log')
       .update({
         result: row.result,
-        units_returned: row.units_returned,
-        clv_grade: row.clv_grade || null,
       })
       .eq('date', row.date)
       .eq('league', row.league)
