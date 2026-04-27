@@ -61,12 +61,27 @@ async function getValues(spreadsheetId, sheetName, range) {
 async function setValues(spreadsheetId, sheetName, range, values) {
   const sheets = await getSheetsClient();
   const a1 = `${sheetName}!${range}`;
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: a1,
-    valueInputOption: 'USER_ENTERED',
-    requestBody: { values },
-  });
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: a1,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values },
+    });
+  } catch (err) {
+    if (err.message && err.message.includes('exceeds grid limits')) {
+      // Auto-expand grid and retry
+      await ensureGridRows(spreadsheetId, sheetName, values.length + 500);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: a1,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values },
+      });
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -79,13 +94,32 @@ async function setValues(spreadsheetId, sheetName, range, values) {
  */
 async function appendRows(spreadsheetId, sheetName, values) {
   const sheets = await getSheetsClient();
-  await sheets.spreadsheets.values.append({
-    spreadsheetId,
-    range: sheetName,
-    valueInputOption: 'USER_ENTERED',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values },
-  });
+  try {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range: sheetName,
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values },
+    });
+  } catch (err) {
+    if (err.message && err.message.includes('exceeds grid limits')) {
+      // Auto-expand grid and retry
+      const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+      const sheetMeta = meta.data.sheets.find(s => s.properties.title === sheetName);
+      const currentRows = sheetMeta ? sheetMeta.properties.gridProperties.rowCount : 0;
+      await ensureGridRows(spreadsheetId, sheetName, currentRows + values.length + 500);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: sheetName,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values },
+      });
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -138,8 +172,39 @@ async function ensureSheet(spreadsheetId, sheetName) {
   }
 }
 
+
+/**
+ * Ensure a sheet's grid has at least `minRows` rows.
+ * If the grid is smaller, expand it (no data is touched).
+ */
+async function ensureGridRows(spreadsheetId, sheetName, minRows) {
+  const sheets = await getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+  const sheetMeta = meta.data.sheets.find(s => s.properties.title === sheetName);
+  if (!sheetMeta) return;
+
+  const currentRows = sheetMeta.properties.gridProperties.rowCount;
+  if (currentRows >= minRows) return;
+
+  const sheetId = sheetMeta.properties.sheetId;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [{
+        appendDimension: {
+          sheetId,
+          dimension: 'ROWS',
+          length: minRows - currentRows,
+        },
+      }],
+    },
+  });
+  console.log(`[sheets] Expanded ${sheetName} grid: ${currentRows} → ${minRows} rows`);
+}
+
 module.exports = {
   ensureSheet,
+  ensureGridRows,
   trimSheet,
   getSheetsClient,
   getValues,
