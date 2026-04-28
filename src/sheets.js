@@ -70,8 +70,11 @@ async function setValues(spreadsheetId, sheetName, range, values) {
     });
   } catch (err) {
     if (err.message && err.message.includes('exceeds grid limits')) {
-      // Auto-expand grid and retry
-      await ensureGridRows(spreadsheetId, sheetName, values.length + 500);
+      // Auto-expand grid and retry — account for write offset (e.g. A1029)
+      const rowMatch = range.match(/\d+/);
+      const startRow = rowMatch ? parseInt(rowMatch[0]) : 1;
+      const needed = startRow + values.length + 500;
+      await ensureGridRows(spreadsheetId, sheetName, needed);
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: a1,
