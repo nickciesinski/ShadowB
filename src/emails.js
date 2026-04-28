@@ -222,23 +222,132 @@ async function sendPerformanceSummary() {
   console.log('[emails] Sending performance summary...');
 
   const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
-  const recentRows = perfRows.slice(-8); // last 7 days + header
+  if (!perfRows || perfRows.length < 2) {
+    console.log('[emails] No performance data for summary');
+    return;
+  }
 
-  const tableRows = recentRows.slice(1).map(r =>
-    `<tr><td>${r[0] || ''}</td><td>${r[1] || ''}</td><td>${r[2] || ''}</td><td>${r[3] || ''}</td></tr>`
-  ).join('');
+  // Find graded picks from the last 7 days
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Aggregate by league
+  const leagueStats = {};
+  let totalW = 0, totalL = 0, totalP = 0, totalUnitsWagered = 0, totalUnitsReturned = 0;
+
+  for (let i = 1; i < perfRows.length; i++) {
+    const row = perfRows[i];
+    if (!row || row.length < 18) continue;
+
+    const result = (row[16] || '').toString().trim();
+    if (result !== 'W' && result !== 'L' && result !== 'P') continue;
+
+    // Parse date (MM/DD/YYYY)
+    const rawDate = String(row[0] || '').trim();
+    const parts = rawDate.match(/(\d+)\/(\d+)\/(\d+)/);
+    if (!parts) continue;
+    const pickDate = new Date(parseInt(parts[3]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    if (pickDate < sevenDaysAgo) continue;
+
+    const league = (row[1] || '').trim() || 'Unknown';
+    const units = parseFloat(row[10]) || 0;
+    const unitReturn = parseFloat(row[17]) || 0;
+
+    if (!leagueStats[league]) {
+      leagueStats[league] = { w: 0, l: 0, p: 0, wagered: 0, returned: 0 };
+    }
+
+    if (result === 'W') { leagueStats[league].w++; totalW++; }
+    else if (result === 'L') { leagueStats[league].l++; totalL++; }
+    else { leagueStats[league].p++; totalP++; }
+
+    leagueStats[league].wagered += units;
+    leagueStats[league].returned += unitReturn;
+    totalUnitsWagered += units;
+    totalUnitsReturned += unitReturn;
+  }
+
+  const totalPicks = totalW + totalL + totalP;
+  if (totalPicks === 0) {
+    console.log('[emails] No graded picks in last 7 days — skipping summary');
+    return;
+  }
+
+  const totalROI = totalUnitsWagered > 0
+    ? ((totalUnitsReturned / totalUnitsWagered) * 100).toFixed(1)
+    : '0.0';
+  const winPct = ((totalW / (totalW + totalL)) * 100).toFixed(1);
+
+  // Build league breakdown rows
+  const leagueRows = Object.entries(leagueStats)
+    .sort((a, b) => b[1].returned - a[1].returned)
+    .map(([league, s]) => {
+      const roi = s.wagered > 0 ? ((s.returned / s.wagered) * 100).toFixed(1) : '0.0';
+      const color = s.returned >= 0 ? '#27ae60' : '#e74c3c';
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${league}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${s.w}-${s.l}-${s.p}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${s.wagered.toFixed(2)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;color:${color};font-weight:bold;">${s.returned >= 0 ? '+' : ''}${s.returned.toFixed(2)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;color:${color};">${roi}%</td>
+      </tr>`;
+    }).join('');
+
+  const netColor = totalUnitsReturned >= 0 ? '#27ae60' : '#e74c3c';
+  const netSign = totalUnitsReturned >= 0 ? '+' : '';
 
   const html = `
 <!DOCTYPE html>
 <html>
-<body style="font-family: Arial, sans-serif;">
-  <h1>&#128202; Shadow Bets Weekly Performance</h1>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h1 style="color: #0f3460;">&#128202; Shadow Bets Weekly Performance</h1>
+  <p style="color: #666; margin-bottom: 20px;">Last 7 days &mdash; ${totalPicks} graded picks</p>
+
+  <div style="background: #f8f9fa; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <table style="width:100%;">
+      <tr>
+        <td style="text-align:center;">
+          <div style="font-size:24px;font-weight:bold;">${totalW}-${totalL}-${totalP}</div>
+          <div style="color:#666;font-size:12px;">Record</div>
+        </td>
+        <td style="text-align:center;">
+          <div style="font-size:24px;font-weight:bold;">${winPct}%</div>
+          <div style="color:#666;font-size:12px;">Win Rate</div>
+        </td>
+        <td style="text-align:center;">
+          <div style="font-size:24px;font-weight:bold;color:${netColor};">${netSign}${totalUnitsReturned.toFixed(2)}u</div>
+          <div style="color:#666;font-size:12px;">Net Units</div>
+        </td>
+        <td style="text-align:center;">
+          <div style="font-size:24px;font-weight:bold;color:${netColor};">${totalROI}%</div>
+          <div style="color:#666;font-size:12px;">ROI</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <h2 style="color: #0f3460; font-size: 16px;">By League</h2>
   <table style="width:100%;border-collapse:collapse;">
     <tr style="background:#0f3460;color:white;">
-      <th style="padding:8px;">Date</th><th style="padding:8px;">Record</th><th style="padding:8px;">ROI</th><th style="padding:8px;">Bankroll</th>
+      <th style="padding:8px;text-align:left;">League</th>
+      <th style="padding:8px;text-align:left;">Record</th>
+      <th style="padding:8px;text-align:left;">Wagered</th>
+      <th style="padding:8px;text-align:left;">Net Units</th>
+      <th style="padding:8px;text-align:left;">ROI</th>
     </tr>
-    ${tableRows || '<tr><td colspan="4">No data yet.</td></tr>'}
+    ${leagueRows}
+    <tr style="background:#f0f0f0;font-weight:bold;">
+      <td style="padding:8px;">Total</td>
+      <td style="padding:8px;">${totalW}-${totalL}-${totalP}</td>
+      <td style="padding:8px;">${totalUnitsWagered.toFixed(2)}</td>
+      <td style="padding:8px;color:${netColor};">${netSign}${totalUnitsReturned.toFixed(2)}</td>
+      <td style="padding:8px;color:${netColor};">${totalROI}%</td>
+    </tr>
   </table>
+
+  <p style="color: #999; font-size: 11px; margin-top: 20px;">
+    Generated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET
+  </p>
 </body>
 </html>
 `;
@@ -247,18 +356,17 @@ async function sendPerformanceSummary() {
   await transporter.sendMail({
     from: GMAIL_USER,
     to: EMAIL_RECIPIENTS.join(', '),
-    subject: '📊 Shadow Bets Weekly Performance Summary',
+    subject: `📊 Shadow Bets Weekly: ${totalW}-${totalL}-${totalP} | ${netSign}${totalUnitsReturned.toFixed(2)}u (${totalROI}% ROI)`,
     html,
   });
 
   const ts = new Date().toISOString();
   await appendRows(SPREADSHEET_ID, SHEETS.EMAIL_LOG, [
-    [ts, 'PerformanceSummary', EMAIL_RECIPIENTS.join(','), 'sent', ''],
+    [ts, 'PerformanceSummary', EMAIL_RECIPIENTS.join(','), 'sent', `${totalW}-${totalL}-${totalP} ${netSign}${totalUnitsReturned.toFixed(2)}u`],
   ]);
 
-  console.log('[emails] Performance summary sent');
+  console.log(`[emails] Performance summary sent: ${totalW}-${totalL}-${totalP}, ${netSign}${totalUnitsReturned.toFixed(2)}u`);
 }
-
 module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck };
 
 // ── Trigger Health Check ─────────────────────────────────────────
