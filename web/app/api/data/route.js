@@ -1,11 +1,19 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Force dynamic — never cache this route
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+
+function getSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+}
 
 async function getSheetsClient() {
   const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -98,7 +106,53 @@ export async function GET() {
 
     const allPicks = perfRows.slice(1).map(parsePerfRow);
     const todayPicks = allPicks.filter(p => p.date === todayStr);
-    const gradedPicks = allPicks.filter(p => p.result === 'W' || p.result === 'L' || p.result === 'P');
+
+    // Graded picks: prefer Supabase (complete history), fall back to Sheets
+    let gradedPicks = [];
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const { data: sbRows, error } = await sb.from('performance_log')
+          .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
+          .in('result', ['W', 'L', 'P'])
+          .order('date', { ascending: false });
+        if (!error && sbRows && sbRows.length > 0) {
+          gradedPicks = sbRows.map(r => {
+            const gameParts = (r.game || '').split(' @ ');
+            const away = gameParts[0] || '';
+            const home = gameParts[1] || '';
+            // Convert YYYY-MM-DD to M/D/YYYY for frontend consistency
+            let dateStr = r.date || '';
+            if (dateStr.includes('-')) {
+              const [y, m, d] = dateStr.split('-');
+              dateStr = `${parseInt(m)}/${parseInt(d)}/${y}`;
+            }
+            return {
+              date: dateStr,
+              league: r.league || '',
+              market: r.market || '',
+              away,
+              home,
+              betType: r.market || '',
+              pick: r.pick || '',
+              line: r.line != null ? String(r.line) : '',
+              odds: r.odds || -110,
+              units: r.final_units || 0,
+              confidence: r.confidence != null ? String(r.confidence) : '',
+              result: r.result || '',
+              unitReturn: r.result === 'W' ? (r.odds > 0 ? (r.final_units * r.odds / 100) : (r.final_units * 100 / Math.abs(r.odds))) : r.result === 'L' ? -(r.final_units || 0) : 0,
+            };
+          });
+          console.log(`[api] Loaded ${gradedPicks.length} graded picks from Supabase`);
+        }
+      } catch (err) {
+        console.warn('[api] Supabase graded picks failed, falling back to Sheets:', err.message);
+      }
+    }
+    // Fallback to Sheets if Supabase returned nothing
+    if (gradedPicks.length === 0) {
+      gradedPicks = allPicks.filter(p => p.result === 'W' || p.result === 'L' || p.result === 'P');
+    }
 
     // Parse props
     const props = propRows.slice(1).map(parsePropRow).filter(p => p.player);
