@@ -84,7 +84,7 @@ export async function GET() {
 
     // Fetch in parallel
     const [perfRows, propRows, oddsRows] = await Promise.all([
-      getValues(sheets, 'Performance Log', 'A1:S500'),
+      getValues(sheets, 'Performance Log', 'A1:S10000'),
       getValues(sheets, 'Prop_Combos', 'A1:P500'),
       getValues(sheets, 'Today_Odds', 'A1:J5000'),
     ]);
@@ -121,7 +121,7 @@ export async function GET() {
 
     return NextResponse.json({
       todayPicks,
-      gradedPicks: gradedPicks.slice(0, 200),
+      gradedPicks,
       props,
       todayGames,
       lastUpdated: new Date().toISOString(),

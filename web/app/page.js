@@ -1095,9 +1095,6 @@ export default function App() {
             {t.id === 'scores' && betCount > 0 && closeCount === 0 && (
               <span style={{ position: 'absolute', top: 0, right: 8, background: '#8B5CF6', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{betCount}</span>
             )}
-            {t.id === 'results' && betCount > 0 && (
-              <span style={{ position: 'absolute', top: 0, right: 8, background: '#8B5CF6', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{betCount}</span>
-            )}
           </button>
         ))}
       </div>
