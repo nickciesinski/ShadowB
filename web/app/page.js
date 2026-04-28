@@ -6,8 +6,8 @@ const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
 const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
 // PLATFORMS is built dynamically from props data (see bookPills in App)
-const LEAGUE_COLORS = { NBA: '#C9082A', NHL: '#6B7280', MLB: '#2563EB', NFL: '#1D4ED8' };
-const LEAGUE_BG = { NBA: 'rgba(201,8,42,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(37,99,235,0.12)', NFL: 'rgba(29,78,216,0.12)' };
+const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#2563EB', NFL: '#1D4ED8' };
+const LEAGUE_BG = { NBA: 'rgba(249,115,22,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(37,99,235,0.12)', NFL: 'rgba(29,78,216,0.12)' };
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'All Time'];
 const TAB_ACCENTS = {
   picks: { gradient: 'linear-gradient(135deg, #059669 0%, #10B981 50%, #064E3B 100%)', accent: '#10B981', glow: 'rgba(16,185,129,0.3)' },
@@ -143,15 +143,25 @@ function getTrend(picks, game) {
 
 function sortGames(games) {
   const stateOrder = { in: 0, post: 2, pre: 3 };
+  const leagueOrder = { NBA: 0, NHL: 1, MLB: 2, NFL: 3 };
   return [...games].sort((a, b) => {
+    // Close games always first
     const aClose = a.status === 'in' && a.isLate && Math.abs(a.awayScore - a.homeScore) <= 5;
     const bClose = b.status === 'in' && b.isLate && Math.abs(b.awayScore - b.homeScore) <= 5;
     if (aClose && !bClose) return -1;
     if (!aClose && bClose) return 1;
+    // Then by game state (live > post > pre)
     const aOrd = stateOrder[a.status] ?? 4;
     const bOrd = stateOrder[b.status] ?? 4;
     if (aOrd !== bOrd) return aOrd - bOrd;
-    return 0;
+    // Then by start time
+    const aTime = a.gameDate ? new Date(a.gameDate).getTime() : 0;
+    const bTime = b.gameDate ? new Date(b.gameDate).getTime() : 0;
+    if (aTime !== bTime) return aTime - bTime;
+    // Then by sport
+    const aL = leagueOrder[a.league] ?? 9;
+    const bL = leagueOrder[b.league] ?? 9;
+    return aL - bL;
   });
 }
 
@@ -217,7 +227,7 @@ function BestBets({ picks }) {
 }
 
 // ── Picks Tab ───────────────────────────────────────────────────────
-function PicksTab({ picks, sf, bf, cf, isBet, toggleBet }) {
+function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet }) {
   const dedupedPicks = dedup(picks);
   const filtered = dedupedPicks.filter(p =>
     (sf === 'All' || p.league === sf) &&
@@ -251,18 +261,20 @@ function PicksTab({ picks, sf, bf, cf, isBet, toggleBet }) {
           {g.picks.map((p, j) => {
             const dimmed = p.units === 0;
             const selected = isBet(p);
+            const faded = isFade(p);
             return (
               <div key={j} onClick={() => toggleBet(p)} style={{
                 display: 'flex', justifyContent: 'space-between', padding: '8px 12px', cursor: 'pointer',
                 borderBottom: j < g.picks.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                 opacity: dimmed && !selected ? 0.35 : 1,
-                background: selected ? 'rgba(139,92,246,0.12)' : 'transparent',
-                borderLeft: selected ? '5px solid #A78BFA' : '3px solid transparent',
+                background: faded ? 'rgba(249,115,22,0.12)' : selected ? 'rgba(139,92,246,0.12)' : 'transparent',
+                borderLeft: faded ? '5px solid #FB923C' : selected ? '5px solid #A78BFA' : '3px solid transparent',
                 transition: 'background 0.15s, border-left 0.15s',
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                    {selected && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                    {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                    {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{p.pick}</span>
                     {p.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{p.line}</span>}
@@ -284,7 +296,28 @@ function PicksTab({ picks, sf, bf, cf, isBet, toggleBet }) {
 }
 
 // ── Scores Tab ──────────────────────────────────────────────────────
-function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
+// Flip a pick to the opposite side (for fades)
+function flipPick(p) {
+  const bt = (p.betType || p.market || '').toLowerCase();
+  if (bt === 'moneyline') {
+    // Swap to the other team
+    const isHome = (p.pick || '').toLowerCase().includes((p.home || '').split(' ').pop().toLowerCase());
+    return { ...p, pick: isHome ? p.away : p.home };
+  }
+  if (bt === 'spread') {
+    // Swap team + negate line
+    const isHome = (p.pick || '').toLowerCase().includes((p.home || '').split(' ').pop().toLowerCase());
+    const newLine = parseFloat(p.line) ? String(-parseFloat(p.line)) : p.line;
+    return { ...p, pick: isHome ? p.away : p.home, line: newLine };
+  }
+  if (bt === 'total') {
+    const isOver = (p.pick || '').toLowerCase().includes('over');
+    return { ...p, pick: isOver ? `Under ${p.line}` : `Over ${p.line}` };
+  }
+  return p;
+}
+
+function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
   const [expanded, setExpanded] = useState({});
   const sportFiltered = liveGames.filter(g => {
     if (sf === 'My Bets') {
@@ -302,7 +335,9 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
         p.league === game.league && p.away === game.away && p.home === game.home &&
         (bf === 'All' || (p.betType || p.market || '').toLowerCase() === bf.toLowerCase())
       );
-      const trend = getTrend(gamePicks, game);
+      // For trend, use flipped picks for fades so the border color reflects YOUR position
+      const displayPicks = gamePicks.map(p => isFade(p) ? flipPick(p) : p);
+      const trend = getTrend(displayPicks, game);
       const isPre = game.status === 'pre';
       const isLive = game.status === 'in';
       const isPost = game.status === 'post';
@@ -310,7 +345,8 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
       const isClose = isLive && game.isLate && diff <= 5;
 
       const hasBets = gamePicks.some(p => isBet(p));
-      let tBorder = hasBets ? '#8B5CF6' : 'rgba(255,255,255,0.08)';
+      const hasFades = gamePicks.some(p => isFade(p));
+      let tBorder = hasFades ? '#FB923C' : hasBets ? '#8B5CF6' : 'rgba(255,255,255,0.08)';
       let tBg = 'transparent';
       if (isClose) { tBorder = '#F59E0B'; tBg = 'rgba(245,158,11,0.08)'; }
       else if (trend !== null && trend > 0.3) { tBorder = '#10B981'; tBg = 'rgba(16,185,129,0.08)'; }
@@ -331,7 +367,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
       else if (isPost) { statusText = 'Final'; statusColor = '#64748B'; }
 
       return (
-        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: `${hasBets ? '3px' : '2px'} solid ${tBorder}`, boxShadow: hasBets ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)' }}>
+        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: `${hasBets ? '3px' : '2px'} solid ${tBorder}`, boxShadow: hasFades ? '0 2px 12px rgba(249,115,22,0.2)' : hasBets ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)' }}>
           {isClose && <div style={{ background: 'rgba(245,158,11,0.15)', color: '#FCD34D', fontSize: 11, fontWeight: 700, padding: '4px 12px', textAlign: 'center' }}>CLOSE GAME — Tune in!</div>}
           <div onClick={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))} style={{ padding: '10px 12px', cursor: 'pointer', background: tBg }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -371,11 +407,14 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
             )}
           </div>
           {isExp && gamePicks.map((p, j) => {
-            const status = getPickStatus(p, game);
+            const faded = isFade(p);
+            // If faded, flip the pick to the opposite side
+            const displayPick = faded ? flipPick(p) : p;
+            const status = getPickStatus(displayPick, game);
             const icon = status === 'winning' ? '✅' : status === 'losing' ? '❌' : '➖';
             const selected = isBet(p);
             let rowBg = 'transparent';
-            if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : 'rgba(139,92,246,0.12)';
+            if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : (faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)');
             else if (status === 'winning') rowBg = 'rgba(16,185,129,0.08)';
             else if (status === 'losing') rowBg = 'rgba(220,38,38,0.08)';
             return (
@@ -383,14 +422,15 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
                 display: 'flex', justifyContent: 'space-between', padding: '7px 12px',
                 background: rowBg,
                 borderTop: '1px solid rgba(255,255,255,0.06)',
-                borderLeft: selected ? '5px solid #A78BFA' : '3px solid transparent',
+                borderLeft: selected ? (faded ? '5px solid #FB923C' : '5px solid #A78BFA') : '3px solid transparent',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ fontSize: 13 }}>{icon}</span>
-                  {selected && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
-                  <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{p.pick}</span>
-                  {p.line && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{p.line}</span>}
+                  {faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 4px', borderRadius: 3 }}>FADE</span>}
+                  {selected && !faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
+                  <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{displayPick.betType || displayPick.market}</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{displayPick.pick}</span>
+                  {displayPick.line && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{displayPick.line}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(p.odds)}</span>
@@ -405,7 +445,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
-function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
+function PropsTab({ props, sf, pf, isPropBet, isPropFade, toggleProp, liveStats }) {
   // Filter by sport
   let filtered = props.filter(p => {
     if (sf !== 'All' && sf !== 'Live' && p.league !== sf) return false;
@@ -436,6 +476,7 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
         const edgeBg = edgeNum >= 8 ? 'rgba(16,185,129,0.15)' : edgeNum >= 5 ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.08)';
         const dirColor = isOver(p.direction) ? '#34D399' : '#F87171';
         const selected = isPropBet(p);
+        const faded = isPropFade(p);
         const live = liveStats[`prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`] || null;
         const lineNum = parseFloat(p.line) || 0;
         const isOverBet = isOver(p.direction);
@@ -462,18 +503,19 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
 
         return (
           <div key={i} onClick={() => toggleProp(p)} style={{
-            background: selected ? (live && statStatus === 'close' ? 'rgba(252,211,77,0.08)' : 'rgba(139,92,246,0.12)') : 'rgba(255,255,255,0.04)',
+            background: faded ? 'rgba(249,115,22,0.12)' : selected ? (live && statStatus === 'close' ? 'rgba(252,211,77,0.08)' : 'rgba(139,92,246,0.12)') : 'rgba(255,255,255,0.04)',
             borderRadius: 12, marginBottom: 6, padding: '10px 12px',
-            border: selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(139,92,246,0.4)') : '1px solid rgba(255,255,255,0.08)',
-            boxShadow: selected ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
-            borderLeft: selected ? (live ? `5px solid ${statColor}` : '5px solid #A78BFA') : `3px solid ${edgeColor}`,
+            border: faded ? '2px solid rgba(249,115,22,0.4)' : selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(139,92,246,0.4)') : '1px solid rgba(255,255,255,0.08)',
+            boxShadow: faded ? '0 2px 12px rgba(249,115,22,0.2)' : selected ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
+            borderLeft: faded ? '5px solid #FB923C' : selected ? (live ? `5px solid ${statColor}` : '5px solid #A78BFA') : `3px solid ${edgeColor}`,
             cursor: 'pointer', transition: 'background 0.15s, border-left 0.15s',
           }}>
             {live && statStatus === 'close' && <div style={{ background: 'rgba(252,211,77,0.15)', color: '#FCD34D', fontSize: 10, fontWeight: 700, padding: '3px 10px', marginBottom: 6, marginLeft: -12, marginRight: -12, marginTop: -10, textAlign: 'center', borderRadius: '12px 12px 0 0' }}>🔥 CLOSE — {isOverBet ? `${(lineNum - live.current) % 1 === 0 ? (lineNum - live.current) : (lineNum - live.current).toFixed(1)} away` : 'approaching line'}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                  {selected && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                  {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                  {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                   {live && <span style={{ width: 6, height: 6, borderRadius: 3, background: live.gameStatus === 'in' ? '#34D399' : '#64748B', display: 'inline-block' }} />}
                   {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
@@ -860,16 +902,24 @@ export default function App() {
   const [pf, setPf] = useState('All');
   const [dateFilter, setDateFilter] = useState('Last 7 Days');
   // My Bets — persisted to localStorage, auto-resets daily
+  // Map<key, 'bet' | 'fade'> — 'bet' = tailed the pick, 'fade' = bet the opposite
   const [myBets, setMyBets] = useState(() => {
     try {
       const saved = typeof window !== 'undefined' && localStorage.getItem('shadowbets_mybets');
       if (saved) {
         const { date, bets } = JSON.parse(saved);
         const today = new Date().toLocaleDateString();
-        if (date === today) return new Set(bets);
+        if (date === today) {
+          // Support old Set format (array of strings) and new Map format (array of [key, val])
+          if (Array.isArray(bets) && bets.length > 0 && Array.isArray(bets[0])) {
+            return new Map(bets);
+          }
+          // Legacy: convert old Set to Map (all as 'bet')
+          return new Map(bets.map(k => [k, 'bet']));
+        }
       }
     } catch (e) {}
-    return new Set();
+    return new Map();
   });
   const [data, setData] = useState(null);
   const [liveGames, setLiveGames] = useState([]);
@@ -883,7 +933,7 @@ export default function App() {
     try {
       localStorage.setItem('shadowbets_mybets', JSON.stringify({
         date: new Date().toLocaleDateString(),
-        bets: [...myBets],
+        bets: [...myBets.entries()],
       }));
     } catch (e) {}
   }, [myBets]);
@@ -891,24 +941,33 @@ export default function App() {
   // Pick key for "my bets" selection
   const pickKey = (p) => `${p.league}|${p.away}|${p.home}|${(p.betType||p.market||'').toLowerCase()}|${p.pick}|${p.line}`;
   const propKey = (p) => `prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`;
+  // Three-state toggle: none → bet → fade → none
   const toggleBet = (p) => {
     const key = pickKey(p);
     setMyBets(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      const next = new Map(prev);
+      const cur = next.get(key);
+      if (!cur) next.set(key, 'bet');
+      else if (cur === 'bet') next.set(key, 'fade');
+      else next.delete(key);
       return next;
     });
   };
   const toggleProp = (p) => {
     const key = propKey(p);
     setMyBets(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
+      const next = new Map(prev);
+      const cur = next.get(key);
+      if (!cur) next.set(key, 'bet');
+      else if (cur === 'bet') next.set(key, 'fade');
+      else next.delete(key);
       return next;
     });
   };
   const isBet = (p) => myBets.has(pickKey(p));
+  const isFade = (p) => myBets.get(pickKey(p)) === 'fade';
   const isPropBet = (p) => myBets.has(propKey(p));
+  const isPropFade = (p) => myBets.get(propKey(p)) === 'fade';
 
   // Fetch sheet data
   const fetchData = useCallback(() => {
@@ -996,8 +1055,16 @@ export default function App() {
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;
 
   const betCount = myBets.size;
-  // Only show leagues that have games today (hides off-season leagues like NFL in April)
-  const activeLeagues = [...new Set(liveGames.map(g => g.league))];
+  const fadeCount = [...myBets.values()].filter(v => v === 'fade').length;
+  // Only show leagues that have real games today (hides off-season leagues like NFL in April)
+  const todayDateISO = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+  const realGames = liveGames.filter(g => {
+    if (g.status === 'in') return true; // live = real
+    if (!g.gameDate) return false;
+    try { return new Date(g.gameDate).toLocaleDateString('en-CA') === todayDateISO; }
+    catch { return false; }
+  });
+  const activeLeagues = [...new Set(realGames.map(g => g.league))];
   const activeLeaguePills = ['NBA', 'NHL', 'MLB', 'NFL'].filter(l => activeLeagues.includes(l));
   // For picks/props, also include leagues from data even if no ESPN games yet
   const dataLeagues = data ? [...new Set([
@@ -1066,9 +1133,9 @@ export default function App() {
       <div style={{ padding: '8px 12px 90px' }}>
         {loading && <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>Loading...</div>}
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
-        {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} toggleBet={toggleBet} />}
-        {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} />}
-        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} isPropBet={isPropBet} toggleProp={toggleProp} liveStats={liveStats} />}
+        {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} />}
+        {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
+        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} />}
         {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} isBet={isBet} isPropBet={isPropBet} />}
       </div>
 
