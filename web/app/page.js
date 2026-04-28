@@ -105,14 +105,19 @@ function getPickStatus(pick, game) {
   const aS = game.awayScore, hS = game.homeScore;
   const bt = pick.betType?.toLowerCase() || pick.market?.toLowerCase();
   if (bt === 'moneyline') {
-    const pickTeam = pick.pick;
+    const pickTeam = (pick.pick || '').toLowerCase();
+    const home = (game.home || '').toLowerCase();
+    const away = (game.away || '').toLowerCase();
     if (aS === hS) return 'even';
-    if (pickTeam === game.home) return hS > aS ? 'winning' : 'losing';
+    const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
+    if (pickedHome) return hS > aS ? 'winning' : 'losing';
     return aS > hS ? 'winning' : 'losing';
   }
   if (bt === 'spread') {
     const line = parseFloat(pick.line) || 0;
-    const isHome = pick.pick?.includes(game.home);
+    const pickTeam = (pick.pick || '').toLowerCase();
+    const home = (game.home || '').toLowerCase();
+    const isHome = pickTeam.includes(home) || home.includes(pickTeam);
     const margin = isHome ? (hS + line) - aS : (aS + line) - hS;
     return margin > 0 ? 'winning' : margin < 0 ? 'losing' : 'even';
   }
@@ -385,6 +390,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet }) {
                   {selected && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{p.pick}</span>
+                  {p.line && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{p.line}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(p.odds)}</span>
@@ -516,6 +522,90 @@ function PropsTab({ props, sf, pf, isPropBet, toggleProp, liveStats }) {
   );
 }
 
+// ── Cumulative Units Chart ──────────────────────────────────────────
+function UnitsChart({ results }) {
+  // Build cumulative units by date (oldest first)
+  const parseDate = (d) => {
+    if (!d) return null;
+    const parts = d.split('/');
+    if (parts.length !== 3) return null;
+    return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+  };
+
+  const byDate = {};
+  for (const r of results) {
+    if (!byDate[r.date]) byDate[r.date] = 0;
+    byDate[r.date] += (r.unitReturn || 0);
+  }
+  const sortedDates = Object.keys(byDate).sort((a, b) => {
+    const da = parseDate(a), db = parseDate(b);
+    return (da?.getTime() || 0) - (db?.getTime() || 0);
+  });
+
+  if (sortedDates.length < 2) return null;
+
+  // Build cumulative data points
+  let cum = 0;
+  const points = sortedDates.map(d => { cum += byDate[d]; return { date: d, value: cum }; });
+
+  const W = 340, H = 120, PAD_L = 35, PAD_R = 10, PAD_T = 10, PAD_B = 22;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+
+  const vals = points.map(p => p.value);
+  const maxV = Math.max(...vals, 0.1);
+  const minV = Math.min(...vals, -0.1);
+  const range = maxV - minV || 1;
+
+  const x = (i) => PAD_L + (i / (points.length - 1)) * chartW;
+  const y = (v) => PAD_T + (1 - (v - minV) / range) * chartH;
+
+  // SVG path
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+
+  // Gradient fill path (area under curve to zero line)
+  const zeroY = y(0);
+  const areaD = `${pathD} L${x(points.length - 1).toFixed(1)},${zeroY.toFixed(1)} L${x(0).toFixed(1)},${zeroY.toFixed(1)} Z`;
+
+  const current = points[points.length - 1].value;
+  const lineColor = current >= 0 ? '#34D399' : '#F87171';
+  const fillColor = current >= 0 ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)';
+
+  // Date labels (show first, middle, last)
+  const labelIdxs = [0, Math.floor(points.length / 2), points.length - 1];
+  const fmtDate = (d) => {
+    const parts = d.split('/');
+    return `${parts[0]}/${parts[1]}`;
+  };
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, padding: '12px 10px', marginBottom: 10, border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '0 4px' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#F1F5F9' }}>Unit Progress</div>
+        <div style={{ fontSize: 16, fontWeight: 900, color: lineColor }}>{current >= 0 ? '+' : ''}{current.toFixed(2)}u</div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
+        {/* Zero line */}
+        <line x1={PAD_L} y1={zeroY} x2={W - PAD_R} y2={zeroY} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3,3" />
+        {/* Y-axis labels */}
+        <text x={PAD_L - 4} y={PAD_T + 4} fill="#64748B" fontSize="8" textAnchor="end">{maxV >= 0 ? '+' : ''}{maxV.toFixed(1)}</text>
+        <text x={PAD_L - 4} y={zeroY + 3} fill="#64748B" fontSize="8" textAnchor="end">0</text>
+        <text x={PAD_L - 4} y={H - PAD_B} fill="#64748B" fontSize="8" textAnchor="end">{minV.toFixed(1)}</text>
+        {/* Fill area */}
+        <path d={areaD} fill={fillColor} />
+        {/* Line */}
+        <path d={pathD} fill="none" stroke={lineColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {/* End dot */}
+        <circle cx={x(points.length - 1)} cy={y(current)} r="3" fill={lineColor} />
+        {/* Date labels */}
+        {labelIdxs.map(i => (
+          <text key={i} x={x(i)} y={H - 4} fill="#64748B" fontSize="8" textAnchor="middle">{fmtDate(points[i].date)}</text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 // ── Results Tab ─────────────────────────────────────────────────────
 function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults }) {
   // Date filtering
@@ -569,6 +659,7 @@ function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults
         <div><div style={{ fontSize: 18, fontWeight: 800, color: totalReturn >= 0 ? '#34D399' : '#F87171' }}>{totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(2)}</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>UNITS</div></div>
         <div><div style={{ fontSize: 18, fontWeight: 800, color: parseFloat(roi) >= 0 ? '#34D399' : '#F87171' }}>{roi}%</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>ROI</div></div>
       </div>
+      {filtered.length >= 2 && <UnitsChart results={filtered} />}
       {!filtered.length && <div style={{ textAlign: 'center', color: '#64748B', padding: 30, fontSize: 13 }}>No graded results for this period</div>}
       {sortedDates.map(date => {
         const bets = byDate[date];
@@ -905,11 +996,21 @@ export default function App() {
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;
 
   const betCount = myBets.size;
+  // Only show leagues that have games today (hides off-season leagues like NFL in April)
+  const activeLeagues = [...new Set(liveGames.map(g => g.league))];
+  const activeLeaguePills = ['NBA', 'NHL', 'MLB', 'NFL'].filter(l => activeLeagues.includes(l));
+  // For picks/props, also include leagues from data even if no ESPN games yet
+  const dataLeagues = data ? [...new Set([
+    ...(data.todayPicks || []).map(p => p.league),
+    ...(data.props || []).map(p => p.league),
+  ])].filter(Boolean) : [];
+  const allActiveLeagues = [...new Set([...activeLeaguePills, ...dataLeagues])].filter(l => ['NBA', 'NHL', 'MLB', 'NFL'].includes(l));
+
   const sportPills = tab === 'scores'
-    ? (betCount > 0 ? ['All', 'My Bets', 'Live', 'NBA', 'NHL', 'MLB', 'NFL'] : ['All', 'Live', 'NBA', 'NHL', 'MLB', 'NFL'])
+    ? (betCount > 0 ? ['All', 'My Bets', 'Live', ...activeLeaguePills] : ['All', 'Live', ...activeLeaguePills])
     : tab === 'results'
-    ? (betCount > 0 ? ['All', 'My Bets', 'NBA', 'NHL', 'MLB', 'NFL'] : SPORTS)
-    : SPORTS;
+    ? (betCount > 0 ? ['All', 'My Bets', ...allActiveLeagues] : ['All', ...allActiveLeagues])
+    : ['All', ...allActiveLeagues];
 
   const tabs = [
     { id: 'picks', label: 'Picks', icon: '📋' },
