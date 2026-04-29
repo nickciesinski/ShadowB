@@ -460,8 +460,16 @@ async function runAllOptimizations() {
   // 5. Optimize prop scoring weights based on W/L factor analysis
   const scoringUpdates = await optimizePropScoringWeights();
 
+  // 6. Auto-tune game model weights based on recent W/L performance
+  let gameWeightUpdates = null;
+  try {
+    gameWeightUpdates = await optimizeGameWeights();
+  } catch (err) {
+    console.warn('[optimize] Game weight optimization failed:', err.message);
+  }
+
   console.log('[optimize] ═══ Optimization cycle complete ═══');
-  return { mods, clvPenalties, propUpdates, scoringUpdates };
+  return { mods, clvPenalties, propUpdates, scoringUpdates, gameWeightUpdates };
 }
 
 module.exports = {
@@ -492,6 +500,7 @@ const {
   DEFAULT_WEIGHTS,
 } = require('./prop-scoring');
 const { getAllPropModifiers } = require('./prop-weights');
+const { optimizeGameWeights } = require('./game-optimizer');
 
 /**
  * Analyze which scoring factors correlate with actual W/L outcomes

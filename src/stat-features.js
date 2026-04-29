@@ -7,6 +7,20 @@
 // produces normalized features for game-model.js.
 // =============================================================
 
+// ── Tunable Factor Overrides ────────────────────────────────
+// Set by game-model.js from weight sheet param_auto_* values.
+// When null, hardcoded defaults are used (backward compatible).
+let _tunableFactors = null;
+
+function setTunableFactors(factors) {
+  _tunableFactors = factors;
+}
+
+function getTunableFactor(name, defaultVal) {
+  if (_tunableFactors && _tunableFactors[name] !== undefined) return _tunableFactors[name];
+  return defaultVal;
+}
+
 // ââ Team Strength ââââââââââââââââââââââââââââââââââââââââââââ
 
 /**
@@ -34,16 +48,20 @@ function teamStrength(stats, league) {
   const form = parseFloat(stats.recentFormPct) || winPct;
   const formClamped = clamp(form, 0.15, 0.85);
 
-  // Blend weights: winPct baseline, scoring diff, recent form
-  // If scoring diff is available, give it significant weight
+  // Blend weights: tunable via nightly optimizer (param_auto_strength_blend_*)
+  const wWinPct = getTunableFactor('strength_blend_winpct', 0.35);
+  const wScoring = getTunableFactor('strength_blend_scoring', 0.40);
+  const wForm = getTunableFactor('strength_blend_form', 0.25);
+
   if (diffSignal !== null) {
-    // 35% win%, 40% scoring differential, 25% recent form
-    const blended = winPct * 0.35 + diffSignal * 0.40 + formClamped * 0.25;
+    const blended = winPct * wWinPct + diffSignal * wScoring + formClamped * wForm;
     return clamp(blended, 0.15, 0.85);
   }
 
-  // No scoring differential â fall back to win% + form
-  const blended = winPct * 0.65 + formClamped * 0.35;
+  // No scoring differential — redistribute scoring weight to winPct + form
+  const fallbackWinPct = wWinPct + wScoring * 0.6;
+  const fallbackForm = wForm + wScoring * 0.4;
+  const blended = winPct * fallbackWinPct + formClamped * fallbackForm;
   return clamp(blended, 0.15, 0.85);
 }
 
@@ -126,7 +144,9 @@ function restAdjustment(scheduleInfo, league) {
   if (homeB2B && !awayB2B) adj -= b2bPen;
   if (awayB2B && !homeB2B) adj += b2bPen;
 
-  return adj;
+  // Apply tunable rest impact multiplier
+  const restMultiplier = getTunableFactor('margin_rest_impact', 1.0);
+  return adj * restMultiplier;
 }
 
 // ââ Home Advantage âââââââââââââââââââââââââââââââââââââââââââ
@@ -145,7 +165,9 @@ function homeAdvantage(league) {
     MLB: 0.35,
     NHL: 0.25,
   };
-  return HA[league] || 0;
+  const base = HA[league] || 0;
+  const multiplier = getTunableFactor('margin_home_advantage', 1.0);
+  return base * multiplier;
 }
 
 // ââ Recent Form ââââââââââââââââââââââââââââââââââââââââââââââ
@@ -246,4 +268,6 @@ module.exports = {
   paceAdjustment,
   dataCompleteness,
   clamp,
+  setTunableFactors,
+  getTunableFactor,
 };

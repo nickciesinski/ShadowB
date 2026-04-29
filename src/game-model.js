@@ -35,6 +35,8 @@ const {
   recentForm,
   paceAdjustment,
   dataCompleteness,
+  setTunableFactors,
+  getTunableFactor,
 } = require('./stat-features');
 
 // ââ League-specific constants ââââââââââââââââââââââââââââââââ
@@ -87,7 +89,8 @@ function projectMargin(homeStrength, awayStrength, league, restAdj, homeFormAdj,
   // Recent form: convert form differential to margin points
   // A +0.05 form advantage â 0.5-2 points depending on sport
   const formDiff = (homeFormAdj || 0) - (awayFormAdj || 0);
-  const formMargin = formDiff * (STRENGTH_TO_MARGIN[league] || 20) * 0.5;
+  const formInfluence = getTunableFactor('margin_form_influence', 0.5);
+  const formMargin = formDiff * (STRENGTH_TO_MARGIN[league] || 20) * formInfluence
 
   return rawMargin + homeAdv + (restAdj || 0) + formMargin;
 }
@@ -117,10 +120,12 @@ function projectTotal(homeStrength, awayStrength, marketTotal, league, paceAdj) 
   const strengthAdj = strengthDeviation * avgTotal * 0.04;
 
   // Pace adjustment (mainly NBA â other sports return 0)
-  const totalPaceAdj = (paceAdj || 0) * 0.3; // Dampen pace signal â market already prices pace
+  const paceDamp = getTunableFactor('total_pace_dampening', 0.3);
+  const totalPaceAdj = (paceAdj || 0) * paceDamp
 
   // Anchor heavily to market total (80%), blend in our adjustment (20%).
-  return marketTotal + strengthAdj + totalPaceAdj;
+  const anchor = getTunableFactor('total_market_anchor', 0.80);
+  return marketTotal * anchor + (AVG_TOTAL[league] || marketTotal) * (1 - anchor) + strengthAdj + totalPaceAdj;
 }
 
 /**
@@ -454,6 +459,19 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
  * @returns {Array} Flat array of pick objects with team, betType, line, confidence, rationale
  */
 function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap) {
+  // Load auto-tuned factors from weight sheet (param_auto_* keys)
+  if (weights && weights.params) {
+    const autoFactors = {};
+    for (const [key, val] of Object.entries(weights.params)) {
+      if (key.startsWith('param_auto_')) {
+        autoFactors[key.replace('param_auto_', '')] = val;
+      }
+    }
+    if (Object.keys(autoFactors).length > 0) {
+      setTunableFactors(autoFactors);
+    }
+  }
+
   const allPicks = [];
 
   for (const game of games) {
