@@ -366,14 +366,26 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
       }
       else if (isPost) { statusText = 'Final'; statusColor = '#64748B'; }
 
+      // Visual distinction: live games get full border + glow, finished games get left bar only
+      const cardBorder = isLive
+        ? `${hasBets ? '3px' : '2px'} solid ${tBorder}`
+        : isPost
+        ? '1px solid rgba(255,255,255,0.06)'
+        : `${hasBets ? '3px' : '2px'} solid ${tBorder}`;
+      const cardLeftBar = isPost && !isLive ? `4px solid ${tBorder}` : undefined;
+      const cardShadow = isLive
+        ? (hasFades ? '0 2px 16px rgba(249,115,22,0.25)' : hasBets ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)')
+        : '0 1px 6px rgba(0,0,0,0.2)';
+      const cardOpacity = isPost ? 0.7 : 1;
+
       return (
-        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: `${hasBets ? '3px' : '2px'} solid ${tBorder}`, boxShadow: hasFades ? '0 2px 12px rgba(249,115,22,0.2)' : hasBets ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)' }}>
+        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: cardBorder, borderLeft: cardLeftBar || undefined, boxShadow: cardShadow, opacity: cardOpacity, transition: 'opacity 0.3s' }}>
           {isClose && <div style={{ background: 'rgba(245,158,11,0.15)', color: '#FCD34D', fontSize: 11, fontWeight: 700, padding: '4px 12px', textAlign: 'center' }}>CLOSE GAME — Tune in!</div>}
           <div onClick={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))} style={{ padding: '10px 12px', cursor: 'pointer', background: tBg }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ background: LEAGUE_COLORS[game.league], color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{game.league}</span>
-                {isLive && <span style={{ width: 6, height: 6, borderRadius: 3, background: '#34D399', display: 'inline-block' }} />}
+                {isLive && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#34D399', display: 'inline-block', boxShadow: '0 0 6px rgba(52,211,153,0.6)', animation: 'pulse 2s infinite' }} />}
                 <span style={{ fontSize: 10, fontWeight: 600, color: statusColor }}>{statusText}</span>
               </div>
               {isLive && <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>{cleanTime(game.period)}</span>}
@@ -534,14 +546,18 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
           }
         }
 
+        const isLiveGame = live && live.gameStatus === 'in';
+        const isDoneGame = live && live.gameStatus === 'post';
+
         return (
           <div key={i} onClick={() => toggleProp(p)} style={{
             background: faded ? 'rgba(249,115,22,0.12)' : selected ? (live && statStatus === 'close' ? 'rgba(252,211,77,0.08)' : 'rgba(139,92,246,0.12)') : 'rgba(255,255,255,0.04)',
             borderRadius: 12, marginBottom: 6, padding: '10px 12px',
-            border: faded ? '2px solid rgba(249,115,22,0.4)' : selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(139,92,246,0.4)') : '1px solid rgba(255,255,255,0.08)',
-            boxShadow: faded ? '0 2px 12px rgba(249,115,22,0.2)' : selected ? '0 2px 12px rgba(139,92,246,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
-            borderLeft: faded ? '5px solid #FB923C' : selected ? (live ? `5px solid ${statColor}` : '5px solid #A78BFA') : `3px solid ${edgeColor}`,
-            cursor: 'pointer', transition: 'background 0.15s, border-left 0.15s',
+            border: isDoneGame && !selected ? '1px solid rgba(255,255,255,0.06)' : faded ? '2px solid rgba(249,115,22,0.4)' : selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(139,92,246,0.4)') : '1px solid rgba(255,255,255,0.08)',
+            boxShadow: isLiveGame ? (faded ? '0 2px 16px rgba(249,115,22,0.25)' : selected ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)') : '0 1px 6px rgba(0,0,0,0.2)',
+            borderLeft: faded ? '5px solid #FB923C' : selected ? (live ? `5px solid ${statColor}` : '5px solid #A78BFA') : isDoneGame ? `4px solid ${statColor}` : `3px solid ${edgeColor}`,
+            opacity: isDoneGame && !selected ? 0.65 : 1,
+            cursor: 'pointer', transition: 'background 0.15s, border-left 0.15s, opacity 0.3s',
           }}>
             {live && statStatus === 'close' && <div style={{ background: 'rgba(252,211,77,0.15)', color: '#FCD34D', fontSize: 10, fontWeight: 700, padding: '3px 10px', marginBottom: 6, marginLeft: -12, marginRight: -12, marginTop: -10, textAlign: 'center', borderRadius: '12px 12px 0 0' }}>🔥 CLOSE — {isOverBet ? `${(lineNum - live.current) % 1 === 0 ? (lineNum - live.current) : (lineNum - live.current).toFixed(1)} away` : 'approaching line'}</div>}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -549,7 +565,7 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
                   {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
                   {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
-                  {live && <span style={{ width: 6, height: 6, borderRadius: 3, background: live.gameStatus === 'in' ? '#34D399' : '#64748B', display: 'inline-block' }} />}
+                  {live && <span style={{ width: isLiveGame ? 8 : 6, height: isLiveGame ? 8 : 6, borderRadius: '50%', background: isLiveGame ? '#34D399' : '#64748B', display: 'inline-block', boxShadow: isLiveGame ? '0 0 6px rgba(52,211,153,0.6)' : 'none', animation: isLiveGame ? 'pulse 2s infinite' : 'none' }} />}
                   {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
                 </div>
@@ -694,7 +710,7 @@ function UnitsChart({ results }) {
 }
 
 // ── Results Tab ─────────────────────────────────────────────────────
-function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults }) {
+function ResultsTab({ results, gradedProps, sf, bf, dateFilter, resultType, isBet, isPropBet }) {
   // Date filtering
   const now = new Date();
   const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
@@ -709,10 +725,7 @@ function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults
     return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
   };
 
-  const filtered = results.filter(r => {
-    if (sf === 'My Bets') return isBet(r);
-    if (sf !== 'All' && r.league !== sf) return false;
-    if (bf !== 'All' && (r.betType || r.market || '').toLowerCase() !== bf.toLowerCase()) return false;
+  const dateMatch = (r) => {
     if (dateFilter === 'Today') return r.date === todayStr;
     if (dateFilter === 'Yesterday') return r.date === yesterdayStr;
     if (dateFilter === 'Last 7 Days') {
@@ -720,7 +733,25 @@ function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults
       return d && d >= weekAgo;
     }
     return true;
+  };
+
+  const showProps = resultType === 'Props';
+
+  // Filter game results
+  const filteredGames = showProps ? [] : results.filter(r => {
+    if (sf === 'My Bets') return isBet(r);
+    if (sf !== 'All' && r.league !== sf) return false;
+    if (bf !== 'All' && (r.betType || r.market || '').toLowerCase() !== bf.toLowerCase()) return false;
+    return dateMatch(r);
   });
+
+  // Filter prop results
+  const filteredProps = !showProps ? [] : (gradedProps || []).filter(r => {
+    if (sf !== 'All' && sf !== 'My Bets' && r.league !== sf) return false;
+    return dateMatch(r);
+  });
+
+  const filtered = showProps ? filteredProps : filteredGames;
 
   const wins = filtered.filter(r => r.result === 'W').length;
   const losses = filtered.filter(r => r.result === 'L').length;
@@ -747,7 +778,7 @@ function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults
         <div><div style={{ fontSize: 18, fontWeight: 800, color: parseFloat(roi) >= 0 ? '#34D399' : '#F87171' }}>{roi}%</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>ROI</div></div>
       </div>
       {filtered.length >= 2 && <UnitsChart results={filtered} />}
-      {!filtered.length && <div style={{ textAlign: 'center', color: '#64748B', padding: 30, fontSize: 13 }}>No graded results for this period</div>}
+      {!filtered.length && <div style={{ textAlign: 'center', color: '#64748B', padding: 30, fontSize: 13 }}>{showProps ? 'No graded prop results for this period' : 'No graded results for this period'}</div>}
       {sortedDates.map(date => {
         const bets = byDate[date];
         const dayReturn = bets.reduce((s, r) => s + (r.unitReturn || 0), 0);
@@ -757,7 +788,27 @@ function ResultsTab({ results, sf, bf, dateFilter, isBet, isPropBet, propResults
               <span style={{ fontSize: 12, fontWeight: 700, color: '#94A3B8' }}>{date}</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: dayReturn >= 0 ? '#34D399' : '#F87171' }}>{dayReturn >= 0 ? '+' : ''}{dayReturn.toFixed(2)}u</span>
             </div>
-            {bets.map((r, j) => {
+            {showProps ? bets.map((r, j) => (
+              <div key={j} style={{
+                background: 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 3, padding: '8px 12px',
+                border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between',
+                borderLeft: `3px solid ${r.result === 'W' ? '#34D399' : '#F87171'}`
+              }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
+                    <span style={{ background: LEAGUE_COLORS[r.league], color: 'white', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{r.league}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3 }}>{r.market}</span>
+                    {r.clvGrade && <span style={{ fontSize: 9, fontWeight: 700, color: r.clvGrade === 'HIT' ? '#34D399' : '#F87171', background: r.clvGrade === 'HIT' ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)', padding: '1px 4px', borderRadius: 3 }}>CLV {r.clvGrade}</span>}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{r.player}</div>
+                  <div style={{ fontSize: 10, color: '#64748B' }}>{r.direction} {r.line} · {r.book}{r.edge ? ` · ${r.edge}% edge` : ''}</div>
+                </div>
+                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: r.result === 'W' ? '#34D399' : '#F87171' }}>{r.result}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: r.unitReturn >= 0 ? '#34D399' : '#F87171' }}>{r.unitReturn >= 0 ? '+' : ''}{(r.unitReturn || 0).toFixed(2)}u</div>
+                </div>
+              </div>
+            )) : bets.map((r, j) => {
               const isMyBet = isBet(r);
               return (
               <div key={j} style={{
@@ -967,6 +1018,7 @@ export default function App() {
     return new Map();
   });
   const [propDateFilter, setPropDateFilter] = useState('Today');
+  const [resultType, setResultType] = useState('Games');
   const [data, setData] = useState(null);
   const [liveGames, setLiveGames] = useState([]);
   const [liveStats, setLiveStats] = useState({});
@@ -1164,7 +1216,8 @@ export default function App() {
           return <Pills items={books} active={pf} onChange={setPf} color={TAB_ACCENTS[tab].accent} />;
         })()}
         {tab === 'scores' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
-        {tab === 'results' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
+        {tab === 'results' && <Pills items={['Games', 'Props']} active={resultType} onChange={setResultType} color={TAB_ACCENTS[tab].accent} />}
+        {tab === 'results' && resultType === 'Games' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'results' && <Pills items={DATE_FILTERS} active={dateFilter} onChange={setDateFilter} color={TAB_ACCENTS[tab].accent} />}
       </div>
       {/* Tab accent gradient strip */}
@@ -1183,7 +1236,7 @@ export default function App() {
         {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} />}
-        {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} isBet={isBet} isPropBet={isPropBet} />}
+        {data && tab === 'results' && <ResultsTab results={data.gradedPicks} gradedProps={data.gradedProps || []} sf={sf} bf={bf} dateFilter={dateFilter} resultType={resultType} isBet={isBet} isPropBet={isPropBet} />}
       </div>
 
       {/* Tab Bar */}

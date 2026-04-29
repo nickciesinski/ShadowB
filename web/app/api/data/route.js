@@ -154,6 +154,44 @@ export async function GET() {
       gradedPicks = allPicks.filter(p => p.result === 'W' || p.result === 'L' || p.result === 'P');
     }
 
+    // Graded prop results from Supabase
+    let gradedProps = [];
+    if (sb) {
+      try {
+        const { data: propRows2, error: propErr } = await sb.from('prop_performance')
+          .select('date, league, player, market, line, direction, book, opening_edge, closing_edge, clv_grade, units, actual_result')
+          .in('actual_result', ['W', 'L'])
+          .order('date', { ascending: false });
+        if (!propErr && propRows2 && propRows2.length > 0) {
+          gradedProps = propRows2.map(r => {
+            let dateStr = r.date || '';
+            if (dateStr.includes('-')) {
+              const [y, m, d] = dateStr.split('-');
+              dateStr = `${parseInt(m)}/${parseInt(d)}/${y}`;
+            }
+            const u = r.units || 0;
+            return {
+              date: dateStr,
+              league: r.league || '',
+              player: r.player || '',
+              market: r.market || '',
+              line: r.line != null ? String(r.line) : '',
+              direction: r.direction || '',
+              book: r.book || '',
+              edge: r.closing_edge || r.opening_edge || 0,
+              clvGrade: r.clv_grade || '',
+              units: u,
+              result: r.actual_result || '',
+              unitReturn: r.actual_result === 'W' ? u : -(u),
+            };
+          });
+          console.log(`[api] Loaded ${gradedProps.length} graded props from Supabase`);
+        }
+      } catch (err) {
+        console.warn('[api] Supabase graded props failed:', err.message);
+      }
+    }
+
     // Parse props
     const props = propRows.slice(1).map(parsePropRow).filter(p => p.player);
 
@@ -176,6 +214,7 @@ export async function GET() {
     return NextResponse.json({
       todayPicks,
       gradedPicks,
+      gradedProps,
       props,
       todayGames,
       lastUpdated: new Date().toISOString(),
