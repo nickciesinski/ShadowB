@@ -457,17 +457,217 @@ async function runAllOptimizations() {
   // 4. Update prop weights from CLV hit rates
   const propUpdates = await optimizePropWeights();
 
+  // 5. Optimize prop scoring weights based on W/L factor analysis
+  const scoringUpdates = await optimizePropScoringWeights();
+
   console.log('[optimize] ═══ Optimization cycle complete ═══');
-  return { mods, clvPenalties, propUpdates };
+  return { mods, clvPenalties, propUpdates, scoringUpdates };
 }
 
 module.exports = {
   optimizeModifiers,
   aggregateCLV,
   optimizePropWeights,
+  optimizePropScoringWeights,
   syncPerformanceLog,
   seedPropWeights,
   seedModifiers,
   runAllOptimizations,
   computeModifier,
 };
+
+// ── Prop Scoring Weight Optimization ────────────────────────
+
+const {
+  buildPlayerHistory,
+  buildBookStats,
+  buildTierMap,
+  readScoringWeights,
+  scoreEdgeSize,
+  scoreBookReliability,
+  scorePlayerTier,
+  scoreConsensusDepth,
+  scorePlayerHistory,
+  scoreClvModifier,
+  DEFAULT_WEIGHTS,
+} = require('./prop-scoring');
+const { getAllPropModifiers } = require('./prop-weights');
+
+/**
+ * Analyze which scoring factors correlate with actual W/L outcomes
+ * and nudge prop scoring weights accordingly.
+ *
+ * Approach: for each graded prop in the last 14 days, compute what
+ * each factor's score was at pick time (reconstructed from history).
+ * Compare average factor scores for Wins vs Losses. Factors that
+ * score higher on wins than losses get a weight boost; vice versa.
+ *
+ * Called nightly by trigger14 after the existing CLV-based optimization.
+ */
+async function optimizePropScoringWeights() {
+  console.log('[optimize] Starting prop scoring weight optimization...');
+
+  let perfRows;
+  try {
+    perfRows = await getValues(SPREADSHEET_ID, SHEETS.PROP_PERFORMANCE);
+  } catch (e) {
+    console.warn(`[optimize] Could not read Prop_Performance: ${e.message}`);
+    return null;
+  }
+  if (!perfRows || perfRows.length < 2) {
+    console.log('[optimize] No prop performance data yet — skipping scoring weight optimization');
+    return null;
+  }
+
+  // Load context for factor reconstruction
+  const [bookStats, playerHistory, tierMap] = await Promise.all([
+    buildBookStats(),
+    buildPlayerHistory(),
+    buildTierMap(),
+  ]);
+
+  // Load CLV modifiers per league
+  const clvModsByLeague = {};
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+    try {
+      clvModsByLeague[league] = await getAllPropModifiers(league);
+    } catch (e) {
+      clvModsByLeague[league] = {};
+    }
+  }
+
+  // Filter to last 14 days, graded W/L only
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const factorNames = ['edge_size', 'book_reliability', 'player_tier', 'consensus_depth', 'player_history', 'clv_modifier'];
+
+  // Accumulate factor scores for wins and losses
+  // Prop_Performance: 0=Timestamp, 1=League, 2=Player, 3=Market, 4=Line,
+  //   5=Direction, 6=Book, 7=Edge, 8=Actual, 9=Result, 10=AdjEdge
+  const winScores = {};
+  const lossScores = {};
+  for (const f of factorNames) { winScores[f] = []; lossScores[f] = []; }
+  let wins = 0, losses = 0;
+
+  for (let i = 1; i < perfRows.length; i++) {
+    const row = perfRows[i];
+    if (!row || row.length < 10) continue;
+
+    const result = (row[9] || '').toString().trim().toUpperCase();
+    if (result !== 'W' && result !== 'L') continue;
+
+    const dateStr = String(row[0] || '').slice(0, 10);
+    if (dateStr < cutoffStr) continue;
+
+    const league = (row[1] || '').trim();
+    const player = (row[2] || '').trim().toLowerCase();
+    const market = (row[3] || '').trim();
+    const direction = (row[5] || '').trim();
+    const book = (row[6] || '').trim();
+    const edgeNum = parseFloat(row[7]) || 0;
+
+    // Reconstruct factor scores
+    const f_edge = scoreEdgeSize(edgeNum);
+    const f_book = scoreBookReliability(book, bookStats);
+    const f_tier = scorePlayerTier(tierMap[player] || 'C');
+    const f_depth = 0.5; // We don't store numBooks in Prop_Performance — use neutral
+    const historyKey = `${league}|${player}|${market}|${direction}`;
+    const f_history = scorePlayerHistory(playerHistory[historyKey] || null);
+    const clvMods = clvModsByLeague[league] || {};
+    const f_clv = scoreClvModifier(clvMods[market] || 1.0);
+
+    const scores = { edge_size: f_edge, book_reliability: f_book, player_tier: f_tier,
+      consensus_depth: f_depth, player_history: f_history, clv_modifier: f_clv };
+
+    const bucket = result === 'W' ? winScores : lossScores;
+    for (const f of factorNames) bucket[f].push(scores[f]);
+    if (result === 'W') wins++; else losses++;
+  }
+
+  const total = wins + losses;
+  if (total < 30) {
+    console.log(`[optimize] Only ${total} graded props in last 14 days — need 30+ for weight optimization`);
+    return null;
+  }
+
+  console.log(`[optimize] Analyzing ${total} graded props (${wins}W / ${losses}L)`);
+
+  // Compute average factor score for wins vs losses
+  const avg = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0.5;
+
+  // For each factor, compute how predictive it is:
+  // lift = avgWin - avgLoss. Positive = factor predicts wins.
+  const analysis = {};
+  for (const f of factorNames) {
+    const avgWin = avg(winScores[f]);
+    const avgLoss = avg(lossScores[f]);
+    const lift = avgWin - avgLoss;
+    analysis[f] = { avgWin: avgWin.toFixed(3), avgLoss: avgLoss.toFixed(3), lift: lift.toFixed(4) };
+    console.log(`[optimize]   ${f}: win=${avgWin.toFixed(3)} loss=${avgLoss.toFixed(3)} lift=${lift >= 0 ? '+' : ''}${lift.toFixed(4)}`);
+  }
+
+  // Nudge weights: factors with positive lift get boosted, negative get cut
+  // Conservative: ±5% per cycle, clamped to [0.05, 0.50]
+  const updatedWeights = {};
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+    const current = await readScoringWeights(league);
+
+    for (const f of factorNames) {
+      const lift = parseFloat(analysis[f].lift);
+      let nudge = 1.0;
+      if (lift > 0.02) nudge = 1.05;       // meaningful positive lift → boost 5%
+      else if (lift > 0.005) nudge = 1.02;  // slight positive → boost 2%
+      else if (lift < -0.02) nudge = 0.95;  // meaningful negative → cut 5%
+      else if (lift < -0.005) nudge = 0.98; // slight negative → cut 2%
+
+      current[f] = Math.max(0.05, Math.min(0.50, current[f] * nudge));
+    }
+
+    // Normalize weights to sum to 1.0
+    const total = Object.values(current).reduce((a, b) => a + b, 0);
+    for (const f of factorNames) {
+      current[f] = parseFloat((current[f] / total).toFixed(4));
+    }
+
+    updatedWeights[league] = current;
+
+    // Write back to PropWeights sheet (alongside existing CLV modifiers)
+    try {
+      const sheetName = SHEETS[`PROP_WEIGHTS_${league}`] || `PropWeights_${league}`;
+      const rows = await getValues(SPREADSHEET_ID, sheetName);
+      if (!rows || rows.length < 1) continue;
+
+      // Check which scoring weights already exist, update or append
+      const existingKeys = new Set(rows.map(r => r[1]));
+      const newRows = [];
+      for (const f of factorNames) {
+        const key = `score_${f}`;
+        if (!existingKeys.has(key)) {
+          newRows.push(['_scoring', key, current[f].toFixed(4)]);
+        }
+      }
+
+      // Update existing scoring rows in-place
+      for (let i = 0; i < rows.length; i++) {
+        const key = (rows[i][1] || '').trim();
+        if (key.startsWith('score_')) {
+          const factor = key.replace('score_', '');
+          if (factor in current) {
+            rows[i][2] = current[factor].toFixed(4);
+          }
+        }
+      }
+
+      // Append any new scoring keys
+      const allRows = [...rows, ...newRows];
+      await setValues(SPREADSHEET_ID, sheetName, 'A1', allRows);
+      console.log(`[optimize] ${league} prop scoring weights updated`);
+    } catch (e) {
+      console.warn(`[optimize] Failed to write ${league} scoring weights: ${e.message}`);
+    }
+  }
+
+  return { analysis, updatedWeights };
+}

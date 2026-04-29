@@ -9,6 +9,7 @@ const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
 const { logApiCall } = require('./monitoring');
 const { getAllPropModifiers, DEFAULT_MODIFIER } = require('./prop-weights');
 const { getStatusImpacts } = require('./prop-status');
+const { scoreEdge, loadScoringContext } = require('./prop-scoring');
 
 const ODDS_API_COST_PER_CALL = 0.001;
 
@@ -344,6 +345,7 @@ async function generatePropEdges() {
           bookProb: (bookProb * 100).toFixed(1),
           edge: (edge * 100).toFixed(1),
           edgeNum: edge * 100,
+          numBooks: bookNames.length,
           game: g.game,
           league: g.league,
           prizepicks: platformNames.prizepicks || '',
@@ -369,6 +371,7 @@ async function generatePropEdges() {
           bookProb: (bookProb * 100).toFixed(1),
           edge: (edge * 100).toFixed(1),
           edgeNum: edge * 100,
+          numBooks: bookNames.length,
           game: g.game,
           league: g.league,
           prizepicks: platformNames.prizepicks || '',
@@ -389,9 +392,21 @@ async function generatePropEdges() {
   const actionableEdges = allEdges.filter(e => prefSet.has((e.book || '').toLowerCase()));
   console.log(`[props] ${allEdges.length} total edges, ${actionableEdges.length} from preferred books (${PREFERRED_BOOKS.join(', ')})`);
 
-  // ── PHASE 2: Apply weights, status impacts, and confidence scoring ──
+  // ── PHASE 2: Multi-factor scoring, status impacts, and confidence ──
 
-  // Load market weights per league (CLV-based modifiers)
+  // Load scoring context (player history, book stats, tiers, weights)
+  // Context is loaded once per league group — shared across all edges
+  const scoringContexts = {};
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+    try {
+      scoringContexts[league] = await loadScoringContext(league);
+    } catch (err) {
+      console.warn(`[props] Could not load scoring context for ${league}: ${err.message}`);
+      scoringContexts[league] = { bookStats: {}, playerHistory: {}, tierMap: {}, weights: null };
+    }
+  }
+
+  // Load CLV market modifiers (still used as one factor in scoring)
   const weightsByLeague = {};
   for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
     try {
@@ -410,9 +425,9 @@ async function generatePropEdges() {
     console.warn(`[props] Could not load status impacts: ${err.message}`);
   }
 
-  // Apply weights + status to each edge
+  // Score each edge using 6-factor model
   for (const e of actionableEdges) {
-    // Market weight modifier (default 1.0 until CLV data accumulates)
+    // CLV market modifier (fed into scoring model as one factor)
     const leagueWeights = weightsByLeague[e.league] || {};
     const weightMod = leagueWeights[e.market] || DEFAULT_MODIFIER;
     e.weightModifier = weightMod;
@@ -426,26 +441,23 @@ async function generatePropEdges() {
     }
     e.statusBump = statusBump;
 
-    // Adjusted edge = raw edge × weight modifier + status bump
+    // Adjusted edge = raw edge × CLV modifier + status bump
     e.adjustedEdge = parseFloat(((e.edgeNum * weightMod) + statusBump).toFixed(2));
 
-    // Confidence scoring (1-10):
-    //   Base from edge magnitude: <1% → 2, 1-2% → 4, 2-4% → 6, 4-6% → 7, 6%+ → 8
-    //   Bonus: +1 if weight modifier > 1.1 (CLV-proven market)
-    //   Bonus: +1 if status bump > 0 (teammate scratch edge)
-    //   Cap at 10
-    let conf = 2;
-    const absEdge = Math.abs(e.adjustedEdge);
-    if (absEdge >= 6) conf = 8;
-    else if (absEdge >= 4) conf = 7;
-    else if (absEdge >= 2) conf = 6;
-    else if (absEdge >= 1) conf = 4;
-    if (weightMod > 1.1) conf = Math.min(10, conf + 1);
-    if (statusBump > 0) conf = Math.min(10, conf + 1);
-    e.confidence = conf;
+    // Multi-factor confidence scoring
+    const ctx = scoringContexts[e.league] || scoringContexts.MLB;
+    const { rawScore, confidence, factors } = scoreEdge(e, ctx);
+    e.rawScore = rawScore;
+    e.confidence = confidence;
+    e.scoringFactors = factors;
+
+    // Bonus: +1 confidence if status bump active (not captured by model yet)
+    if (statusBump > 0) {
+      e.confidence = Math.min(10, e.confidence + 1);
+    }
 
     // Unit sizing (same scale as main picks)
-    e.units = propConfidenceToUnits(conf);
+    e.units = propConfidenceToUnits(e.confidence);
   }
 
   // Re-sort by adjusted edge
