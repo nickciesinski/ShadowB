@@ -445,9 +445,42 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
-function PropsTab({ props, sf, pf, isPropBet, isPropFade, toggleProp, liveStats }) {
-  // Filter by sport
+function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isPropFade, toggleProp, liveStats }) {
+  // Build game-to-date lookup from todayGames commence times
+  const gameCommence = {};
+  for (const g of (todayGames || [])) {
+    const key = `${g.away} @ ${g.home}`;
+    if (g.commence) gameCommence[key] = g.commence;
+    // Also store with reversed order for flexibility
+    const revKey = `${g.home} vs ${g.away}`;
+    if (g.commence) gameCommence[revKey] = g.commence;
+  }
+
+  // Helper: get date string (YYYY-MM-DD in local time) from a prop's game
+  const getPropDate = (p) => {
+    const commence = gameCommence[p.game];
+    if (!commence) return null;
+    try {
+      return new Date(commence).toLocaleDateString('en-CA'); // YYYY-MM-DD
+    } catch { return null; }
+  };
+
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
+
+  // Filter by date
   let filtered = props.filter(p => {
+    if (propDateFilter === 'All') return true;
+    const d = getPropDate(p);
+    if (!d) return propDateFilter === 'Today'; // No date = assume today
+    if (propDateFilter === 'Today') return d === todayStr;
+    if (propDateFilter === 'Tomorrow') return d === tomorrowStr;
+    return true;
+  });
+
+  // Filter by sport
+  filtered = filtered.filter(p => {
     if (sf !== 'All' && sf !== 'Live' && p.league !== sf) return false;
     return true;
   });
@@ -531,7 +564,19 @@ function PropsTab({ props, sf, pf, isPropBet, isPropFade, toggleProp, liveStats 
                   <span style={{ fontSize: 15, fontWeight: 900, color: '#F1F5F9' }}>{p.line}</span>
                   <span style={{ fontSize: 11, color: '#94A3B8' }}>{fmt(p.bookOdds)}</span>
                 </div>
-                <div style={{ fontSize: 10, color: '#94A3B8' }}>{p.game}</div>
+                <div style={{ fontSize: 10, color: '#94A3B8' }}>{p.game}{(() => {
+                  const c = gameCommence[p.game];
+                  if (!c) return null;
+                  try {
+                    const d = new Date(c);
+                    const dateStr = d.toLocaleDateString('en-CA');
+                    const isToday = dateStr === todayStr;
+                    const isTmrw = dateStr === tomorrowStr;
+                    const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                    const label = isToday ? timeStr : isTmrw ? `Tomorrow ${timeStr}` : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${timeStr}`;
+                    return <span style={{ color: '#64748B', marginLeft: 4 }}>· {label}</span>;
+                  } catch { return null; }
+                })()}</div>
                 <div style={{ fontSize: 10, color: '#64748B', marginTop: 1, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                   <span>via {p.book}</span>
                   {live ? (
@@ -921,6 +966,7 @@ export default function App() {
     } catch (e) {}
     return new Map();
   });
+  const [propDateFilter, setPropDateFilter] = useState('Today');
   const [data, setData] = useState(null);
   const [liveGames, setLiveGames] = useState([]);
   const [liveStats, setLiveStats] = useState({});
@@ -1112,6 +1158,7 @@ export default function App() {
         <Pills items={sportPills} active={sf} onChange={setSf} color={TAB_ACCENTS[tab].accent} />
         {tab === 'picks' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'picks' && <Pills items={CONFIDENCE_FILTERS} active={cf} onChange={setCf} color={TAB_ACCENTS[tab].accent} />}
+        {tab === 'props' && <Pills items={['Today', 'Tomorrow', 'All']} active={propDateFilter} onChange={setPropDateFilter} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'props' && (() => {
           const books = data?.props ? ['All', ...new Set(data.props.map(p => p.book).filter(Boolean))] : ['All'];
           return <Pills items={books} active={pf} onChange={setPf} color={TAB_ACCENTS[tab].accent} />;
@@ -1135,7 +1182,7 @@ export default function App() {
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
         {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
-        {data && tab === 'props' && <PropsTab props={data.props} sf={sf} pf={pf} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} />}
+        {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} />}
         {data && tab === 'results' && <ResultsTab results={data.gradedPicks} sf={sf} bf={bf} dateFilter={dateFilter} isBet={isBet} isPropBet={isPropBet} />}
       </div>
 
