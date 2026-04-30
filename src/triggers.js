@@ -15,6 +15,7 @@ const { updatePlayerStatus } = require('./prop-status');
 const { snapPropLines, snapClosingPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
 const { runAllOptimizations, syncPerformanceLog, seedPropWeights, seedModifiers } = require('./optimize');
 const { withMonitoring, trimAccumulatingSheets } = require('./monitoring');
+const { replayBacktest, sensitivityAnalysis, validateCurrentWeights } = require('./backtesting');
 
 /** Small delay to spread Sheets writes across the quota window. */
 const pause = (ms) => new Promise(r => setTimeout(r, ms));
@@ -130,6 +131,14 @@ const TRIGGERS = {
   // Compares today's Trigger_Monitor entries against expected schedule.
   // Alerts if any triggers failed or never ran.
   trigger16: withMonitoring('trigger16', sendTriggerHealthCheck),
+
+  // Backtest: manual dispatch — runs sensitivity analysis + weight validation
+  backtest: withMonitoring('backtest', async () => {
+    const sensitivity = await sensitivityAnalysis({ days: 30, delta: 0.10 });
+    const validation = await validateCurrentWeights(30);
+    console.log('[backtest] Sensitivity:', sensitivity.length, 'segments analyzed');
+    console.log('[backtest] Validation:', validation.valid ? 'PASS' : `FAIL — ${validation.misaligned.length} misaligned`);
+  }),
 
   // Trigger 17: Manual sheet capacity cleanup
   trigger17: withMonitoring('trigger17', trimAccumulatingSheets),

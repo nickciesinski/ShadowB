@@ -1,87 +1,358 @@
 'use strict';
 /**
- * backtesting.js — Historical Replay & Model Validation
- * Reads past bets from the Graded Bets sheet and replays them through
- * the current prediction model to measure accuracy and ROI.
+ * src/backtesting.js — Historical Replay & Weight Validation
+ *
+ * Two modes:
+ *
+ * 1. **Replay backtest** — Takes proposed weight changes and replays them
+ *    against the last N days of graded Performance Log data to estimate
+ *    what ROI *would have been* under the new weights. Doesn't re-run
+ *    the full model (we don't have historical team stats snapshots);
+ *    instead it uses the recorded confidence/edge and recalculates unit
+ *    sizing under the proposed modifier/weight changes.
+ *
+ * 2. **Weight sensitivity analysis** — For each weight key, runs +10%
+ *    and -10% scenarios to see which direction improves ROI. Outputs a
+ *    ranked list of weight changes by expected impact.
+ *
+ * Both modes write results to the Backtest_Results sheet and return
+ * a summary object.
  */
 const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
+const db = require('./db');
 
-const GRADED_SHEET     = SHEETS.GRADED_BETS;    // 'Graded Bets'
-const BACKTEST_SHEET   = SHEETS.BACKTEST_RESULTS; // 'Backtest Results'
+// ── Helpers ─────────────────────────────────────────────────────
 
 /**
- * Run a full backtest over all graded bets.
- * Replays each bet through generatePrediction() and compares to actual outcome.
+ * Calculate unit return for a single bet given American odds and result.
  */
-async function runBacktest() {
-  const rows = await getValues(SPREADSHEET_ID, GRADED_SHEET);
-  if (!rows || rows.length < 2) {
-    console.log('[backtest] No graded bets found');
-    return { total: 0, correct: 0, accuracy: 0, roi: 0 };
+function calcReturn(odds, units, result) {
+  if (result === 'W') {
+    if (odds > 0) return units * (odds / 100);
+    return units * (100 / Math.abs(odds));
+  }
+  if (result === 'L') return -units;
+  return 0; // push
+}
+
+/**
+ * Recalculate units under a modified set of performance modifiers.
+ * Uses the same formula as market-pricing.js calcUnits() but with
+ * the proposed modifier swapped in.
+ */
+function resizeUnits(originalUnits, originalMod, proposedMod) {
+  if (!originalMod || originalMod === 0) return originalUnits;
+  // Scale proportionally: newUnits = originalUnits * (proposedMod / originalMod)
+  const ratio = (proposedMod || 1.0) / originalMod;
+  return Math.max(0.01, Math.min(0.5, originalUnits * ratio));
+}
+
+// ── Performance Log Reader ──────────────────────────────────────
+
+/**
+ * Read graded picks from the Performance Log.
+ * Returns array of { date, league, market, confidence, odds, units, result, unitReturn }
+ */
+async function readGradedPicks(days = 30) {
+  // Try Supabase first for faster access
+  if (db.isEnabled()) {
+    const sb = db.getClient();
+    if (sb) {
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      const { data, error } = await sb
+        .from('performance_log')
+        .select('date, league, market, confidence, odds, final_units, result, unit_return')
+        .gte('date', cutoff)
+        .in('result', ['W', 'L', 'P']);
+
+      if (!error && data && data.length > 0) {
+        return data.map(r => ({
+          date: r.date,
+          league: r.league,
+          market: r.market,
+          confidence: parseInt(r.confidence) || 5,
+          odds: parseInt(r.odds) || -110,
+          units: parseFloat(r.final_units) || 0.05,
+          result: r.result,
+          unitReturn: parseFloat(r.unit_return) || 0,
+        }));
+      }
+    }
   }
 
-  const header = rows[0];
-  const dataRows = rows.slice(1);
+  // Fallback: Sheets
+  const raw = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  if (!raw || raw.length < 2) return [];
 
-  let total   = 0;
-  let correct = 0;
-  let totalReturn = 0;
-  const resultRows = [['Game', 'Bet', 'Predicted', 'Actual', 'Outcome', 'Odds', 'PnL']];
+  const headers = raw[0].map(h => String(h).trim().toLowerCase());
+  const dateIdx = headers.indexOf('date');
+  const leagueIdx = headers.indexOf('league');
+  const marketIdx = headers.indexOf('market');
+  const confIdx = headers.findIndex(h => h.includes('confidence') || h.includes('conf'));
+  const oddsIdx = headers.indexOf('odds');
+  const unitsIdx = headers.findIndex(h => h === 'units' || h === 'final_units');
+  const resultIdx = headers.indexOf('result');
+  const returnIdx = headers.findIndex(h => h.includes('return'));
 
-  for (const row of dataRows) {
-    const game      = row[0] || '';
-    const betType   = row[1] || '';
-    const actual    = row[2] || '';   // W or L
-    const odds      = parseFloat(row[3]) || -110;
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const picks = [];
 
-    if (!game || !actual) continue;
+  for (let i = 1; i < raw.length; i++) {
+    const r = raw[i];
+    const result = (r[resultIdx] || '').toString().trim().toUpperCase();
+    if (result !== 'W' && result !== 'L' && result !== 'P') continue;
 
-    // Re-run prediction for this historical game context
-    let predicted = 'W'; // Placeholder — real impl re-runs model with historical data
-    try {
-      // In a real system you'd pass historical game context here
-      // predicted = await generatePrediction({ game, betType, historical: true });
-    } catch (e) {
-      console.warn('[backtest] Prediction error for', game, e.message);
+    const date = String(r[dateIdx] || '').slice(0, 10);
+    if (date < cutoff) continue;
+
+    picks.push({
+      date,
+      league: (r[leagueIdx] || '').trim(),
+      market: (r[marketIdx] || '').trim(),
+      confidence: parseInt(r[confIdx]) || 5,
+      odds: parseInt(r[oddsIdx]) || -110,
+      units: parseFloat(r[unitsIdx]) || 0.05,
+      result,
+      unitReturn: returnIdx >= 0 ? parseFloat(r[returnIdx]) || 0 : 0,
+    });
+  }
+
+  return picks;
+}
+
+// ── Replay Backtest ─────────────────────────────────────────────
+
+/**
+ * Replay historical picks with proposed modifier changes.
+ *
+ * @param {Object} proposedModifiers - Map of "league|market" → new modifier value
+ * @param {Object} [options] - { days: 30 }
+ * @returns {Object} { baseline: {record, roi, units}, proposed: {record, roi, units}, diff }
+ */
+async function replayBacktest(proposedModifiers = {}, options = {}) {
+  const days = options.days || 30;
+  console.log(`[backtest] Running replay backtest over ${days} days...`);
+
+  const picks = await readGradedPicks(days);
+  if (picks.length === 0) {
+    console.log('[backtest] No graded picks found');
+    return null;
+  }
+
+  // Load current modifiers for baseline comparison
+  let currentMods = {};
+  if (db.isEnabled()) {
+    currentMods = await db.readModifiers();
+  }
+
+  let baseWins = 0, baseLosses = 0, baseReturn = 0, baseTotalUnits = 0;
+  let propWins = 0, propLosses = 0, propReturn = 0, propTotalUnits = 0;
+  const detailRows = [['Date', 'League', 'Market', 'Odds', 'Result', 'BaseUnits', 'BaseReturn', 'PropUnits', 'PropReturn']];
+
+  for (const pick of picks) {
+    const key = `${pick.league}|${pick.market}`;
+    const currentMod = currentMods[key] || 1.0;
+    const proposedMod = proposedModifiers[key] !== undefined ? proposedModifiers[key] : currentMod;
+
+    // Baseline: use recorded units
+    const baseUnits = pick.units;
+    const baseRet = calcReturn(pick.odds, baseUnits, pick.result);
+    baseReturn += baseRet;
+    baseTotalUnits += baseUnits;
+    if (pick.result === 'W') baseWins++;
+    if (pick.result === 'L') baseLosses++;
+
+    // Proposed: resize units with new modifier
+    const propUnits = resizeUnits(baseUnits, currentMod, proposedMod);
+    const propRet = calcReturn(pick.odds, propUnits, pick.result);
+    propReturn += propRet;
+    propTotalUnits += propUnits;
+    if (pick.result === 'W') propWins++;
+    if (pick.result === 'L') propLosses++;
+
+    detailRows.push([
+      pick.date, pick.league, pick.market, pick.odds, pick.result,
+      baseUnits.toFixed(3), baseRet.toFixed(3),
+      propUnits.toFixed(3), propRet.toFixed(3),
+    ]);
+  }
+
+  const baseROI = baseTotalUnits > 0 ? (baseReturn / baseTotalUnits * 100) : 0;
+  const propROI = propTotalUnits > 0 ? (propReturn / propTotalUnits * 100) : 0;
+
+  const summary = {
+    days,
+    totalPicks: picks.length,
+    baseline: {
+      record: `${baseWins}-${baseLosses}`,
+      winRate: ((baseWins / (baseWins + baseLosses)) * 100).toFixed(1),
+      netUnits: baseReturn.toFixed(2),
+      totalRisked: baseTotalUnits.toFixed(2),
+      roi: baseROI.toFixed(1),
+    },
+    proposed: {
+      record: `${propWins}-${propLosses}`,
+      winRate: ((propWins / (propWins + propLosses)) * 100).toFixed(1),
+      netUnits: propReturn.toFixed(2),
+      totalRisked: propTotalUnits.toFixed(2),
+      roi: propROI.toFixed(1),
+    },
+    diff: {
+      netUnits: (propReturn - baseReturn).toFixed(2),
+      roi: (propROI - baseROI).toFixed(1),
+    },
+  };
+
+  console.log(`[backtest] Baseline: ${summary.baseline.record} | ${summary.baseline.roi}% ROI | ${summary.baseline.netUnits}u`);
+  console.log(`[backtest] Proposed: ${summary.proposed.record} | ${summary.proposed.roi}% ROI | ${summary.proposed.netUnits}u`);
+  console.log(`[backtest] Diff: ${summary.diff.netUnits}u (${summary.diff.roi}% ROI)`);
+
+  // Write to Backtest_Results sheet
+  try {
+    detailRows.push([]);
+    detailRows.push(['', '', '', '', 'BASELINE', '', `${summary.baseline.netUnits}u`, '', '']);
+    detailRows.push(['', '', '', '', 'PROPOSED', '', '', '', `${summary.proposed.netUnits}u`]);
+    detailRows.push(['', '', '', '', 'DIFF', '', '', '', `${summary.diff.netUnits}u`]);
+    await setValues(SPREADSHEET_ID, SHEETS.BACKTEST_RESULTS, 'A1', detailRows);
+  } catch (e) {
+    console.warn('[backtest] Could not write results to Sheets:', e.message);
+  }
+
+  return summary;
+}
+
+// ── Weight Sensitivity Analysis ─────────────────────────────────
+
+/**
+ * For each league|market modifier, test +10% and -10% scenarios
+ * against historical data. Returns a ranked list showing which
+ * changes would have improved ROI the most.
+ *
+ * @param {Object} [options] - { days: 30, delta: 0.10 }
+ * @returns {Array} Ranked sensitivity results
+ */
+async function sensitivityAnalysis(options = {}) {
+  const days = options.days || 30;
+  const delta = options.delta || 0.10;
+  console.log(`[backtest] Running sensitivity analysis (±${(delta * 100).toFixed(0)}%, ${days} days)...`);
+
+  const picks = await readGradedPicks(days);
+  if (picks.length === 0) {
+    console.log('[backtest] No graded picks found');
+    return [];
+  }
+
+  let currentMods = {};
+  if (db.isEnabled()) {
+    currentMods = await db.readModifiers();
+  }
+
+  // Find all unique league|market segments
+  const segments = new Set();
+  for (const pick of picks) {
+    segments.add(`${pick.league}|${pick.market}`);
+  }
+
+  const results = [];
+
+  for (const segment of segments) {
+    const [league, market] = segment.split('|');
+    const currentMod = currentMods[segment] || 1.0;
+    const segPicks = picks.filter(p => p.league === league && p.market === market);
+    if (segPicks.length < 10) continue;
+
+    // Baseline
+    let baseReturn = 0, baseUnits = 0;
+    for (const p of segPicks) {
+      baseReturn += calcReturn(p.odds, p.units, p.result);
+      baseUnits += p.units;
     }
 
-    const isCorrect = predicted === actual;
-    const pnl = isCorrect
-      ? (odds > 0 ? odds / 100 : 100 / Math.abs(odds))
-      : -1;
+    // +delta scenario
+    const upMod = Math.min(1.5, currentMod * (1 + delta));
+    let upReturn = 0, upUnits = 0;
+    for (const p of segPicks) {
+      const u = resizeUnits(p.units, currentMod, upMod);
+      upReturn += calcReturn(p.odds, u, p.result);
+      upUnits += u;
+    }
 
-    total++;
-    if (isCorrect) correct++;
-    totalReturn += pnl;
+    // -delta scenario
+    const downMod = Math.max(0.2, currentMod * (1 - delta));
+    let downReturn = 0, downUnits = 0;
+    for (const p of segPicks) {
+      const u = resizeUnits(p.units, currentMod, downMod);
+      downReturn += calcReturn(p.odds, u, p.result);
+      downUnits += u;
+    }
 
-    resultRows.push([game, betType, predicted, actual, isCorrect ? 'HIT' : 'MISS', odds, pnl.toFixed(2)]);
+    const baseROI = baseUnits > 0 ? (baseReturn / baseUnits * 100) : 0;
+    const upROI = upUnits > 0 ? (upReturn / upUnits * 100) : 0;
+    const downROI = downUnits > 0 ? (downReturn / downUnits * 100) : 0;
+
+    const bestDir = upReturn > downReturn ? 'up' : 'down';
+    const bestReturn = bestDir === 'up' ? upReturn : downReturn;
+    const impact = bestReturn - baseReturn;
+
+    results.push({
+      segment,
+      league,
+      market,
+      sampleSize: segPicks.length,
+      currentMod,
+      baseROI: baseROI.toFixed(1),
+      upROI: upROI.toFixed(1),
+      downROI: downROI.toFixed(1),
+      bestDirection: bestDir,
+      impactUnits: impact.toFixed(3),
+      suggestedMod: bestDir === 'up' ? upMod : downMod,
+    });
   }
 
-  const accuracy = total > 0 ? ((correct / total) * 100).toFixed(1) : '0.0';
-  const roi      = total > 0 ? ((totalReturn / total) * 100).toFixed(1) : '0.0';
+  // Sort by absolute impact (biggest improvement first)
+  results.sort((a, b) => Math.abs(parseFloat(b.impactUnits)) - Math.abs(parseFloat(a.impactUnits)));
 
-  console.log(`[backtest] Total: ${total}, Correct: ${correct}, Accuracy: ${accuracy}%, ROI: ${roi}%`);
+  // Log top results
+  for (const r of results.slice(0, 10)) {
+    console.log(`[backtest] ${r.segment}: ${r.bestDirection} → ${r.impactUnits}u impact (${r.sampleSize}n, ${r.baseROI}% → ${r.bestDirection === 'up' ? r.upROI : r.downROI}%)`);
+  }
 
-  // Write results
-  resultRows.push([]);
-  resultRows.push(['', '', '', 'Accuracy', `${accuracy}%`, 'ROI', `${roi}%`]);
+  // Write to sheet
+  try {
+    const rows = [['Segment', 'League', 'Market', 'Samples', 'CurrentMod', 'BaseROI', 'UpROI', 'DownROI', 'BestDir', 'Impact', 'SuggestedMod']];
+    for (const r of results) {
+      rows.push([r.segment, r.league, r.market, r.sampleSize, r.currentMod, r.baseROI, r.upROI, r.downROI, r.bestDirection, r.impactUnits, r.suggestedMod]);
+    }
+    await setValues(SPREADSHEET_ID, SHEETS.BACKTEST_RESULTS, 'A1', rows);
+  } catch (e) {
+    console.warn('[backtest] Could not write sensitivity results:', e.message);
+  }
 
-  await setValues(SPREADSHEET_ID, BACKTEST_SHEET, 'A1', resultRows);
-
-  return { total, correct, accuracy: parseFloat(accuracy), roi: parseFloat(roi) };
+  return results;
 }
 
 /**
- * Compare two model configurations head-to-head over historical data.
- * Useful for A/B testing weight changes.
+ * Quick validation: run the sensitivity analysis and check if the current
+ * modifiers are directionally correct. Returns true if no segment would
+ * benefit from >5% modifier change.
  */
-async function compareModels(configA, configB) {
-  console.log('[backtest] Model comparison not yet fully implemented');
-  console.log('[backtest] Config A:', configA);
-  console.log('[backtest] Config B:', configB);
-  // Placeholder for future multi-model comparison logic
-  return { configA: null, configB: null };
+async function validateCurrentWeights(days = 30) {
+  const results = await sensitivityAnalysis({ days, delta: 0.05 });
+  const misaligned = results.filter(r => Math.abs(parseFloat(r.impactUnits)) > 0.5);
+
+  if (misaligned.length === 0) {
+    console.log('[backtest] All weights validated — no significant improvements found');
+    return { valid: true, misaligned: [] };
+  }
+
+  console.log(`[backtest] ${misaligned.length} segments could benefit from weight changes`);
+  return { valid: false, misaligned };
 }
 
-module.exports = { runBacktest, compareModels };
+module.exports = {
+  replayBacktest,
+  sensitivityAnalysis,
+  validateCurrentWeights,
+  readGradedPicks,
+};
