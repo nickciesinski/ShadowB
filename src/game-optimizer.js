@@ -318,9 +318,195 @@ async function optimizeGameWeights() {
 
 module.exports = {
   optimizeGameWeights,
+  optimizeCSVWeights,
   readTunableFactors,
   analyzeGamePerformance,
   computeNudges,
   applyNudges,
   TUNABLE_FACTORS,
 };
+
+// ── CSV Weight Decay Optimizer ──────────────────────────────
+//
+// For each CSV weight (per market), correlate the feature value
+// with W/L outcomes across recent graded picks. Weights with
+// no correlation decay toward 0; correlated weights get boosted.
+
+const { extractFeatures } = require('./game-features');
+
+/**
+ * Optimize individual CSV weights by correlating features with outcomes.
+ * Runs per-league, per-market. Nudges ±2% per cycle.
+ *
+ * Performance Log columns:
+ *   0:date, 1:league, 2:market, 3:away, 4:home,
+ *   9:odds, 10:units, 16:result(W/L/P), 17:unit_return
+ */
+async function optimizeCSVWeights() {
+  console.log('[game-optimizer] Starting CSV weight optimization...');
+
+  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  if (!perfRows || perfRows.length < 2) return null;
+
+  // Load team stats for feature reconstruction
+  const teamStatsCache = {};
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+    const sheetKey = `${league}_TEAM_STATS`;
+    const sheetName = SHEETS[sheetKey];
+    if (!sheetName) continue;
+    try {
+      const rows = await getValues(SPREADSHEET_ID, sheetName);
+      if (rows && rows.length > 1) {
+        const map = {};
+        for (const row of rows.slice(1)) {
+          map[row[2]] = {
+            pct: row[6], offRating: row[7] || '', defRating: row[8] || '',
+            pace: row[9] || '', runsPerGame: row[10] || '',
+            runsAllowedPerGame: row[11] || '', goalsFor: row[12] || '',
+            goalsAgainst: row[13] || '', pointsFor: row[14] || '',
+            pointsAgainst: row[15] || '', recentFormPct: row[16] || '',
+          };
+        }
+        teamStatsCache[league] = map;
+      }
+    } catch (e) {
+      console.warn(`[game-optimizer] Could not load ${league} team stats: ${e.message}`);
+    }
+  }
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+
+  // For each league+market, collect feature values for W and L picks
+  const results = {};
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+    const teamsMap = teamStatsCache[league] || {};
+    if (Object.keys(teamsMap).length === 0) continue;
+
+    const sheetName = sheetForLeague(league);
+    const currentWeights = await readWeights(sheetName);
+
+    let updated = false;
+    for (const market of ['moneyline', 'spread', 'total']) {
+      const mWeights = currentWeights[market] || {};
+      if (Object.keys(mWeights).length === 0) continue;
+
+      // Collect feature values for wins vs losses
+      const winFeatures = {};  // featureName → [values]
+      const lossFeatures = {};
+      let wins = 0, losses = 0;
+
+      for (const key of Object.keys(mWeights)) {
+        winFeatures[key] = [];
+        lossFeatures[key] = [];
+      }
+
+      for (let i = 1; i < perfRows.length; i++) {
+        const row = perfRows[i];
+        if (!row || row.length < 18) continue;
+
+        const pickLeague = (row[1] || '').trim().toUpperCase();
+        if (pickLeague !== league) continue;
+
+        const pickMarket = (row[2] || '').trim().toLowerCase();
+        if (pickMarket !== market) continue;
+
+        const result = (row[16] || '').toString().trim();
+        if (result !== 'W' && result !== 'L') continue;
+
+        const rawDate = String(row[0] || '').trim();
+        const parts = rawDate.match(/(\d+)\/(\d+)\/(\d+)/);
+        if (!parts) continue;
+        const pickDate = new Date(parseInt(parts[3]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        if (pickDate < cutoff) continue;
+
+        const awayTeam = (row[3] || '').trim();
+        const homeTeam = (row[4] || '').trim();
+        const homeStats = teamsMap[homeTeam] || {};
+        const awayStats = teamsMap[awayTeam] || {};
+
+        if (!homeStats.pct && !awayStats.pct) continue;
+
+        const features = extractFeatures(homeStats, awayStats, null, league);
+        const bucket = result === 'W' ? winFeatures : lossFeatures;
+
+        for (const key of Object.keys(mWeights)) {
+          if (features[key] !== undefined && features[key] !== null) {
+            bucket[key].push(features[key]);
+          }
+        }
+
+        if (result === 'W') wins++; else losses++;
+      }
+
+      if (wins + losses < 15) continue;
+
+      // For each feature: compare avg value on W vs L
+      // Positive lift = feature predicts wins = boost weight
+      // Negative lift = feature inversely correlates = may need sign flip or decay
+      // Zero lift = noise = decay toward 0
+      const avg = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+      let anyChange = false;
+      for (const [key, weight] of Object.entries(mWeights)) {
+        if (key.startsWith('param_') || key.startsWith('score_')) continue;
+
+        const avgW = avg(winFeatures[key] || []);
+        const avgL = avg(lossFeatures[key] || []);
+        const lift = avgW - avgL;
+
+        let nudge = 1.0;
+        if (Math.abs(lift) < 0.005) {
+          // Noise: decay toward 0
+          nudge = 0.98;
+        } else if (lift > 0.01 && weight >= 0) {
+          // Positive correlation, positive weight → boost
+          nudge = 1.02;
+        } else if (lift < -0.01 && weight <= 0) {
+          // Negative correlation, negative weight → boost magnitude
+          nudge = 1.02;
+        } else if (lift > 0.01 && weight < 0) {
+          // Positive correlation but negative weight → decay toward 0 (let it flip naturally)
+          nudge = 0.97;
+        } else if (lift < -0.01 && weight > 0) {
+          // Negative correlation but positive weight → decay
+          nudge = 0.97;
+        }
+
+        const newWeight = parseFloat((weight * nudge).toFixed(4));
+        // Clamp: don't let weights explode
+        const clamped = Math.max(-3.0, Math.min(3.0, newWeight));
+
+        if (clamped !== weight) {
+          mWeights[key] = clamped;
+          anyChange = true;
+        }
+      }
+
+      if (anyChange) {
+        updated = true;
+        console.log(`[game-optimizer] ${league}/${market}: ${wins}W/${losses}L, weights nudged`);
+      }
+    }
+
+    if (updated) {
+      // Rebuild rows and write back
+      const allRows = [['market', 'key', 'weight']];
+      // Params first
+      for (const [key, val] of Object.entries(currentWeights.params)) {
+        allRows.push(['', key, val]);
+      }
+      // Market weights
+      for (const market of ['moneyline', 'spread', 'total']) {
+        for (const [key, val] of Object.entries(currentWeights[market] || {})) {
+          allRows.push([market, key, val]);
+        }
+      }
+      await setValues(SPREADSHEET_ID, sheetName, 'A1', allRows);
+      console.log(`[game-optimizer] ${league}: updated weight sheet`);
+      results[league] = true;
+    }
+  }
+
+  return results;
+}

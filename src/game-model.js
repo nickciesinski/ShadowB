@@ -39,6 +39,13 @@ const {
   getTunableFactor,
 } = require('./stat-features');
 
+const {
+  extractFeatures,
+  scoreMarket,
+  scoreToMarginAdj,
+  scoreToTotalAdj,
+} = require('./game-features');
+
 // ââ League-specific constants ââââââââââââââââââââââââââââââââ
 
 /**
@@ -175,8 +182,24 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   // Pace adjustment for totals
   const paceAdj = paceAdjustment(homeStats, awayStats, league);
 
+  // Extract full feature vector for CSV weight scoring
+  const features = extractFeatures(homeStats, awayStats, scheduleInfo, league);
+
   // Core projection: margin (home perspective, positive = home favored)
-  const margin = projectMargin(homeStr, awayStr, league, restAdj, homeFormAdj, awayFormAdj);
+  const baseMargin = projectMargin(homeStr, awayStr, league, restAdj, homeFormAdj, awayFormAdj);
+
+  // CSV-weighted adjustment: if weights exist for moneyline/spread, blend in
+  const mlWeights = (weights && weights.moneyline) || {};
+  const spreadWeights = (weights && weights.spread) || {};
+  const totalWeights = (weights && weights.total) || {};
+
+  const mlScore = scoreMarket(features, mlWeights);
+  const spreadScore = scoreMarket(features, spreadWeights);
+  const totalScore = scoreMarket(features, totalWeights);
+
+  // Blend: base projection + CSV-weighted signal (dampened to prevent overshoot)
+  const csvDampen = 0.3; // 30% influence from CSV weights, grows as optimizer tunes
+  const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen;
 
   // Data completeness scoring (replaces manual flag checks)
   const { score: completenessScore, flags: completenessFlags } = dataCompleteness(
@@ -194,7 +217,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   const picks = [];
 
   // ââ Moneyline Pick ââââââââââââââââââââââââââââââââââââââââ
-  const mlPick = generateMLPick(game, margin, league, h2hMarket, uncertainty);
+  // Update SP features with our projections (self-referential signal)
+  features.sp_pred_margin = margin / (STRENGTH_TO_MARGIN[league] || 20);
+
+  const mlMargin = baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen;
+  const mlPick = generateMLPick(game, mlMargin, league, h2hMarket, uncertainty);
   if (mlPick) picks.push(mlPick);
 
   // ââ Spread Pick âââââââââââââââââââââââââââââââââââââââââââ
@@ -202,7 +229,8 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   if (spreadPick) picks.push(spreadPick);
 
   // ââ Total Pick ââââââââââââââââââââââââââââââââââââââââââââ
-  const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj);
+  const totalAdj = scoreToTotalAdj(totalScore, league) * csvDampen;
+  const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, totalAdj);
   if (totalPick) picks.push(totalPick);
 
   // Attach data completeness to all picks (computed in this scope)
@@ -369,7 +397,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
  * Generate total (over/under) pick for a game.
  * Sprint 2: Now accepts paceAdj from stat-features.
  */
-function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj) {
+function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, csvTotalAdj) {
   // Find over and under lines
   const overLine = totalsMarket.find(o => o.outcome === 'Over');
   const underLine = totalsMarket.find(o => o.outcome === 'Under');
@@ -392,7 +420,8 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
   }
 
   // Project the total (now with pace adjustment)
-  const projTotal = projectTotal(homeStr, awayStr, marketTotal, league, paceAdj);
+  const baseProjTotal = projectTotal(homeStr, awayStr, marketTotal, league, paceAdj);
+  const projTotal = baseProjTotal + (csvTotalAdj || 0);
 
   // Over/under probabilities
   const overProb = totalToOverProb(projTotal, marketTotal, league);

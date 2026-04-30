@@ -460,7 +460,7 @@ async function runAllOptimizations() {
   // 5. Optimize prop scoring weights based on W/L factor analysis
   const scoringUpdates = await optimizePropScoringWeights();
 
-  // 6. Auto-tune game model weights based on recent W/L performance
+  // 6. Auto-tune game model tunable factors based on recent W/L performance
   let gameWeightUpdates = null;
   try {
     gameWeightUpdates = await optimizeGameWeights();
@@ -468,8 +468,16 @@ async function runAllOptimizations() {
     console.warn('[optimize] Game weight optimization failed:', err.message);
   }
 
+  // 7. Correlate CSV weight features with W/L outcomes, decay noise weights
+  let csvWeightUpdates = null;
+  try {
+    csvWeightUpdates = await optimizeCSVWeights();
+  } catch (err) {
+    console.warn('[optimize] CSV weight optimization failed:', err.message);
+  }
+
   console.log('[optimize] ═══ Optimization cycle complete ═══');
-  return { mods, clvPenalties, propUpdates, scoringUpdates, gameWeightUpdates };
+  return { mods, clvPenalties, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates };
 }
 
 module.exports = {
@@ -500,7 +508,7 @@ const {
   DEFAULT_WEIGHTS,
 } = require('./prop-scoring');
 const { getAllPropModifiers } = require('./prop-weights');
-const { optimizeGameWeights } = require('./game-optimizer');
+const { optimizeGameWeights, optimizeCSVWeights } = require('./game-optimizer');
 
 /**
  * Analyze which scoring factors correlate with actual W/L outcomes
