@@ -32,8 +32,10 @@ const ESPN_SPORTS = {
 async function updatePlayerStats() {
   console.log('[data-collection] Updating player stats from ESPN...');
   const sports = [
-    { key: 'baseball', league: 'mlb' },
-    { key: 'basketball', league: 'nba' },
+    { key: 'baseball', league: 'mlb', sheet: 'MLB_PLAYERS' },
+    { key: 'basketball', league: 'nba', sheet: 'NBA_PLAYERS' },
+    { key: 'hockey', league: 'nhl', sheet: 'NHL_PLAYERS' },
+    { key: 'football', league: 'nfl', sheet: 'NFL_PLAYERS' },
   ];
 
   const allRows = [['Timestamp', 'Sport', 'PlayerName', 'Team', 'Position', 'Stat', 'Value']];
@@ -63,7 +65,23 @@ async function updatePlayerStats() {
 
   await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
   await setValues(SPREADSHEET_ID, SHEETS.PLAYER_STATS, 'A1', allRows);
-  console.log(`[data-collection] Player stats updated: ${allRows.length - 1} rows`);
+
+  // Also write per-league sheets
+  for (const { league, sheet } of sports) {
+    const sheetName = SHEETS[sheet];
+    if (!sheetName) continue;
+    const leagueRows = allRows.filter((r, i) => i === 0 || r[1] === league.toUpperCase());
+    if (leagueRows.length > 1) {
+      try {
+        await clearSheet(SPREADSHEET_ID, sheetName);
+        await setValues(SPREADSHEET_ID, sheetName, 'A1', leagueRows);
+      } catch (e) {
+        console.warn(`[data-collection] Could not write ${league} players: ${e.message}`);
+      }
+    }
+  }
+
+  console.log(`[data-collection] Player stats updated: ${allRows.length - 1} rows (4 leagues)`);
 }
 
 /**
