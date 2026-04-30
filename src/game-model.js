@@ -517,11 +517,13 @@ function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifi
         ? 'total' : pick.betType;
       const perfMod = getPerformanceModifier(league, betTypeNorm);
 
+      const calMod = getCalibrationMultiplier(Math.max(0, pick._edge));
       let units = calcUnits(
         Math.max(0, pick._edge),
         pick._uncertainty || 0.5,
         pick._mktQuality || 0.5,
-        perfMod
+        perfMod,
+        calMod
       );
 
       // Apply heavy favorite cap for moneyline

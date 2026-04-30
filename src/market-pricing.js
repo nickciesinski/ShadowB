@@ -142,9 +142,10 @@ function winProbToMLEdge(projectedWinProb, marketOdds) {
  * @param {number} uncertaintyScore - 0-1, higher = more uncertain (reduces sizing)
  * @param {number} marketQualityScore - 0-1, higher = better market data (boosts sizing)
  * @param {number} performanceMod - League/market modifier from Supabase (e.g., 1.15 or 0.7)
+ * @param {number} [calibrationMod=1.0] - Historical accuracy calibration (0.5-1.5)
  * @returns {number} units to bet (0.01 minimum, 0.5 maximum)
  */
-function calcUnits(edgePct, uncertaintyScore, marketQualityScore, performanceMod) {
+function calcUnits(edgePct, uncertaintyScore, marketQualityScore, performanceMod, calibrationMod) {
   // Base units: proportional to edge, scaled by a multiplier.
   // 1% edge â 0.05 units, 3% edge â 0.15 units, 5% edge â 0.25 units
   const edgeMultiplier = 0.05; // units per 1% of edge
@@ -162,6 +163,9 @@ function calcUnits(edgePct, uncertaintyScore, marketQualityScore, performanceMod
 
   // Apply league/market performance modifier
   units *= (performanceMod || 1.0);
+
+  // Apply calibration: adjusts sizing based on historical accuracy at this edge level
+  units *= (calibrationMod || 1.0);
 
   // Clamp: 0.01 floor (every game gets a pick), 0.5 cap
   units = Math.max(0.01, Math.min(0.5, units));

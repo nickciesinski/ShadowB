@@ -476,8 +476,18 @@ async function runAllOptimizations() {
     console.warn('[optimize] CSV weight optimization failed:', err.message);
   }
 
+  // 8. Refresh confidence calibration from latest grading data
+  let calibration = null;
+  try {
+    resetCalibration(); // clear stale cache
+    calibration = await loadCalibration();
+    await syncCalibrationToSheets();
+  } catch (err) {
+    console.warn('[optimize] Calibration refresh failed:', err.message);
+  }
+
   console.log('[optimize] ═══ Optimization cycle complete ═══');
-  return { mods, clvPenalties, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates };
+  return { mods, clvPenalties, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates, calibration };
 }
 
 module.exports = {
@@ -509,6 +519,7 @@ const {
 } = require('./prop-scoring');
 const { getAllPropModifiers } = require('./prop-weights');
 const { optimizeGameWeights, optimizeCSVWeights } = require('./game-optimizer');
+const { loadCalibration, syncCalibrationToSheets, resetCalibration } = require('./calibration');
 
 /**
  * Analyze which scoring factors correlate with actual W/L outcomes
