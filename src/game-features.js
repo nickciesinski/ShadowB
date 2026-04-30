@@ -1,4 +1,5 @@
 'use strict';
+const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
 // the weighted linear model.
@@ -117,13 +118,17 @@ function extractFeatures(home, away, scheduleInfo, league) {
   f.three_point_combined = 0.5;
   f.turnovers_combined = 0.5;
 
-  // ── Injury features (placeholder — Sprint 4 will populate) ──
-  f.injury_weight_diff = 0;
-  f.severe_injury_factor = 0;
-  f.injury_advantage = 0;
-  f.home_injury_weight = 0;
-  f.away_injury_weight = 0;
-  f.total_injury_weight = 0;
+  // ── Injury features (from Injury Summary + Prop_Status scratches) ──
+  const homeAbbr = (home.abbr || home.Abbr || '').toUpperCase();
+  const awayAbbr = (away.abbr || away.Abbr || '').toUpperCase();
+  const homeInjScore = getTeamInjuryScore(league, homeAbbr);
+  const awayInjScore = getTeamInjuryScore(league, awayAbbr);
+  f.home_injury_weight = homeInjScore;           // 0-1, higher = more injured
+  f.away_injury_weight = awayInjScore;
+  f.injury_weight_diff = awayInjScore - homeInjScore; // positive = away more hurt = home advantage
+  f.total_injury_weight = homeInjScore + awayInjScore; // both banged up = more variance
+  f.severe_injury_factor = Math.max(homeInjScore, awayInjScore) > 0.5 ? 1 : 0;
+  f.injury_advantage = Math.max(-1, Math.min(1, f.injury_weight_diff * 2)); // normalized -1 to 1
 
   // ── Schedule/rest ──
   if (scheduleInfo) {
