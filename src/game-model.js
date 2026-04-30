@@ -46,6 +46,9 @@ const {
   scoreToTotalAdj,
 } = require('./game-features');
 
+const { loadCalibration, getCalibrationMultiplier } = require('./calibration');
+const { loadInjuryImpact } = require('./injury-impact');
+
 // ââ League-specific constants ââââââââââââââââââââââââââââââââ
 
 /**
@@ -487,7 +490,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
  * @param {Object} [scheduleMap] - Optional: { teamName: { homeDaysOff, awayDaysOff, homeB2B, awayB2B } }
  * @returns {Array} Flat array of pick objects with team, betType, line, confidence, rationale
  */
-function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap) {
+async function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap) {
   // Load auto-tuned factors from weight sheet (param_auto_* keys)
   if (weights && weights.params) {
     const autoFactors = {};
@@ -500,6 +503,10 @@ function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifi
       setTunableFactors(autoFactors);
     }
   }
+
+  // Load calibration + injury data (graceful fallback if unavailable)
+  await loadCalibration();
+  await loadInjuryImpact();
 
   const allPicks = [];
 

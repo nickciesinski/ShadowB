@@ -212,7 +212,7 @@ async function generateMLBPredictions() {
   }
 
   // Deterministic pick generation with schedule context
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap);
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] MLB: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
@@ -272,7 +272,7 @@ async function generateNBAPredictions() {
       };
   }
 
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NBA', getPerformanceModifier, scheduleMap);
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NBA', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] NBA: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
@@ -332,7 +332,7 @@ async function generateNHLPredictions() {
   }
 
   const scheduleMap = buildScheduleMap(scheduleRows, 'NHL');
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NHL', getPerformanceModifier, scheduleMap);
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NHL', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] NHL: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
@@ -382,7 +382,7 @@ async function generateNFLPredictions() {
   }
 
   const scheduleMap = buildScheduleMap(scheduleRows, 'NFL');
-  const picks = generateAllPicks(games, teamsMap, parsedWeights, 'NFL', getPerformanceModifier, scheduleMap);
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NFL', getPerformanceModifier, scheduleMap);
   console.log(`[predictions] NFL: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
