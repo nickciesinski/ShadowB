@@ -252,8 +252,9 @@ async function updateAllPropWeights() {
   const cutoffStr = cutoff.toISOString().slice(0, 10);
 
   // Aggregate by league+market
-  // Perf cols: 0=Timestamp, 1=League, 2=Player, 3=Market, ..., 9=CLVGrade
-  const metrics = {}; // "league|market" → { hits, total }
+  // Perf cols: 0=Timestamp, 1=League, 2=Player, 3=Market, 4=Line, 5=Direction,
+  //   6=Book, 7=Edge, 8=Actual, 9=Result, 10=AdjustedEdge, 11=Confidence, 12=Units
+  const metrics = {}; // "league|market" → { hits, total, edgeSum }
 
   for (const row of perfRows.slice(1)) {
     const dateStr = String(row[0] || '').slice(0, 10);
@@ -261,13 +262,15 @@ async function updateAllPropWeights() {
 
     const league = row[1] || '';
     const market = row[3] || '';
-    const grade = row[9] || '';
-    if (!league || !market || (grade !== 'HIT' && grade !== 'MISS')) continue;
+    const grade = (row[9] || '').toString().trim().toUpperCase();
+    if (!league || !market || (grade !== 'HIT' && grade !== 'MISS' && grade !== 'W' && grade !== 'L')) continue;
 
     const key = `${league}|${market}`;
-    if (!metrics[key]) metrics[key] = { hits: 0, total: 0 };
+    if (!metrics[key]) metrics[key] = { hits: 0, total: 0, edgeSum: 0 };
     metrics[key].total++;
-    if (grade === 'HIT') metrics[key].hits++;
+    if (grade === 'HIT' || grade === 'W') metrics[key].hits++;
+    const edge = parseFloat(row[7]) || 0;
+    metrics[key].edgeSum += Math.abs(edge);
   }
 
   // Process each league
@@ -281,7 +284,7 @@ async function updateAllPropWeights() {
       leagueMetrics[market] = {
         hitRate: vals.total > 0 ? vals.hits / vals.total : 0.5,
         sampleSize: vals.total,
-        avgEdge: 0, // TODO: compute from actual edge values
+        avgEdge: vals.total > 0 ? vals.edgeSum / vals.total : 0,
       };
     }
 
