@@ -150,6 +150,46 @@ function projectWinProb(projectedMargin, league) {
   return marginToSpreadCoverProb(projectedMargin, 0, league);
 }
 
+// ── Simple "second opinion" model for disagreement detection ──────
+/**
+ * Naive win probability using only raw W-L record + home advantage.
+ * No CSV weights, no form, no rest, no injuries — deliberately simple
+ * so it serves as an independent check on the main model.
+ */
+function simpleWinProb(homeStats, awayStats, league) {
+  const homePct = parseFloat(homeStats.pct) || 0.5;
+  const awayPct = parseFloat(awayStats.pct) || 0.5;
+  const homeAdv = { NBA: 0.035, NFL: 0.030, MLB: 0.025, NHL: 0.025 }[league] || 0.03;
+  // Simple log5 formula: P(A beats B) = (pA - pA*pB) / (pA + pB - 2*pA*pB)
+  const pA = Math.max(0.15, Math.min(0.85, homePct + homeAdv));
+  const pB = Math.max(0.15, Math.min(0.85, awayPct));
+  const log5 = (pA - pA * pB) / (pA + pB - 2 * pA * pB);
+  return Math.max(0.15, Math.min(0.85, log5));
+}
+
+/**
+ * Compute disagreement between main model and simple model.
+ * Returns 0 (full agreement) to 1 (max disagreement).
+ * Used as a confidence penalty — disagreement reduces unit sizing.
+ */
+function modelDisagreement(mainProb, simpleProb, betType) {
+  if (betType === 'over' || betType === 'under') {
+    return 0; // Simple model has no total projection
+  }
+  const mainFavorsHome = mainProb > 0.5;
+  const simpleFavorsHome = simpleProb > 0.5;
+
+  if (mainFavorsHome === simpleFavorsHome) {
+    // Same direction — disagreement is magnitude difference
+    return Math.min(1.0, Math.abs(mainProb - simpleProb) * 2);
+  } else {
+    // Opposite directions — significant disagreement
+    return Math.min(1.0, 0.5 + Math.abs(mainProb - simpleProb));
+  }
+}
+
+
+
 // ââ Pick Generation ââââââââââââââââââââââââââââââââââââââââââ
 
 /**
@@ -188,6 +228,9 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   // Extract full feature vector for CSV weight scoring
   const features = extractFeatures(homeStats, awayStats, scheduleInfo, league);
 
+
+  // ── Simple model "second opinion" for disagreement signal ──
+  const simpleHomeProb = simpleWinProb(homeStats, awayStats, league);
   // Core projection: margin (home perspective, positive = home favored)
   const baseMargin = projectMargin(homeStr, awayStr, league, restAdj, homeFormAdj, awayFormAdj);
 
@@ -225,16 +268,27 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
 
   const mlMargin = baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen;
   const mlPick = generateMLPick(game, mlMargin, league, h2hMarket, uncertainty);
-  if (mlPick) picks.push(mlPick);
+  if (mlPick) {
+    const mlMainProb = projectWinProb(mlMargin, league);
+    mlPick._disagreement = modelDisagreement(mlMainProb, simpleHomeProb, 'moneyline');
+    picks.push(mlPick);
+  }
 
   // ââ Spread Pick âââââââââââââââââââââââââââââââââââââââââââ
   const spreadPick = generateSpreadPick(game, margin, league, spreadsMarket, uncertainty);
-  if (spreadPick) picks.push(spreadPick);
+  if (spreadPick) {
+    const spreadMainProb = projectWinProb(margin, league);
+    spreadPick._disagreement = modelDisagreement(spreadMainProb, simpleHomeProb, 'spread');
+    picks.push(spreadPick);
+  }
 
   // ââ Total Pick ââââââââââââââââââââââââââââââââââââââââââââ
   const totalAdj = scoreToTotalAdj(totalScore, league) * csvDampen;
   const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, totalAdj);
-  if (totalPick) picks.push(totalPick);
+  if (totalPick) {
+    totalPick._disagreement = 0; // Simple model has no total projection
+    picks.push(totalPick);
+  }
 
   // Attach data completeness to all picks (computed in this scope)
   for (const pick of picks) {
@@ -532,6 +586,13 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
         perfMod,
         calMod
       );
+
+      // Apply model disagreement penalty (0-30% reduction)
+      const disagreement = pick._disagreement || 0;
+      if (disagreement > 0.1) {
+        const disagreePenalty = 1.0 - (disagreement * 0.30);
+        units *= Math.max(0.50, disagreePenalty);
+      }
 
       // Apply heavy favorite cap for moneyline
       if (pick.betType === 'moneyline' && pick._odds) {
