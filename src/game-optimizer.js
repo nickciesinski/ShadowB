@@ -124,7 +124,7 @@ async function analyzeGamePerformance(league, days = 14) {
  * - Per-market ROI → adjust the relevant factors
  */
 function computeNudges(analysis, currentFactors) {
-  if (!analysis || analysis.total < 20) return null;
+  if (!analysis || analysis.total < 50) return null;
 
   const nudges = {};
   const { picks, totalW, totalL } = analysis;
@@ -272,7 +272,7 @@ async function optimizeGameWeights() {
   for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
     try {
       const analysis = await analyzeGamePerformance(league, 14);
-      if (!analysis || analysis.total < 20) {
+      if (!analysis || analysis.total < 50) {
         console.log(`[game-optimizer] ${league}: ${analysis ? analysis.total : 0} picks in 14 days — need 20+, skipping`);
         continue;
       }
@@ -439,7 +439,7 @@ async function optimizeCSVWeights() {
         if (result === 'W') wins++; else losses++;
       }
 
-      if (wins + losses < 15) continue;
+      if (wins + losses < 30) continue;
 
       // For each feature: compare avg value on W vs L
       // Positive lift = feature predicts wins = boost weight

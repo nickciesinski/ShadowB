@@ -162,7 +162,7 @@ async function computeFromSheets() {
   // Compute multipliers
   for (const b of EDGE_BUCKETS) {
     const stats = buckets[b.label];
-    if (stats.total < 15) { map[b.label] = 1.0; continue; }
+    if (stats.total < 30) { map[b.label] = 1.0; continue; }
 
     const actualWinRate = stats.wins / stats.total;
     const avgImplied = impliedBuckets[b.label].reduce((a, v) => a + v, 0) / impliedBuckets[b.label].length;

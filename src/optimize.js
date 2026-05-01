@@ -27,7 +27,7 @@ const db = require('./db');
 // ── Modifier guardrails ─────────────────────────────────────────
 const MIN_MOD = 0.2;
 const MAX_MOD = 1.5;
-const MIN_SAMPLE = 20;  // need 20+ graded bets before adjusting
+const MIN_SAMPLE = 50;  // need 50+ graded bets before adjusting (prevent noise chasing)
 
 // Modifier rules based on ROI + win rate:
 //   ROI > 8% AND win% > 52% → boost to min(current * 1.15, MAX)
@@ -209,7 +209,7 @@ async function optimizePropWeights() {
     const hitRate = parseFloat(row.hit_rate) || 50;
     const sampleSize = parseInt(row.sample_size) || 0;
 
-    if (sampleSize < 10) continue; // not enough data
+    if (sampleSize < 30) continue; // need 30+ samples to avoid noise
 
     // Same logic as prop-weights.js computeWeightUpdates:
     // >55% hit → +10%, 50-55% hold, 45-50% → -10%, <45% → -20%
@@ -445,8 +445,20 @@ async function seedPropWeights() {
 async function runAllOptimizations() {
   console.log('[optimize] ═══ Starting full optimization cycle ═══');
 
-  // 1. Sync latest Performance Log data to Supabase
+  // ── Tiered learning rates ──
+  // Daily:   modifiers + CLV penalties + calibration (stake-size only, low risk)
+  // Weekly:  prop scoring weights + game tunable factors (needs 7+ days of data)
+  // Monthly: CSV feature correlation + noise decay (needs 30+ days, high noise risk)
+  const now = new Date();
+  const dayOfWeek = now.getDay();    // 0=Sun, 1=Mon, ...
+  const dayOfMonth = now.getDate();  // 1-31
+  const isWeekly = dayOfWeek === 0;  // Sundays
+  const isMonthly = dayOfMonth === 1; // 1st of month
+
+  // 1. Sync latest Performance Log data to Supabase (always)
   await syncPerformanceLog();
+
+  // ── DAILY: Low-risk stake sizing adjustments ──
 
   // 2. Update main model modifiers based on 30-day performance
   const mods = await optimizeModifiers();
@@ -457,33 +469,50 @@ async function runAllOptimizations() {
   // 4. Update prop weights from CLV hit rates
   const propUpdates = await optimizePropWeights();
 
-  // 5. Optimize prop scoring weights based on W/L factor analysis
-  const scoringUpdates = await optimizePropScoringWeights();
-
-  // 6. Auto-tune game model tunable factors based on recent W/L performance
-  let gameWeightUpdates = null;
-  try {
-    gameWeightUpdates = await optimizeGameWeights();
-  } catch (err) {
-    console.warn('[optimize] Game weight optimization failed:', err.message);
-  }
-
-  // 7. Correlate CSV weight features with W/L outcomes, decay noise weights
-  let csvWeightUpdates = null;
-  try {
-    csvWeightUpdates = await optimizeCSVWeights();
-  } catch (err) {
-    console.warn('[optimize] CSV weight optimization failed:', err.message);
-  }
-
-  // 8. Refresh confidence calibration from latest grading data
+  // 8. Refresh confidence calibration (daily — it reads 60-day data, low noise)
   let calibration = null;
   try {
-    resetCalibration(); // clear stale cache
+    resetCalibration();
     calibration = await loadCalibration();
     await syncCalibrationToSheets();
   } catch (err) {
     console.warn('[optimize] Calibration refresh failed:', err.message);
+  }
+
+  // ── WEEKLY: Medium-risk weight adjustments (Sundays only) ──
+  let scoringUpdates = null;
+  let gameWeightUpdates = null;
+
+  if (isWeekly) {
+    console.log('[optimize] Sunday — running weekly weight adjustments');
+
+    // 5. Optimize prop scoring weights based on W/L factor analysis
+    scoringUpdates = await optimizePropScoringWeights();
+
+    // 6. Auto-tune game model tunable factors
+    try {
+      gameWeightUpdates = await optimizeGameWeights();
+    } catch (err) {
+      console.warn('[optimize] Game weight optimization failed:', err.message);
+    }
+  } else {
+    console.log('[optimize] Skipping weekly weight adjustments (not Sunday)');
+  }
+
+  // ── MONTHLY: High-risk feature re-evaluation (1st of month only) ──
+  let csvWeightUpdates = null;
+
+  if (isMonthly) {
+    console.log('[optimize] 1st of month — running monthly CSV weight correlation + noise decay');
+
+    // 7. Correlate CSV weight features with W/L, decay noise toward 0
+    try {
+      csvWeightUpdates = await optimizeCSVWeights();
+    } catch (err) {
+      console.warn('[optimize] CSV weight optimization failed:', err.message);
+    }
+  } else {
+    console.log('[optimize] Skipping monthly CSV weight optimization (not 1st of month)');
   }
 
   console.log('[optimize] ═══ Optimization cycle complete ═══');
@@ -615,8 +644,8 @@ async function optimizePropScoringWeights() {
   }
 
   const total = wins + losses;
-  if (total < 30) {
-    console.log(`[optimize] Only ${total} graded props in last 14 days — need 30+ for weight optimization`);
+  if (total < 50) {
+    console.log(`[optimize] Only ${total} graded props in last 14 days — need 50+ for weight optimization`);
     return null;
   }
 
