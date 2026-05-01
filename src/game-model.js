@@ -44,6 +44,7 @@ const {
   scoreMarket,
   scoreToMarginAdj,
   scoreToTotalAdj,
+  decomposeScore,
 } = require('./game-features');
 
 const { loadCalibration, getCalibrationMultiplier } = require('./calibration');
@@ -306,6 +307,9 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   if (mlPick) {
     const mlMainProb = projectWinProb(mlMargin, league);
     mlPick._disagreement = modelDisagreement(mlMainProb, simpleHomeProb, 'moneyline');
+    const mlContribs = decomposeScore(features, mlWeights);
+    mlPick._edgeDriver = mlContribs.length > 0 ? mlContribs[0].feature : 'base_model';
+    mlPick._topContributions = mlContribs.slice(0, 5);
     picks.push(mlPick);
   }
 
@@ -314,6 +318,9 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   if (spreadPick) {
     const spreadMainProb = projectWinProb(margin, league);
     spreadPick._disagreement = modelDisagreement(spreadMainProb, simpleHomeProb, 'spread');
+    const spContribs = decomposeScore(features, spreadWeights);
+    spreadPick._edgeDriver = spContribs.length > 0 ? spContribs[0].feature : 'base_model';
+    spreadPick._topContributions = spContribs.slice(0, 5);
     picks.push(spreadPick);
   }
 
@@ -322,6 +329,9 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, totalAdj);
   if (totalPick) {
     totalPick._disagreement = 0; // Simple model has no total projection
+    const totContribs = decomposeScore(features, totalWeights);
+    totalPick._edgeDriver = totContribs.length > 0 ? totContribs[0].feature : 'base_model';
+    totalPick._topContributions = totContribs.slice(0, 5);
     picks.push(totalPick);
   }
 

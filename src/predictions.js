@@ -858,6 +858,8 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
             disagreement: p._disagreement || 0,
             variance: p._variance || 0,
             data_completeness: p._dataCompleteness || 0,
+            edge_driver: p._edgeDriver || 'base_model',
+            top_contributions: p._topContributions || [],
           }));
         if (featureRows.length > 0) {
           await db.insertPredictionFeatures(featureRows);

@@ -201,9 +201,39 @@ function scoreToTotalAdj(score, league) {
   return score * (SCALE[league] || 3.0);
 }
 
+
+/**
+ * Decompose a market score into per-feature contributions.
+ * Returns sorted array of { feature, weight, value, contribution } (largest |contribution| first).
+ * The top entry is the "primary edge driver" for this market.
+ *
+ * @param {Object} features - From extractFeatures()
+ * @param {Object} marketWeights - { featureName: coefficient, ... }
+ * @returns {Array<{feature: string, weight: number, value: number, contribution: number}>}
+ */
+function decomposeScore(features, marketWeights) {
+  if (!marketWeights || Object.keys(marketWeights).length === 0) return [];
+
+  const contributions = [];
+  for (const [key, weight] of Object.entries(marketWeights)) {
+    const val = features[key];
+    if (val !== undefined && val !== null && isFinite(weight) && weight !== 0) {
+      contributions.push({
+        feature: key,
+        weight,
+        value: val,
+        contribution: val * weight,
+      });
+    }
+  }
+  contributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+  return contributions;
+}
+
 module.exports = {
   extractFeatures,
   scoreMarket,
   scoreToMarginAdj,
   scoreToTotalAdj,
+  decomposeScore,
 };
