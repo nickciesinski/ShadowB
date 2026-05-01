@@ -148,6 +148,7 @@ async function updatePerformanceResults(gradedRows) {
     const { error } = await sb.from('performance_log')
       .update({
         result: row.result,
+        prediction_correct: row.result === 'W' ? true : row.result === 'L' ? false : null,
       })
       .eq('date', row.date)
       .eq('league', row.league)

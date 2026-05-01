@@ -453,6 +453,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
   // as a drop filter. See memory/feedback_pick_coverage_rule.md.
 
   const perfRows = [];
+  const pickMetaMap = {}; // keyed by 'date|away@home|betType' for Supabase enrichment
   for (const p of picks) {
     const team = p.team || '';
     const rawBetType = (p.betType || '').toLowerCase();
@@ -498,6 +499,12 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         approvalStatus,    // V: approval_status
         approvalReason,    // W: approval_reason
       ]);
+      const metaKey = `${dateStr}|${game.away || ''}@${game.home || ''}|${betType}`;
+      pickMetaMap[metaKey] = {
+        predicted_prob: p._modelProb || null,
+        market_prob: p._marketImpliedProb || null,
+        edge_driver: p._edgeDriver || 'base_model',
+      };
       continue;
     }
 
@@ -816,7 +823,10 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     // Dual-write to Supabase (non-blocking — log errors but don't fail the trigger)
     if (db.isEnabled() && finalRows && finalRows.length > 0) {
       try {
-        const dbRows = finalRows.map(r => ({
+        const dbRows = finalRows.map((r) => {
+        const mk = `${r[0]}|${r[3]}@${r[4]}|${r[6]}`;
+        const meta = pickMetaMap[mk] || {};
+        return ({
           date: String(r[0] || '').replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'), // MM/DD/YYYY → YYYY-MM-DD
           league: r[1] || '',
           game: `${r[3]} @ ${r[4]}`,
@@ -829,7 +839,11 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           modifier: getPerformanceModifier(r[1], r[6]),
           trigger_name: `trigger4_${sport}`,
           approval_status: r[21] || 'tracking_only',  // Sprint 3 (col V)
-        }));
+          predicted_prob: meta.predicted_prob || null,
+          market_prob: meta.market_prob || null,
+          edge_driver: meta.edge_driver || 'base_model',
+        });
+        });
         await db.insertPerformanceRows(dbRows);
         console.log(`[predictions] Dual-wrote ${dbRows.length} ${sport} picks to Supabase`);
       } catch (err) {
