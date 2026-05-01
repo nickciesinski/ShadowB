@@ -16,6 +16,7 @@ const { snapPropLines, snapClosingPropLines, gradePropEdges, updateAllPropWeight
 const { runAllOptimizations, syncPerformanceLog, seedPropWeights, seedModifiers } = require('./optimize');
 const { withMonitoring, trimAccumulatingSheets } = require('./monitoring');
 const { replayBacktest, sensitivityAnalysis, validateCurrentWeights } = require('./backtesting');
+const { snapshotTeamStats, snapshotOdds, snapshotInjuries } = require('./snapshots');
 
 /** Small delay to spread Sheets writes across the quota window. */
 const pause = (ms) => new Promise(r => setTimeout(r, ms));
@@ -35,12 +36,14 @@ const TRIGGERS = {
   trigger2: withMonitoring('trigger2', async () => {
     await updateTeamStats();
     await updateScheduleContext();
+    await snapshotTeamStats(); // daily state snapshot for historical accuracy
   }),
 
   // Trigger 3: 4:30 AM ET → Fetch odds, grade yesterday, CLV snapshot
   trigger3: withMonitoring('trigger3', async () => {
     await fetchOddsAndGrade();
     await takeCLVSnapshot();
+    await snapshotOdds(); // daily odds snapshot for historical accuracy
   }),
 
   // Trigger 4: 5:00 AM ET → All sport predictions (MLB, NBA, NHL, NFL)
@@ -61,6 +64,7 @@ const TRIGGERS = {
   // Trigger 6: 6:00 AM ET → Status check + Player props
   trigger6: withMonitoring('trigger6', async () => {
     await updatePlayerStatus();   // detect scratches/injuries before fetching props
+    await snapshotInjuries();     // daily injury snapshot for historical accuracy
     await updatePlayerProps();
   }),
 
