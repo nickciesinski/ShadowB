@@ -3,35 +3,23 @@
  * src/snapshots.js — Daily state snapshots for historical accuracy
  *
  * Saves daily snapshots of team stats, odds, and injury state to Supabase.
- * This enables accurate backtesting and weight optimization by preserving
- * the data that existed at the time each pick was made, rather than
- * evaluating past picks against current (changed) data.
+ * This enables accurate backtesting by preserving data at pick time.
  *
- * Tables (created via Supabase SQL editor):
+ * Actual Supabase table schemas (created by user):
  *
  * daily_team_stats:
- *   id (serial), date (date), league (text), team (text), abbr (text),
- *   wins (int), losses (int), win_pct (numeric),
- *   off_rating (numeric), def_rating (numeric), pace (numeric),
- *   points_for (numeric), points_against (numeric),
- *   recent_form_pct (numeric), last10_wins (int), last10_losses (int),
- *   created_at (timestamptz default now())
- *   UNIQUE(date, league, abbr)
+ *   id (int8), date (date), league (text), team (text),
+ *   stats (jsonb), created_at (timestamp)
  *
  * daily_odds:
- *   id (serial), date (date), league (text), game (text),
- *   home (text), away (text), commence_time (text),
- *   market (text), outcome (text), consensus_price (numeric),
- *   consensus_line (numeric), book_count (int),
- *   created_at (timestamptz default now())
- *   UNIQUE(date, league, game, market, outcome)
+ *   id (int8), date (date), league (text), game_id (text),
+ *   home_team (text), away_team (text), market (text),
+ *   odds (jsonb), created_at (timestamp)
  *
  * daily_injuries:
- *   id (serial), date (date), league (text), team (text),
- *   player (text), status (text), severity (numeric),
- *   is_key_player (boolean),
- *   created_at (timestamptz default now())
- *   UNIQUE(date, league, player)
+ *   id (int8), date (date), league (text), team (text),
+ *   player (text), status (text), impact (numeric),
+ *   created_at (timestamp)
  */
 const db = require('./db');
 const { getValues } = require('./sheets');
@@ -63,7 +51,6 @@ async function snapshotTeamStats() {
     return;
   }
 
-  // Read all league team stat sheets
   const leagueSheets = [
     { league: 'NBA', sheet: SHEETS.NBA_TEAM_STATS },
     { league: 'MLB', sheet: SHEETS.MLB_TEAM_STATS },
@@ -78,19 +65,14 @@ async function snapshotTeamStats() {
       const data = await getValues(SPREADSHEET_ID, sheet);
       if (!data || data.length < 2) continue;
 
-      // Header: Timestamp, Sport, Team, Abbreviation, Win, Loss, WinPct,
-      //         OffRating, DefRating, Pace, RunsPerGame, RunsAllowedPerGame,
-      //         GoalsFor, GoalsAgainst, PointsFor, PointsAgainst,
-      //         RecentFormPct, Last10W, Last10L
       for (let i = 1; i < data.length; i++) {
         const r = data[i];
+        const team = (r[2] || r[3] || '').trim();
         const abbr = (r[3] || '').trim();
-        if (!abbr) continue;
+        if (!team && !abbr) continue;
 
-        rows.push({
-          date: today,
-          league,
-          team: (r[2] || '').trim(),
+        // Pack all stats into a jsonb column
+        const stats = {
           abbr,
           wins: parseInt(r[4]) || 0,
           losses: parseInt(r[5]) || 0,
@@ -103,7 +85,9 @@ async function snapshotTeamStats() {
           recent_form_pct: parseFloat(r[16]) || null,
           last10_wins: parseInt(r[17]) || null,
           last10_losses: parseInt(r[18]) || null,
-        });
+        };
+
+        rows.push({ date: today, league, team: team || abbr, stats });
       }
     } catch (e) {
       console.warn(`[snapshots] Could not read ${league} team stats:`, e.message);
@@ -115,16 +99,15 @@ async function snapshotTeamStats() {
     return;
   }
 
-  // Batch upsert (on conflict date+league+abbr, do nothing)
   const BATCH = 100;
   let inserted = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const batch = rows.slice(i, i + BATCH);
     const { error } = await sb
       .from('daily_team_stats')
-      .upsert(batch, { onConflict: 'date,league,abbr', ignoreDuplicates: true });
+      .insert(batch);
     if (error) {
-      console.warn('[snapshots] Team stats upsert error:', error.message);
+      console.warn('[snapshots] Team stats insert error:', error.message);
     } else {
       inserted += batch.length;
     }
@@ -147,7 +130,6 @@ async function snapshotOdds() {
   const sb = db.getClient();
   if (!sb) return;
 
-  // Check if already snapshotted
   const { data: existing } = await sb
     .from('daily_odds')
     .select('id')
@@ -165,10 +147,10 @@ async function snapshotOdds() {
     return;
   }
 
-  // Build consensus per game+market+outcome (aggregate across bookmakers)
+  // Build consensus per game+market (aggregate across bookmakers)
   // Columns: 0=Timestamp, 1=Sport, 2=Home, 3=Away, 4=CommenceTime,
   //          5=Market, 6=Outcome, 7=Price, 8=Point, 9=Bookmaker
-  const consensus = {}; // "league|game|market|outcome" → { prices: [], lines: [], books: Set }
+  const consensus = {}; // "league|game|market" → { outcomes: { outcome → { prices, lines } }, meta }
 
   for (let i = 1; i < oddsData.length; i++) {
     const r = oddsData[i];
@@ -184,37 +166,43 @@ async function snapshotOdds() {
 
     if (!league || !home || !outcome) continue;
 
-    const game = `${away} @ ${home}`;
-    const key = `${league}|${game}|${market}|${outcome}`;
+    const gameId = `${away} @ ${home}`;
+    const key = `${league}|${gameId}|${market}`;
 
     if (!consensus[key]) {
       consensus[key] = {
-        league, game, home, away, commence, market, outcome,
-        prices: [], lines: [], books: new Set(),
+        league, gameId, home, away, commence, market,
+        outcomes: {},
       };
     }
-    consensus[key].prices.push(price);
-    if (line !== null) consensus[key].lines.push(line);
-    consensus[key].books.add(book);
+    if (!consensus[key].outcomes[outcome]) {
+      consensus[key].outcomes[outcome] = { prices: [], lines: [], books: new Set() };
+    }
+    consensus[key].outcomes[outcome].prices.push(price);
+    if (line !== null) consensus[key].outcomes[outcome].lines.push(line);
+    consensus[key].outcomes[outcome].books.add(book);
   }
 
   const rows = [];
   for (const c of Object.values(consensus)) {
-    const medianPrice = median(c.prices);
-    const medianLine = c.lines.length > 0 ? median(c.lines) : null;
+    // Pack all outcomes + consensus into jsonb
+    const oddsObj = {};
+    for (const [outcome, data] of Object.entries(c.outcomes)) {
+      oddsObj[outcome] = {
+        consensus_price: median(data.prices),
+        consensus_line: data.lines.length > 0 ? median(data.lines) : null,
+        book_count: data.books.size,
+      };
+    }
 
     rows.push({
       date: today,
       league: c.league,
-      game: c.game,
-      home: c.home,
-      away: c.away,
-      commence_time: c.commence,
+      game_id: c.gameId,
+      home_team: c.home,
+      away_team: c.away,
       market: c.market,
-      outcome: c.outcome,
-      consensus_price: medianPrice,
-      consensus_line: medianLine,
-      book_count: c.books.size,
+      odds: oddsObj,
     });
   }
 
@@ -229,15 +217,15 @@ async function snapshotOdds() {
     const batch = rows.slice(i, i + BATCH);
     const { error } = await sb
       .from('daily_odds')
-      .upsert(batch, { onConflict: 'date,league,game,market,outcome', ignoreDuplicates: true });
+      .insert(batch);
     if (error) {
-      console.warn('[snapshots] Odds upsert error:', error.message);
+      console.warn('[snapshots] Odds insert error:', error.message);
     } else {
       inserted += batch.length;
     }
   }
 
-  console.log(`[snapshots] Snapshotted ${inserted} consensus odds for ${today}`);
+  console.log(`[snapshots] Snapshotted ${inserted} consensus odds rows for ${today}`);
 }
 
 /**
@@ -254,7 +242,17 @@ async function snapshotInjuries() {
   const sb = db.getClient();
   if (!sb) return;
 
-  // Read from Prop_Status (scratches) + Injury Summary
+  const { data: existing } = await sb
+    .from('daily_injuries')
+    .select('id')
+    .eq('date', today)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    console.log('[snapshots] Injuries already snapshotted for today');
+    return;
+  }
+
   const rows = [];
 
   // Source 1: Prop_Status scratches
@@ -264,14 +262,14 @@ async function snapshotInjuries() {
       for (const r of statusData.slice(1)) {
         const status = (r[4] || '').trim();
         if (status !== 'SCRATCHED') continue;
+        const isKey = (r[5] || '').trim() === 'key_player';
         rows.push({
           date: today,
           league: (r[1] || '').trim(),
-          team: '', // not always known from Prop_Status
+          team: '',
           player: (r[2] || '').trim(),
           status: 'SCRATCHED',
-          severity: (r[5] || '').trim() === 'key_player' ? 0.7 : 0.2,
-          is_key_player: (r[5] || '').trim() === 'key_player',
+          impact: isKey ? 0.7 : 0.2,
         });
       }
     }
@@ -295,16 +293,15 @@ async function snapshotInjuries() {
           const injStatus = (r[statusIdx] || '').trim().toLowerCase();
           if (injStatus === 'active' || injStatus === 'healthy' || injStatus === 'available') continue;
 
-          let severity = 0.1;
-          if (injStatus === 'out' || injStatus === 'o') severity = 0.5;
-          else if (injStatus === 'doubtful' || injStatus === 'd') severity = 0.4;
-          else if (injStatus === 'questionable' || injStatus === 'q') severity = 0.2;
-          else if (injStatus === 'probable' || injStatus === 'p') severity = 0.05;
+          let impact = 0.1;
+          if (injStatus === 'out' || injStatus === 'o') impact = 0.5;
+          else if (injStatus === 'doubtful' || injStatus === 'd') impact = 0.4;
+          else if (injStatus === 'questionable' || injStatus === 'q') impact = 0.2;
+          else if (injStatus === 'probable' || injStatus === 'p') impact = 0.05;
 
           const player = (r[playerIdx] || '').trim();
           if (!player) continue;
 
-          // Deduplicate: if already in rows from Prop_Status, skip
           const league = (r[leagueIdx] || '').trim();
           const alreadyExists = rows.some(
             existing => existing.league === league && existing.player === player
@@ -317,8 +314,7 @@ async function snapshotInjuries() {
             team: teamIdx >= 0 ? (r[teamIdx] || '').trim() : '',
             player,
             status: injStatus.toUpperCase(),
-            severity,
-            is_key_player: false, // can't determine from Injury Summary alone
+            impact,
           });
         }
       }
@@ -338,9 +334,9 @@ async function snapshotInjuries() {
     const batch = rows.slice(i, i + BATCH);
     const { error } = await sb
       .from('daily_injuries')
-      .upsert(batch, { onConflict: 'date,league,player', ignoreDuplicates: true });
+      .insert(batch);
     if (error) {
-      console.warn('[snapshots] Injury upsert error:', error.message);
+      console.warn('[snapshots] Injury insert error:', error.message);
     } else {
       inserted += batch.length;
     }
@@ -351,11 +347,7 @@ async function snapshotInjuries() {
 
 /**
  * Read historical team stats for a specific date + league.
- * Used by backtesting and weight optimizer to evaluate past picks accurately.
- *
- * @param {string} date - YYYY-MM-DD
- * @param {string} league - e.g., 'NBA'
- * @returns {Object} Map of teamAbbr → stats object, or null if no snapshot
+ * Used by backtesting to evaluate past picks with the data that existed then.
  */
 async function getHistoricalTeamStats(date, league) {
   if (!db.isEnabled()) return null;
@@ -372,16 +364,18 @@ async function getHistoricalTeamStats(date, league) {
 
   const map = {};
   for (const row of data) {
-    map[row.abbr] = {
-      wins: row.wins,
-      losses: row.losses,
-      pct: row.win_pct,
-      offRating: row.off_rating,
-      defRating: row.def_rating,
-      pace: row.pace,
-      pointsFor: row.points_for,
-      pointsAgainst: row.points_against,
-      recentFormPct: row.recent_form_pct,
+    const s = row.stats || {};
+    const key = s.abbr || row.team;
+    map[key] = {
+      wins: s.wins,
+      losses: s.losses,
+      pct: s.win_pct,
+      offRating: s.off_rating,
+      defRating: s.def_rating,
+      pace: s.pace,
+      pointsFor: s.points_for,
+      pointsAgainst: s.points_against,
+      recentFormPct: s.recent_form_pct,
     };
   }
   return map;
