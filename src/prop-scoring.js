@@ -313,7 +313,7 @@ async function buildTierMap() {
     const map = {};
     for (const row of rows.slice(1)) {
       const name = (row[0] || '').trim().toLowerCase();
-      const tier = (row[3] || 'C').trim();
+      const tier = (row[4] || row[3] || 'C').trim();
       if (name) map[name] = tier;
     }
     console.log(`[prop-scoring] Loaded ${Object.keys(map).length} player tiers`);
