@@ -442,6 +442,151 @@ async function seedPropWeights() {
  * Master optimization: runs all feedback loops in sequence.
  * Called by the nightly optimization trigger.
  */
+
+/**
+ * Track edge decay rate per league+market.
+ * Reads Performance Log for graded picks that have both opening and closing odds,
+ * computes how much our edge shrank between pick time and game time.
+ * Writes decay rates to CLV_Modifiers sheet and applies a sizing penalty
+ * for markets where edges consistently evaporate.
+ *
+ * Decay rate = 1 - (closing_edge / opening_edge)
+ *   0.0 = edge held perfectly
+ *   0.5 = edge halved by close
+ *   1.0 = edge completely gone
+ *  >1.0 = edge reversed (market moved against us)
+ */
+async function updateEdgeDecayRates() {
+  console.log('[optimize] Computing edge decay rates...');
+
+  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  if (!perfRows || perfRows.length < 2) {
+    console.log('[optimize] No performance data for edge decay');
+    return;
+  }
+
+  // Collect decay data per league+market
+  // Perf Log columns: 0=date, 1=league, 6=market, 9=opening_odds, 31=closing_odds
+  const decayByMarket = {}; // "league|market" -> [decay_rate, ...]
+  const cutoff = Date.now() - 30 * 86400000;
+
+  for (let i = 1; i < perfRows.length; i++) {
+    const row = perfRows[i];
+    const dateStr = (row[0] || '').trim();
+    if (!dateStr) continue;
+
+    // Parse MM/DD/YYYY
+    const parts = dateStr.split('/');
+    if (parts.length !== 3) continue;
+    const rowDate = new Date(parts[2], parts[0] - 1, parts[1]);
+    if (rowDate.getTime() < cutoff) continue;
+
+    const league = (row[1] || '').trim();
+    const market = (row[6] || '').trim();
+    const openOdds = parseFloat(row[9]);
+    const closeOdds = parseFloat(row[31]);
+
+    if (!league || !market || isNaN(openOdds) || isNaN(closeOdds)) continue;
+    if (openOdds === 0 || closeOdds === 0) continue;
+
+    // Convert odds to implied probabilities for edge comparison
+    const openImplied = oddsToProb(openOdds);
+    const closeImplied = oddsToProb(closeOdds);
+    if (openImplied <= 0 || closeImplied <= 0) continue;
+
+    // Our "edge" at open vs close: lower implied prob = more value for us
+    // If we bet a side, market moving toward our side = good (edge held)
+    // Decay = how much the implied probability moved against us
+    // Positive decay = edge shrank, negative = edge grew
+    const edgeChange = closeImplied - openImplied;
+    // Normalize: what fraction of our original edge evaporated?
+    // If openImplied was 0.45 and we thought true was 0.40 (5% edge),
+    // and closeImplied moved to 0.42, that's 3% of 5% = 0.60 decay
+    const openEdge = Math.abs(0.5 - openImplied); // rough edge proxy
+    if (openEdge < 0.01) continue; // skip near-coinflip lines
+
+    const decayRate = Math.max(-1, Math.min(2, edgeChange / openEdge));
+
+    const key = `${league}|${market}`;
+    if (!decayByMarket[key]) decayByMarket[key] = [];
+    decayByMarket[key].push(decayRate);
+  }
+
+  // Compute average decay per market and write to CLV_Modifiers
+  const results = [];
+  const modifierUpdates = [];
+
+  for (const [key, rates] of Object.entries(decayByMarket)) {
+    if (rates.length < 10) continue; // need minimum sample
+
+    const avgDecay = rates.reduce((a, b) => a + b, 0) / rates.length;
+    const [league, market] = key.split('|');
+
+    results.push({ key, avgDecay: avgDecay.toFixed(3), samples: rates.length });
+
+    // If edges decay fast (avg > 0.40), apply a penalty via performance modifiers
+    if (avgDecay > 0.40 && db.isEnabled()) {
+      const currentMods = await db.readModifiers();
+      const current = currentMods[key] || 1.0;
+      // Penalty: 5-15% reduction based on how bad the decay is
+      const penalty = 1.0 - Math.min(0.15, (avgDecay - 0.40) * 0.30);
+      const penalized = Math.max(MIN_MOD, Math.round(current * penalty * 100) / 100);
+      if (penalized < current) {
+        await db.upsertModifier({
+          league, market, modifier: penalized,
+          sample_size: rates.length, win_rate: null, roi: null
+        });
+        modifierUpdates.push({ key, from: current, to: penalized, avgDecay });
+        console.log(`[optimize] Edge decay penalty: ${key} (avg decay ${avgDecay.toFixed(2)}) — ${current} → ${penalized}`);
+      }
+    }
+  }
+
+  // Write decay rates to CLV_Modifiers sheet for visibility
+  if (results.length > 0) {
+    const existingRows = await getValues(SPREADSHEET_ID, SHEETS.CLV_MODIFIERS);
+    const headers = existingRows && existingRows[0] ? existingRows[0] : [];
+
+    // Add decay columns if not present
+    let decayColIdx = headers.indexOf('avg_edge_decay');
+    let sampleColIdx = headers.indexOf('decay_samples');
+
+    if (decayColIdx < 0) {
+      // Append new columns to header
+      decayColIdx = headers.length;
+      sampleColIdx = headers.length + 1;
+      headers.push('avg_edge_decay', 'decay_samples');
+      if (existingRows && existingRows[0]) existingRows[0] = headers;
+    }
+
+    // Update rows with decay data
+    if (existingRows) {
+      for (let i = 1; i < existingRows.length; i++) {
+        const rowKey = `${existingRows[i][0]}|${existingRows[i][1]}`;
+        const match = results.find(r => r.key === rowKey);
+        if (match) {
+          while (existingRows[i].length <= sampleColIdx) existingRows[i].push('');
+          existingRows[i][decayColIdx] = match.avgDecay;
+          existingRows[i][sampleColIdx] = match.samples;
+        }
+      }
+      await setValues(SPREADSHEET_ID, SHEETS.CLV_MODIFIERS, 'A1', existingRows);
+    }
+  }
+
+  console.log(`[optimize] Edge decay: ${results.length} markets tracked, ${modifierUpdates.length} penalties applied`);
+  return { results, modifierUpdates };
+}
+
+/**
+ * Convert American odds to implied probability.
+ */
+function oddsToProb(odds) {
+  if (odds >= 100) return 100 / (odds + 100);
+  if (odds <= -100) return Math.abs(odds) / (Math.abs(odds) + 100);
+  return 0.5;
+}
+
 async function runAllOptimizations() {
   console.log('[optimize] ═══ Starting full optimization cycle ═══');
 
@@ -465,6 +610,9 @@ async function runAllOptimizations() {
 
   // 3. Apply CLV penalties to consistently bad-CLV markets
   const clvPenalties = await aggregateCLV();
+
+  // 3b. Track edge decay rates and penalize fast-decaying markets
+  const edgeDecay = await updateEdgeDecayRates();
 
   // 4. Update prop weights from CLV hit rates
   const propUpdates = await optimizePropWeights();
@@ -516,12 +664,13 @@ async function runAllOptimizations() {
   }
 
   console.log('[optimize] ═══ Optimization cycle complete ═══');
-  return { mods, clvPenalties, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates, calibration };
+  return { mods, clvPenalties, edgeDecay, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates, calibration };
 }
 
 module.exports = {
   optimizeModifiers,
   aggregateCLV,
+  updateEdgeDecayRates,
   optimizePropWeights,
   optimizePropScoringWeights,
   syncPerformanceLog,
