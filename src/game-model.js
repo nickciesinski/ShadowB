@@ -172,6 +172,29 @@ function simpleWinProb(homeStats, awayStats, league) {
  * Returns 0 (full agreement) to 1 (max disagreement).
  * Used as a confidence penalty — disagreement reduces unit sizing.
  */
+
+/**
+ * Compute prediction variance from multiple projection signals.
+ * Measures how much different model components agree on the outcome.
+ * Returns a variance score (0 = tight agreement, 1 = high uncertainty).
+ *
+ * Inputs: array of win probability estimates from different signals.
+ * Uses standard deviation of estimates, normalized to 0-1 scale.
+ */
+function predictionVariance(probEstimates) {
+  if (!probEstimates || probEstimates.length < 2) return 0;
+  const valid = probEstimates.filter(p => p != null && !isNaN(p));
+  if (valid.length < 2) return 0;
+
+  const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+  const sumSqDiff = valid.reduce((sum, p) => sum + (p - mean) ** 2, 0);
+  const stdDev = Math.sqrt(sumSqDiff / valid.length);
+
+  // Normalize: stdDev of 0.15 (very high for win probs) maps to variance=1.0
+  // stdDev of 0.02 (tight agreement) maps to ~0.13
+  return Math.min(1.0, stdDev / 0.15);
+}
+
 function modelDisagreement(mainProb, simpleProb, betType) {
   if (betType === 'over' || betType === 'under') {
     return 0; // Simple model has no total projection
@@ -247,13 +270,25 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   const csvDampen = 0.3; // 30% influence from CSV weights, grows as optimizer tunes
   const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen;
 
+
+  // ── Prediction variance: how much do different signals agree? ──
+  // Collect win probability estimates from different projection approaches
+  const baseWinProb = projectWinProb(baseMargin, league);
+  const csvAdjWinProb = projectWinProb(margin, league);
+  const mlAdjWinProb = projectWinProb(baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen, league);
+
+  // Variance across: base model, CSV-adjusted model, simple W-L model
+  const varianceScore = predictionVariance([baseWinProb, csvAdjWinProb, simpleHomeProb, mlAdjWinProb]);
+
   // Data completeness scoring (replaces manual flag checks)
   const { score: completenessScore, flags: completenessFlags } = dataCompleteness(
     homeStats, awayStats, scheduleInfo
   );
 
   // Uncertainty: inverse of data completeness (more data = less uncertainty)
-  const uncertainty = scoreUncertainty(completenessFlags);
+  const baseUncertainty = scoreUncertainty(completenessFlags);
+  // Blend prediction variance into uncertainty (30% weight)
+  const uncertainty = baseUncertainty * 0.7 + varianceScore * 0.3;
 
   // Parse market odds for this game
   const h2hMarket = game.markets.h2h || [];
@@ -293,6 +328,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
   // Attach data completeness to all picks (computed in this scope)
   for (const pick of picks) {
     pick._dataCompleteness = completenessScore;
+    pick._variance = varianceScore;
   }
 
   return picks;
