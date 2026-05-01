@@ -325,10 +325,13 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
     picks.push(totalPick);
   }
 
-  // Attach data completeness to all picks (computed in this scope)
+  // Attach data completeness and feature vector to all picks
   for (const pick of picks) {
     pick._dataCompleteness = completenessScore;
     pick._variance = varianceScore;
+    pick._features = features;
+    pick._homeTeam = game.home;
+    pick._awayTeam = game.away;
   }
 
   return picks;

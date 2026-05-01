@@ -219,6 +219,19 @@ async function rawSelect(table, { columns = '*', filters = {}, limit, orderBy } 
   return data;
 }
 
+// ── Prediction Features Log ─────────────────────────────────────
+
+async function insertPredictionFeatures(rows) {
+  const sb = getClient();
+  if (!sb) return;
+  // Batch in chunks of 50 to avoid payload limits
+  for (let i = 0; i < rows.length; i += 50) {
+    const chunk = rows.slice(i, i + 50);
+    const { error } = await sb.from('prediction_features').insert(chunk);
+    if (error) console.warn('[db] insertPredictionFeatures:', error.message);
+  }
+}
+
 module.exports = {
   updatePerformanceResults,
   getRecentTriggerRuns,
@@ -246,4 +259,6 @@ module.exports = {
   getConfidenceCalibration,
   // Raw
   rawSelect,
+  // Prediction features
+  insertPredictionFeatures,
 };

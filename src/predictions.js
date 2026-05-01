@@ -836,6 +836,37 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         console.warn(`[predictions] Supabase dual-write failed for ${sport}:`, err.message);
       }
     }
+
+    // Log feature vectors to Supabase for causal learning loops
+    if (db.isEnabled() && picks && picks.length > 0) {
+      try {
+        const today = new Date();
+        const isoDate = today.toISOString().slice(0, 10); // YYYY-MM-DD
+        const featureRows = picks
+          .filter(p => p._features && Object.keys(p._features).length > 0)
+          .map(p => ({
+            date: isoDate,
+            league: sport,
+            home_team: p._homeTeam || '',
+            away_team: p._awayTeam || '',
+            market: p.betType || '',
+            pick: p.team || '',
+            features: p._features,
+            predicted_prob: p._modelProb || null,
+            edge: p._edge || 0,
+            final_units: p._units || 0,
+            disagreement: p._disagreement || 0,
+            variance: p._variance || 0,
+            data_completeness: p._dataCompleteness || 0,
+          }));
+        if (featureRows.length > 0) {
+          await db.insertPredictionFeatures(featureRows);
+          console.log(`[predictions] Logged ${featureRows.length} ${sport} feature vectors to Supabase`);
+        }
+      } catch (err) {
+        console.warn(`[predictions] Feature logging failed for ${sport}:`, err.message);
+      }
+    }
   }
 }
 
