@@ -1,4 +1,5 @@
 'use strict';
+const { americanToImpliedProb } = require('./market-pricing');
 /**
  * src/optimize.js — Automated feedback loops
  *
@@ -490,8 +491,8 @@ async function updateEdgeDecayRates() {
     if (openOdds === 0 || closeOdds === 0) continue;
 
     // Convert odds to implied probabilities for edge comparison
-    const openImplied = oddsToProb(openOdds);
-    const closeImplied = oddsToProb(closeOdds);
+    const openImplied = americanToImpliedProb(openOdds);
+    const closeImplied = americanToImpliedProb(closeOdds);
     if (openImplied <= 0 || closeImplied <= 0) continue;
 
     // Our "edge" at open vs close: lower implied prob = more value for us
@@ -578,14 +579,6 @@ async function updateEdgeDecayRates() {
   return { results, modifierUpdates };
 }
 
-/**
- * Convert American odds to implied probability.
- */
-function oddsToProb(odds) {
-  if (odds >= 100) return 100 / (odds + 100);
-  if (odds <= -100) return Math.abs(odds) / (Math.abs(odds) + 100);
-  return 0.5;
-}
 
 async function runAllOptimizations() {
   console.log('[optimize] ═══ Starting full optimization cycle ═══');

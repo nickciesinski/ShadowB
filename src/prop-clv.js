@@ -1,4 +1,5 @@
 'use strict';
+const { americanToImpliedProb } = require('./market-pricing');
 /**
  * prop-clv.js — Prop CLV Tracking & Learning Loop
  *
@@ -154,11 +155,7 @@ async function gradePropEdges() {
   const closingCount = Object.keys(closingIndex).length;
   console.log(`[prop-clv] Closing index: ${Object.keys(buildClosingIndex(closingSnap)).length} cached + ${Object.keys(liveIndex).length} live = ${closingCount} total`);
 
-  const impliedProb = (odds) => {
-    const o = parseFloat(odds);
-    if (isNaN(o) || o === 0) return 0.5;
-    return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
-  };
+  const impliedProb = americanToImpliedProb;
 
   // Grade each opening edge
   const perfRows = [];

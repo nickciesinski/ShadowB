@@ -1,4 +1,5 @@
 'use strict';
+const { americanToImpliedProb } = require('./market-pricing');
 /**
  * props.js — Player Props Edge Detection
  * Fetches player prop lines from the Odds API, computes consensus lines,
@@ -181,10 +182,7 @@ function buildPropConsensus(propRows) {
     };
     const overPrice = medianOf(g.overPrices);
     const underPrice = medianOf(g.underPrices);
-    const impliedProb = (odds) => {
-      const o = parseFloat(odds);
-      return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
-    };
+    const impliedProb = americanToImpliedProb;
     return {
       game: g.game,
       player: g.player,
@@ -266,11 +264,7 @@ async function generatePropEdges() {
   const propRows = rawProps.slice(1);
 
   // Helper: American odds → implied probability
-  const impliedProb = (odds) => {
-    const o = parseFloat(odds);
-    if (isNaN(o) || o === 0) return 0.5;
-    return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
-  };
+  const impliedProb = americanToImpliedProb;
 
   // Step 1: Group all lines by player|market|line
   // Each entry tracks per-book prices and the consensus
