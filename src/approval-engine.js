@@ -146,10 +146,16 @@ function applyApprovalFilters(picks, league) {
     if (result.approved) {
       pick.approval_status = 'approved';
       pick.approval_reason = '';
+      pick.pick_purpose = 'bet';
       approved++;
     } else {
       pick.approval_status = 'tracking_only';
       pick.approval_reason = result.reasons.join('; ');
+      // Tag low-edge picks as data-gathering: they exist for the pick coverage
+      // rule (every game must produce picks) not because we see betting value.
+      // This enables filtering analysis to "genuine edges" vs "data collection".
+      const edge = pick._edge ?? 0;
+      pick.pick_purpose = edge < 1.0 ? 'data_gathering' : 'tracking';
       tracking++;
     }
   }

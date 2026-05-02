@@ -504,6 +504,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         predicted_prob: p._modelProb || null,
         market_prob: p._marketImpliedProb || null,
         edge_driver: p._edgeDriver || 'base_model',
+        pick_purpose: p.pick_purpose || 'tracking',
       };
       continue;
     }
@@ -842,6 +843,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           predicted_prob: meta.predicted_prob || null,
           market_prob: meta.market_prob || null,
           edge_driver: meta.edge_driver || 'base_model',
+          pick_purpose: meta.pick_purpose || 'tracking',
         });
         });
         await db.insertPerformanceRows(dbRows);
@@ -873,6 +875,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
             variance: p._variance || 0,
             data_completeness: p._dataCompleteness || 0,
             edge_driver: p._edgeDriver || 'base_model',
+            pick_purpose: p.pick_purpose || 'tracking',
             top_contributions: p._topContributions || [],
           }));
         if (featureRows.length > 0) {
