@@ -143,6 +143,58 @@ function extractFeatures(home, away, scheduleInfo, league) {
     f.away_b2b = 0;
   }
 
+  // ── League-specific signals ──
+  // Each league gets one unique feature derived from its most predictive stat.
+  // These capture sport-specific dynamics the generic model misses.
+
+  if (league === 'NBA') {
+    // Pace-adjusted net rating: efficiency in context of game speed
+    const hOff = parseFloat(h.offRating) || 0;
+    const hDef = parseFloat(h.defRating) || 0;
+    const aOff = parseFloat(a.offRating) || 0;
+    const aDef = parseFloat(a.defRating) || 0;
+    const hPaceR = parseFloat(h.pace) || 100;
+    const aPaceR = parseFloat(a.pace) || 100;
+    const hPaceAdj = (hOff - hDef) * (hPaceR / 100);
+    const aPaceAdj = (aOff - aDef) * (aPaceR / 100);
+    f.nba_pace_adj_net = (hPaceAdj - aPaceAdj) / norm.rating;
+  } else {
+    f.nba_pace_adj_net = 0;
+  }
+
+  if (league === 'MLB') {
+    // Run differential per game: single best predictor in baseball
+    const hRuns = parseFloat(h.runsPerGame) || 0;
+    const hRA = parseFloat(h.runsAllowedPerGame) || 0;
+    const aRuns = parseFloat(a.runsPerGame) || 0;
+    const aRA = parseFloat(a.runsAllowedPerGame) || 0;
+    f.mlb_run_diff = ((hRuns - hRA) - (aRuns - aRA)) / norm.ppg;
+  } else {
+    f.mlb_run_diff = 0;
+  }
+
+  if (league === 'NFL') {
+    // Points margin per game: proxy for turnover-driven scoring
+    const hPF = parseFloat(h.pointsFor) || 0;
+    const hPA = parseFloat(h.pointsAgainst) || 0;
+    const aPF = parseFloat(a.pointsFor) || 0;
+    const aPA = parseFloat(a.pointsAgainst) || 0;
+    f.nfl_points_margin = ((hPF - hPA) - (aPF - aPA)) / norm.ppg;
+  } else {
+    f.nfl_points_margin = 0;
+  }
+
+  if (league === 'NHL') {
+    // Goal differential: most predictive simple stat in hockey
+    const hGF = parseFloat(h.goalsFor) || 0;
+    const hGA = parseFloat(h.goalsAgainst) || 0;
+    const aGF = parseFloat(a.goalsFor) || 0;
+    const aGA = parseFloat(a.goalsAgainst) || 0;
+    f.nhl_goal_diff = ((hGF - hGA) - (aGF - aGA)) / norm.ppg;
+  } else {
+    f.nhl_goal_diff = 0;
+  }
+
   // ── SP (sharp/power) features — computed from market odds ──
   // These get filled in by the game model after market parsing
   f.sp_prob_home = 0.5;

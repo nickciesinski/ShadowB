@@ -1,4 +1,7 @@
 market,key,weight
+moneyline,nfl_points_margin,0.0
+spread,nfl_points_margin,0.0
+total,nfl_points_margin,0.0
 ,param_use_normalization,1.0
 ,param_min_confidence_to_bet,0.1
 ,param_min_units_to_bet,0.01
