@@ -472,7 +472,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
-function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isPropFade, toggleProp, liveStats }) {
+function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isPropFade, toggleProp, liveStats, myPropBets }) {
   // Build game-to-date lookup from todayGames commence times
   const gameCommence = {};
   for (const g of (todayGames || [])) {
@@ -495,6 +495,137 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
   const todayStr = new Date().toLocaleDateString('en-CA');
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowStr = tomorrow.toLocaleDateString('en-CA');
+
+  // "My Bets" view: show stored prop selections with locked-in lines
+  if (sf === 'My Bets') {
+    const myProps = (myPropBets || []).map(stored => {
+      // Find matching current prop to get live stats context
+      const currentProp = props.find(p =>
+        p.player === stored.player && p.market === stored.market &&
+        p.direction === stored.direction && p.book === stored.book
+      );
+      // Use stored line/odds but current prop's other data for live tracking
+      return {
+        ...(currentProp || {}),
+        player: stored.player,
+        league: stored.league,
+        market: stored.market,
+        direction: stored.direction,
+        book: stored.book,
+        game: stored.game || (currentProp ? currentProp.game : ''),
+        line: stored.line, // locked-in line
+        bookOdds: stored.odds, // locked-in odds
+        _isMyBet: true,
+        _state: stored.state,
+        // Keep current prop's consensus/edge if available
+        consensusProb: currentProp ? currentProp.consensusProb : '',
+        bookProb: currentProp ? currentProp.bookProb : '',
+        edge: currentProp ? currentProp.edge : '',
+      };
+    });
+
+    // Filter by sportsbook
+    let myFiltered = myProps;
+    if (pf !== 'All') myFiltered = myFiltered.filter(p => p.book === pf);
+
+    if (!myFiltered.length) return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>No prop bets selected yet</div>;
+
+    const isOver = (d) => (d || '').toLowerCase() === 'over';
+
+    return (
+      <>
+        <div style={{ background: 'rgba(139,92,246,0.08)', borderRadius: 12, padding: '10px 14px', marginBottom: 10, border: '1px solid rgba(139,92,246,0.2)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#C4B5FD' }}>My Prop Bets</div>
+          <div style={{ fontSize: 11, color: '#64748B' }}>{myFiltered.length} selections</div>
+        </div>
+        {myFiltered.map((p, i) => {
+          const edgeNum = parseFloat(p.edge) || 0;
+          const edgeColor = edgeNum >= 8 ? '#34D399' : edgeNum >= 5 ? '#FBBF24' : '#64748B';
+          const dirColor = isOver(p.direction) ? '#34D399' : '#F87171';
+          const faded = p._state === 'fade';
+          const live = liveStats[`prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.book}`] || null;
+          const lineNum = parseFloat(p.line) || 0;
+          const isOverBet = isOver(p.direction);
+
+          let statStatus = null, statColor = '#64748B', statLabel = '';
+          if (live) {
+            const cur = live.current;
+            const isGameOver = live.gameStatus === 'post';
+            const diff = lineNum - cur;
+            if (isOverBet) {
+              if (cur >= lineNum) { statStatus = 'hit'; statColor = '#34D399'; statLabel = isGameOver ? 'HIT ✅' : 'OVER ✅'; }
+              else if (isGameOver) { statStatus = 'miss'; statColor = '#F87171'; statLabel = 'MISSED ❌'; }
+              else if (diff <= 3) { statStatus = 'close'; statColor = '#FCD34D'; statLabel = `NEEDS ${diff % 1 === 0 ? diff : diff.toFixed(1)} MORE`; }
+              else { statStatus = 'behind'; statColor = '#94A3B8'; statLabel = `NEEDS ${diff % 1 === 0 ? diff : diff.toFixed(1)} MORE`; }
+            } else {
+              if (isGameOver && cur <= lineNum) { statStatus = 'hit'; statColor = '#34D399'; statLabel = 'HIT ✅'; }
+              else if (cur > lineNum) { statStatus = 'miss'; statColor = '#F87171'; statLabel = isGameOver ? 'MISSED ❌' : 'OVER LINE ⚠️'; }
+              else if (diff <= 2) { statStatus = 'close'; statColor = '#FCD34D'; statLabel = 'CLOSE'; }
+              else { statStatus = 'safe'; statColor = '#34D399'; statLabel = 'ON PACE'; }
+            }
+          }
+
+          const isLiveGame = live && live.gameStatus === 'in';
+          const isDoneGame = live && live.gameStatus === 'post';
+
+          return (
+            <div key={i} onClick={() => toggleProp(p)} style={{
+              background: faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)',
+              borderRadius: 12, marginBottom: 6, padding: '10px 12px',
+              border: faded ? '2px solid rgba(249,115,22,0.4)' : '2px solid rgba(139,92,246,0.4)',
+              boxShadow: isLiveGame ? '0 2px 16px rgba(139,92,246,0.25)' : '0 1px 6px rgba(0,0,0,0.2)',
+              borderLeft: faded ? '5px solid #FB923C' : (live ? `5px solid ${statColor}` : '5px solid #A78BFA'),
+              opacity: isDoneGame ? 0.7 : 1,
+              cursor: 'pointer', transition: 'background 0.15s, opacity 0.3s',
+            }}>
+              {live && statStatus === 'close' && <div style={{ background: 'rgba(252,211,77,0.15)', color: '#FCD34D', fontSize: 10, fontWeight: 700, padding: '3px 10px', marginBottom: 6, marginLeft: -12, marginRight: -12, marginTop: -10, textAlign: 'center', borderRadius: '12px 12px 0 0' }}>🔥 CLOSE — {isOverBet ? `${(lineNum - live.current) % 1 === 0 ? (lineNum - live.current) : (lineNum - live.current).toFixed(1)} away` : 'approaching line'}</div>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+                    {faded ? <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>
+                      : <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                    {live && <span style={{ width: isLiveGame ? 8 : 6, height: isLiveGame ? 8 : 6, borderRadius: '50%', background: isLiveGame ? '#34D399' : '#64748B', display: 'inline-block', boxShadow: isLiveGame ? '0 0 6px rgba(52,211,153,0.6)' : 'none', animation: isLiveGame ? 'pulse 2s infinite' : 'none' }} />}
+                    {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#F1F5F9', marginBottom: 1 }}>{p.player}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#94A3B8', marginBottom: 4, textTransform: 'capitalize' }}>{(p.market || '').replace(/_/g, ' ')}</div>
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 4,
+                    background: isOver(p.direction) ? 'rgba(16,185,129,0.12)' : 'rgba(248,113,113,0.12)',
+                    border: `1px solid ${isOver(p.direction) ? 'rgba(16,185,129,0.25)' : 'rgba(248,113,113,0.25)'}`,
+                    padding: '3px 10px', borderRadius: 6,
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: dirColor, textTransform: 'uppercase' }}>{p.direction}</span>
+                    <span style={{ fontSize: 15, fontWeight: 900, color: '#F1F5F9' }}>{p.line}</span>
+                    <span style={{ fontSize: 11, color: '#94A3B8' }}>{fmt(p.bookOdds)}</span>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>
+                    <span>via {p.book}</span>
+                    {p.edge && <span> · <span style={{ color: edgeColor, fontWeight: 700 }}>{p.edge}% edge</span></span>}
+                  </div>
+                </div>
+                {live ? (
+                  <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0, minWidth: 55 }}>
+                    <div style={{ fontSize: 26, fontWeight: 900, color: statColor, lineHeight: 1 }}>{live.current}</div>
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>/ {p.line}</div>
+                    <div style={{ width: 46, height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, margin: '3px auto', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min(100, (live.current / (lineNum || 1)) * 100)}%`, background: statColor, borderRadius: 2, transition: 'width 0.3s' }} />
+                    </div>
+                    <div style={{ fontSize: 8, fontWeight: 700, color: statColor, marginTop: 1 }}>{statLabel}</div>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', marginLeft: 12, flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#94A3B8' }}>{fmt(p.bookOdds)}</div>
+                    <div style={{ fontSize: 9, color: '#64748B' }}>locked</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </>
+    );
+  }
 
   // Filter by date
   let filtered = props.filter(p => {
@@ -1072,16 +1203,33 @@ export default function App() {
     setMyBets(prev => {
       const next = new Map(prev);
       const cur = next.get(key);
-      if (!cur) next.set(key, 'bet');
-      else if (cur === 'bet') next.set(key, 'fade');
+      const curState = typeof cur === 'object' ? cur.state : cur;
+      if (!curState) next.set(key, { state: 'bet', line: p.line, odds: p.bookOdds, player: p.player, league: p.league, market: p.market, direction: p.direction, book: p.book, game: p.game });
+      else if (curState === 'bet') next.set(key, { state: 'fade', line: (typeof cur === 'object' ? cur.line : p.line), odds: (typeof cur === 'object' ? cur.odds : p.bookOdds), player: p.player, league: p.league, market: p.market, direction: p.direction, book: p.book, game: p.game });
       else next.delete(key);
       return next;
     });
   };
   const isBet = (p) => myBets.has(pickKey(p));
   const isFade = (p) => myBets.get(pickKey(p)) === 'fade';
-  const isPropBet = (p) => myBets.has(propKey(p));
-  const isPropFade = (p) => myBets.get(propKey(p)) === 'fade';
+  const isPropBet = (p) => {
+    const v = myBets.get(propKey(p));
+    return !!v;
+  };
+  const isPropFade = (p) => {
+    const v = myBets.get(propKey(p));
+    return (typeof v === 'object' ? v.state : v) === 'fade';
+  };
+  // Get all stored prop bets for "My Bets" view
+  const getMyPropBets = () => {
+    const result = [];
+    for (const [key, val] of myBets.entries()) {
+      if (!key.startsWith('prop|')) continue;
+      const obj = typeof val === 'object' ? val : { state: val };
+      if (obj.player) result.push({ ...obj, _key: key });
+    }
+    return result;
+  };
 
   // Fetch sheet data
   const fetchData = useCallback(() => {
@@ -1187,8 +1335,11 @@ export default function App() {
   ])].filter(Boolean) : [];
   const allActiveLeagues = [...new Set([...activeLeaguePills, ...dataLeagues])].filter(l => ['NBA', 'NHL', 'MLB', 'NFL'].includes(l));
 
+  const propBetCount = [...myBets.entries()].filter(([k]) => k.startsWith('prop|')).length;
   const sportPills = tab === 'scores'
     ? (betCount > 0 ? ['All', 'My Bets', 'Live', ...activeLeaguePills] : ['All', 'Live', ...activeLeaguePills])
+    : tab === 'props'
+    ? (propBetCount > 0 ? ['All', 'My Bets', ...allActiveLeagues] : ['All', ...allActiveLeagues])
     : tab === 'results'
     ? (betCount > 0 ? ['All', 'My Bets', ...allActiveLeagues] : ['All', ...allActiveLeagues])
     : ['All', ...allActiveLeagues];
@@ -1257,7 +1408,7 @@ export default function App() {
           try { return new Date(g.gameDate).toLocaleDateString('en-CA') === todayDateISO; }
           catch { return false; }
         })} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
-        {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} />}
+        {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
         {data && tab === 'results' && <ResultsTab results={data.gradedPicks} gradedProps={data.gradedProps || []} sf={sf} bf={bf} dateFilter={dateFilter} resultType={resultType} isBet={isBet} isPropBet={isPropBet} />}
       </div>
 
