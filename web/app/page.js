@@ -1054,7 +1054,7 @@ export default function App() {
 
   // Pick key for "my bets" selection
   const pickKey = (p) => `${p.league}|${p.away}|${p.home}|${(p.betType||p.market||'').toLowerCase()}|${p.pick}|${p.line}`;
-  const propKey = (p) => `prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.line}|${p.book}`;
+  const propKey = (p) => `prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.book}`;
   // Three-state toggle: none → bet → fade → none
   const toggleBet = (p) => {
     const key = pickKey(p);
