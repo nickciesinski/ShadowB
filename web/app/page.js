@@ -288,11 +288,11 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet }) {
                   {p.rationale && <div style={{ fontSize: 11, color: '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.rationale}</div>}
                 </div>
                 {/* Big visual indicator: team logo for ML/spread, arrow for totals */}
-                <div style={{ margin: '0 10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36 }}>
+                <div style={{ margin: '0 10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: '50%', background: isTotal ? 'transparent' : 'rgba(255,255,255,0.08)', border: isTotal ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
                   {isTotal ? (
                     <span style={{ fontSize: 22, color: isOverPick ? '#34D399' : '#F87171', fontWeight: 900, lineHeight: 1 }}>{isOverPick ? '▲' : '▼'}</span>
                   ) : pickedLogoUrl ? (
-                    <img src={pickedLogoUrl} alt="" style={{ width: 34, height: 34, objectFit: 'contain' }} />
+                    <img src={pickedLogoUrl} alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
                   ) : null}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
