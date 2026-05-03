@@ -437,8 +437,9 @@ async function sendTriggerHealthCheck() {
     return;
   }
 
-  // Expected triggers for today
-  const dayOfWeek = now.getDay(); // 0=Sun
+  // Expected triggers for today (use ET since schedule is ET-based)
+  const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const dayOfWeek = etNow.getDay(); // 0=Sun
   const expectedDaily = [
     'trigger1', 'trigger2', 'trigger3', 'trigger4',
     'trigger6', 'trigger7', 'trigger8', 'trigger9',
@@ -503,6 +504,12 @@ async function sendTriggerHealthCheck() {
   <hr style="margin-top:20px;border:none;border-top:1px solid #eee;">
   <p style="font-size:11px;color:#999;">Shadow Bets Health Check — trigger16</p>
 </div>`;
+
+  // Only send email if something is wrong — no news is good news
+  if (allGood) {
+    console.log(`[emails] Health check: All Clear (${passed.length}/${expectedDaily.length} passed). No email sent.`);
+    return;
+  }
 
   const transporter = getTransporter();
   await transporter.sendMail({
