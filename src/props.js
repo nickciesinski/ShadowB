@@ -1,5 +1,6 @@
 'use strict';
 const { americanToImpliedProb } = require('./market-pricing');
+const db = require('./db');
 /**
  * props.js — Player Props Edge Detection
  * Fetches player prop lines from the Odds API, computes consensus lines,
@@ -793,6 +794,32 @@ async function gradePropPicks() {
   if (wins + losses > 0) {
     console.log(`[props] Prop win rate: ${(wins / (wins + losses) * 100).toFixed(1)}%`);
   }
+
+  // Dual-write prop grading results to Supabase
+  if (db.isEnabled() && perfRows.length > 0) {
+    try {
+      const dbRows = perfRows.map(r => ({
+        timestamp: r[0],
+        league: r[1] || '',
+        player: r[2] || '',
+        market: r[3] || '',
+        line: parseFloat(r[4]) || null,
+        direction: r[5] || '',
+        book: r[6] || '',
+        edge: parseFloat(r[7]) || 0,
+        actual: r[8] !== '' ? parseFloat(r[8]) : null,
+        result: r[9] || '',
+        adjusted_edge: parseFloat(r[10]) || 0,
+        confidence: r[11] || '',
+        units: parseFloat(r[12]) || 0,
+      }));
+      await db.insertPropPerformance(dbRows);
+      console.log(`[props] Dual-wrote ${dbRows.length} prop grades to Supabase`);
+    } catch (err) {
+      console.warn('[props] Supabase prop grade dual-write failed:', err.message);
+    }
+  }
+
   return { wins, losses, pushes, unmatched };
 }
 

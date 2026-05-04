@@ -16,6 +16,7 @@
  * in props.js reads these flags to adjust edges on affected players.
  */
 const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
+const db = require('./db');
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, SPORTS } = require('./config');
 const { logApiCall } = require('./monitoring');
 
@@ -216,6 +217,27 @@ async function writeStatusSnapshot(statusData) {
 
   await clearSheet(SPREADSHEET_ID, SHEETS.PROP_STATUS);
   await setValues(SPREADSHEET_ID, SHEETS.PROP_STATUS, 'A1', rows);
+
+  // Dual-write to Supabase
+  if (db.isEnabled() && rows.length > 1) {
+    try {
+      const dbRows = rows.slice(1).map(r => ({
+        timestamp: r[0] || new Date().toISOString(),
+        league: r[1] || '',
+        player: r[2] || '',
+        game: r[3] || '',
+        status: r[4] || '',
+        impact_type: r[5] || '',
+        edge_bump: parseFloat(r[6]) || 0,
+        scratched_player: r[7] || '',
+        affected_markets: r[8] || '',
+      }));
+      await db.insertPropStatus(dbRows);
+      console.log(`[prop-status] Dual-wrote ${dbRows.length} status entries to Supabase`);
+    } catch (err) {
+      console.warn('[prop-status] Supabase dual-write failed:', err.message);
+    }
+  }
   console.log(`[prop-status] Wrote ${rows.length - 1} status entries to Prop_Status`);
 }
 

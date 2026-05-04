@@ -950,6 +950,28 @@ async function takeCLVSnapshot() {
   const snapshotRows = oddsRows.slice(1).map(r => [ts, ...r]);
   if (snapshotRows.length > 0) {
     await appendRows(SPREADSHEET_ID, SHEETS.CLV_SNAPSHOT, snapshotRows);
+
+    // Dual-write CLV snapshot to Supabase
+    if (db.isEnabled() && snapshotRows.length > 0) {
+      try {
+        const dbRows = snapshotRows.map(r => ({
+          snapshot_time: r[0] || new Date().toISOString(),
+          league: r[2] || '',
+          home_team: r[3] || '',
+          away_team: r[4] || '',
+          commence_time: r[5] || '',
+          market: r[6] || '',
+          outcome: r[7] || '',
+          price: parseFloat(r[8]) || null,
+          point: r[9] || '',
+          book: r[10] || '',
+        }));
+        await db.insertCLVSnapshot(dbRows);
+        console.log(`[predictions] Dual-wrote ${dbRows.length} CLV snapshots to Supabase`);
+      } catch (err) {
+        console.warn('[predictions] CLV Supabase dual-write failed:', err.message);
+      }
+    }
     console.log(`[predictions] CLV snapshot: ${snapshotRows.length} rows`);
   }
 }
