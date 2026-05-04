@@ -367,7 +367,107 @@ async function sendPerformanceSummary() {
 
   console.log(`[emails] Performance summary sent: ${totalW}-${totalL}-${totalP}, ${netSign}${totalUnitsReturned.toFixed(2)}u`);
 }
-module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck };
+
+/**
+ * Send a quick prop alert email with top edges (≥5%).
+ * Called right after generatePropEdges() in trigger7.
+ * Reads the freshly-written Prop_Combos sheet.
+ */
+async function sendPropAlertEmail() {
+  console.log('[emails] Checking for high-edge prop picks to alert...');
+
+  const combos = await getValues(SPREADSHEET_ID, SHEETS.PLATFORM_COMBOS);
+  if (!combos || combos.length < 2) {
+    console.log('[emails] No prop combos found — skipping alert.');
+    return;
+  }
+
+  // Prop_Combos columns (0-indexed):
+  //   0: Timestamp, 1: League, 2: Player, 3: Market, 4: Line, 5: Direction,
+  //   6: Book, 7: BookOdds, 8: BookProb, 9: ConsensusProb, 10: Edge,
+  //   11: Game, 16: WeightModifier, 17: StatusBump, 18: AdjustedEdge,
+  //   19: Confidence, 20: Units
+  const MIN_EDGE = 5.0;
+  const topPicks = combos.slice(1).filter(r => {
+    const adj = parseFloat(r[18]);
+    return Number.isFinite(adj) && adj >= MIN_EDGE;
+  }).sort((a, b) => parseFloat(b[18]) - parseFloat(a[18]));
+
+  if (topPicks.length === 0) {
+    console.log('[emails] No props with adjusted edge >= 5% — skipping alert.');
+    return;
+  }
+
+  console.log(`[emails] ${topPicks.length} prop picks with edge >= ${MIN_EDGE}%`);
+
+  const now = new Date();
+  const todayFmt = now.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  // Group by league
+  const byLeague = {};
+  for (const r of topPicks) {
+    const league = r[1] || 'Other';
+    if (!byLeague[league]) byLeague[league] = [];
+    byLeague[league].push(r);
+  }
+
+  const leagueEmoji = { MLB: '&#9918;', NBA: '&#127936;', NHL: '&#127954;', NFL: '&#127944;' };
+
+  let rows = '';
+  for (const [league, picks] of Object.entries(byLeague)) {
+    const emoji = leagueEmoji[league] || '';
+    rows += '<tr><td colspan="7" style="padding:10px 6px 4px;font-weight:bold;font-size:15px;border-bottom:2px solid #0f3460;">' + emoji + ' ' + league + '</td></tr>';
+    for (const r of picks) {
+      const edge = parseFloat(r[18]).toFixed(1);
+      const conf = r[19] || '';
+      const units = r[20] || '';
+      const edgeColor = parseFloat(edge) >= 8 ? '#27ae60' : '#2980b9';
+      rows += '<tr>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;">' + r[2] + '</td>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;">' + r[5] + ' ' + r[3] + ' ' + r[4] + '</td>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;">' + r[6] + '</td>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;">' + r[7] + '</td>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;color:' + edgeColor + ';font-weight:bold;">' + edge + '%</td>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:center;">' + conf + '</td>'
+        + '<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:center;">' + units + '</td>'
+        + '</tr>';
+    }
+  }
+
+  const html = '<!DOCTYPE html><html><head><style>'
+    + 'body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; }'
+    + 'table { width: 100%; border-collapse: collapse; }'
+    + '.hdr { background: #0f3460; color: white; }'
+    + '.hdr th { padding: 6px; text-align: left; font-size: 13px; }'
+    + '</style></head><body>'
+    + '<h1 style="color:#1a1a2e;margin-bottom:4px;">&#128293; Prop Alert — ' + topPicks.length + ' High-Edge Picks</h1>'
+    + '<p style="color:#666;margin-top:0;">' + todayFmt + ' &middot; Adjusted edge &ge; ' + MIN_EDGE + '%</p>'
+    + '<table>'
+    + '<tr class="hdr"><th>Player</th><th>Pick</th><th>Book</th><th>Odds</th><th>Edge</th><th>Conf</th><th>Units</th></tr>'
+    + rows
+    + '</table>'
+    + '<p style="font-size:11px;color:#999;margin-top:20px;">Shadow Bets prop alert — sent after prop edge generation (trigger7)</p>'
+    + '</body></html>';
+
+  const transporter = getTransporter();
+  await transporter.sendMail({
+    from: GMAIL_USER,
+    to: EMAIL_RECIPIENTS.join(', '),
+    subject: '🔥 ' + topPicks.length + ' Prop Picks ≥5% Edge — ' + todayFmt,
+    html,
+  });
+
+  const ts = now.toISOString();
+  await appendRows(SPREADSHEET_ID, SHEETS.EMAIL_LOG, [
+    [ts, 'PropAlert', EMAIL_RECIPIENTS.join(','), 'sent', topPicks.length + ' picks >= ' + MIN_EDGE + '% edge'],
+  ]);
+
+  console.log('[emails] Prop alert sent: ' + topPicks.length + ' picks with edge >= ' + MIN_EDGE + '%');
+}
+
+module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck, sendPropAlertEmail };
 
 // ── Trigger Health Check ─────────────────────────────────────────
 

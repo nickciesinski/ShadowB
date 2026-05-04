@@ -8,7 +8,7 @@
 const { validateConfig } = require('./config');
 const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults, updateScheduleContext } = require('./data-collection');
 const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, generateNFLPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
-const { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck } = require('./emails');
+const { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck, sendPropAlertEmail } = require('./emails');
 const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
 const { updatePlayerTiers } = require('./player-tiers');
 const { updatePlayerStatus } = require('./prop-status');
@@ -72,6 +72,7 @@ const TRIGGERS = {
   trigger7: withMonitoring('trigger7', async () => {
     await generatePropEdges();
     await snapPropLines();  // archive opening edges for CLV comparison tonight
+    await sendPropAlertEmail();  // email top prop picks (edge >= 5%)
   }),
 
   // Trigger 8: 6:20 AM ET → Player tiers
