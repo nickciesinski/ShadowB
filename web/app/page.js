@@ -473,6 +473,18 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
 
 // ── Props Tab ───────────────────────────────────────────────────────
 function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isPropFade, toggleProp, liveStats, myPropBets }) {
+  // Helper: format timestamp as relative time ago
+  const timeAgo = (ts) => {
+    if (!ts) return null;
+    const diff = Math.max(0, Date.now() - ts);
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
+
   // Build game-to-date lookup from todayGames commence times
   const gameCommence = {};
   for (const g of (todayGames || [])) {
@@ -515,6 +527,7 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
         game: stored.game || (currentProp ? currentProp.game : ''),
         line: stored.line, // locked-in line
         bookOdds: stored.odds, // locked-in odds
+        selectedAt: stored.selectedAt || null,
         _isMyBet: true,
         _state: stored.state,
         // Keep current prop's consensus/edge if available
@@ -602,6 +615,7 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
                   <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>
                     <span>via {p.book}</span>
                     {p.edge && <span> · <span style={{ color: edgeColor, fontWeight: 700 }}>{p.edge}% edge</span></span>}
+                    {p.selectedAt && <span> · <span style={{ color: (Date.now() - p.selectedAt) > 3600000 ? '#FBBF24' : '#64748B' }}>{timeAgo(p.selectedAt)}</span></span>}
                   </div>
                 </div>
                 {live ? (
@@ -1204,8 +1218,8 @@ export default function App() {
       const next = new Map(prev);
       const cur = next.get(key);
       const curState = typeof cur === 'object' ? cur.state : cur;
-      if (!curState) next.set(key, { state: 'bet', line: p.line, odds: p.bookOdds, player: p.player, league: p.league, market: p.market, direction: p.direction, book: p.book, game: p.game });
-      else if (curState === 'bet') next.set(key, { state: 'fade', line: (typeof cur === 'object' ? cur.line : p.line), odds: (typeof cur === 'object' ? cur.odds : p.bookOdds), player: p.player, league: p.league, market: p.market, direction: p.direction, book: p.book, game: p.game });
+      if (!curState) next.set(key, { state: 'bet', line: p.line, odds: p.bookOdds, player: p.player, league: p.league, market: p.market, direction: p.direction, book: p.book, game: p.game, selectedAt: Date.now() });
+      else if (curState === 'bet') next.set(key, { state: 'fade', line: (typeof cur === 'object' ? cur.line : p.line), odds: (typeof cur === 'object' ? cur.odds : p.bookOdds), player: p.player, league: p.league, market: p.market, direction: p.direction, book: p.book, game: p.game, selectedAt: (typeof cur === 'object' ? cur.selectedAt : Date.now()) });
       else next.delete(key);
       return next;
     });
