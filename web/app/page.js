@@ -14,6 +14,7 @@ const TAB_ACCENTS = {
   scores: { gradient: 'linear-gradient(135deg, #2563EB 0%, #3B82F6 50%, #1E3A5F 100%)', accent: '#3B82F6', glow: 'rgba(59,130,246,0.3)' },
   props: { gradient: 'linear-gradient(135deg, #7C3AED 0%, #8B5CF6 50%, #4C1D95 100%)', accent: '#8B5CF6', glow: 'rgba(139,92,246,0.3)' },
   results: { gradient: 'linear-gradient(135deg, #D97706 0%, #F59E0B 50%, #78350F 100%)', accent: '#F59E0B', glow: 'rgba(245,158,11,0.3)' },
+  settings: { gradient: 'linear-gradient(135deg, #64748B 0%, #94A3B8 50%, #334155 100%)', accent: '#94A3B8', glow: 'rgba(148,163,184,0.3)' },
 };
 
 const ESPN_SPORTS = {
@@ -1145,6 +1146,118 @@ function findPlayerStat(playerName, market, boxPlayers) {
 }
 
 // ── Main App ────────────────────────────────────────────────────────
+// ── Settings Tab ──────────────────────────────────────────────────────
+function SettingsTab() {
+  const [confirmReview, setConfirmReview] = useState(false);
+  const [reviewStatus, setReviewStatus] = useState(null);
+  const [ghToken, setGhToken] = useState(() => {
+    try { return (typeof window !== "undefined" && localStorage.getItem("shadowbets_gh_token")) || ""; } catch { return ""; }
+  });
+  const [tokenSaved, setTokenSaved] = useState(() => {
+    try { return !!(typeof window !== "undefined" && localStorage.getItem("shadowbets_gh_token")); } catch { return false; }
+  });
+
+  const saveToken = () => {
+    if (ghToken.startsWith("ghp_")) {
+      try { localStorage.setItem("shadowbets_gh_token", ghToken); } catch {}
+      setTokenSaved(true);
+    }
+  };
+
+  const clearToken = () => {
+    try { localStorage.removeItem("shadowbets_gh_token"); } catch {}
+    setGhToken("");
+    setTokenSaved(false);
+  };
+
+  const triggerSystemCheck = async () => {
+    if (!ghToken) { setReviewStatus("error"); return; }
+    setReviewStatus("sending");
+    try {
+      const resp = await fetch(
+        "https://api.github.com/repos/nickciesinski/ShadowB/actions/workflows/system-check.yml/dispatches",
+        { method: "POST", headers: { Authorization: `token ${ghToken}`, Accept: "application/vnd.github.v3+json" }, body: JSON.stringify({ ref: "main" }) }
+      );
+      if (resp.status === 204 || resp.ok) { setReviewStatus("sent"); setConfirmReview(false); }
+      else { setReviewStatus("error"); }
+    } catch { setReviewStatus("error"); }
+  };
+
+  const cardStyle = { background: "rgba(255,255,255,0.04)", borderRadius: 14, border: "1px solid rgba(255,255,255,0.06)", marginBottom: 10, overflow: "hidden" };
+
+  return (
+    <div>
+      {/* GitHub Token */}
+      {!tokenSaved && (
+        <div style={cardStyle}>
+          <div style={{ padding: "14px 16px" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 6 }}>Connect GitHub</div>
+            <div style={{ fontSize: 12, color: "#64748B", marginBottom: 10 }}>Enter your PAT to enable workflow triggers.</div>
+            <input
+              type="password"
+              placeholder="ghp_..."
+              value={ghToken}
+              onChange={e => setGhToken(e.target.value)}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.06)", color: "#F1F5F9", fontSize: 14, fontFamily: "monospace", marginBottom: 8, boxSizing: "border-box", outline: "none" }}
+            />
+            <button onClick={saveToken} disabled={!ghToken.startsWith("ghp_")} style={{ width: "100%", padding: "10px 0", borderRadius: 8, border: "none", background: ghToken.startsWith("ghp_") ? "#10B981" : "rgba(255,255,255,0.06)", color: ghToken.startsWith("ghp_") ? "white" : "#475569", fontSize: 14, fontWeight: 700, cursor: ghToken.startsWith("ghp_") ? "pointer" : "default" }}>Save Token</button>
+          </div>
+        </div>
+      )}
+      {tokenSaved && (
+        <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 12, color: "#34D399", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+          <span>✓</span> GitHub connected
+          <button onClick={clearToken} style={{ marginLeft: "auto", background: "none", border: "none", color: "#64748B", fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>Reset</button>
+        </div>
+      )}
+
+      {/* Section Label */}
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", padding: "10px 2px 6px", letterSpacing: 1 }}>Actions</div>
+
+      {/* System Review */}
+      <div style={cardStyle}>
+        <button onClick={() => { if (reviewStatus === "sent") { setReviewStatus(null); return; } setConfirmReview(true); }} disabled={!tokenSaved || reviewStatus === "sending"} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "none", border: "none", cursor: tokenSaved ? "pointer" : "default", opacity: tokenSaved ? 1 : 0.4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(139,92,246,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔍</span>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9" }}>System Review</div>
+              <div style={{ fontSize: 12, color: "#64748B" }}>Health check + performance report via email</div>
+            </div>
+          </div>
+          <div>
+            {reviewStatus === "sending" && <span style={{ fontSize: 12, color: "#64748B" }}>Sending...</span>}
+            {reviewStatus === "sent" && <span style={{ fontSize: 12, color: "#34D399", fontWeight: 600 }}>✓ Queued</span>}
+            {reviewStatus === "error" && <span style={{ fontSize: 12, color: "#F87171" }}>Failed</span>}
+            {!reviewStatus && <span style={{ color: "#334155", fontSize: 18 }}>›</span>}
+          </div>
+        </button>
+        {confirmReview && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", padding: "12px 16px", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ fontSize: 13, color: "#94A3B8", marginBottom: 10 }}>Run a full system health check and email a performance report (3/7/15/30-day windows)?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setConfirmReview(false)} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#94A3B8", fontSize: 14, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+              <button onClick={triggerSystemCheck} style={{ flex: 1, padding: "10px 0", borderRadius: 8, border: "none", background: "#8B5CF6", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Send Review</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* System Info */}
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", padding: "14px 2px 6px", letterSpacing: 1 }}>System</div>
+      <div style={cardStyle}>
+        <div style={{ padding: "4px 16px" }}>
+          {[{ l: "Runtime", v: "GitHub Actions · Node 22" }, { l: "Data", v: "Google Sheets · 47 tabs" }, { l: "Compute", v: "Supabase (Postgres)" }, { l: "Triggers", v: "17 workflows" }, { l: "Model", v: "Deterministic + 6-factor props" }].map((item, i, arr) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+              <span style={{ fontSize: 13, color: "#64748B" }}>{item.l}</span>
+              <span style={{ fontSize: 13, color: "#E2E8F0", fontWeight: 600 }}>{item.v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   // Smart default: Picks before 6PM ET, Scores after
   const getDefaultTab = () => {
@@ -1363,6 +1476,7 @@ export default function App() {
     { id: 'scores', label: 'Scores', icon: '🏟️' },
     { id: 'props', label: 'Props', icon: '🎯' },
     { id: 'results', label: 'Results', icon: '📊' },
+    { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
 
   return (
@@ -1388,7 +1502,7 @@ export default function App() {
             {lastUpdated && <div style={{ fontSize: 9, color: '#64748B' }}>Updated {lastUpdated.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</div>}
           </div>
         </div>
-        <Pills items={sportPills} active={sf} onChange={setSf} color={TAB_ACCENTS[tab].accent} />
+        {tab !== 'settings' && <Pills items={sportPills} active={sf} onChange={setSf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'picks' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'picks' && <Pills items={CONFIDENCE_FILTERS} active={cf} onChange={setCf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'props' && <Pills items={['Today', 'Tomorrow', 'All']} active={propDateFilter} onChange={setPropDateFilter} color={TAB_ACCENTS[tab].accent} />}
@@ -1424,6 +1538,7 @@ export default function App() {
         })} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
         {data && tab === 'results' && <ResultsTab results={data.gradedPicks} gradedProps={data.gradedProps || []} sf={sf} bf={bf} dateFilter={dateFilter} resultType={resultType} isBet={isBet} isPropBet={isPropBet} />}
+        {tab === 'settings' && <SettingsTab />}
       </div>
 
       {/* Tab Bar */}
