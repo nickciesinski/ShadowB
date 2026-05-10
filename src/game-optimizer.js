@@ -25,6 +25,7 @@
 const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const { readWeights, writeWeights, sheetForLeague } = require('./weights');
+const { getHistoricalTeamStats } = require('./snapshots');
 
 // Factors we'll optimize and their defaults
 const TUNABLE_FACTORS = {
@@ -348,30 +349,59 @@ async function optimizeCSVWeights() {
   const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
   if (!perfRows || perfRows.length < 2) return null;
 
-  // Load team stats for feature reconstruction
-  const teamStatsCache = {};
-  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
-    const sheetKey = `${league}_TEAM_STATS`;
-    const sheetName = SHEETS[sheetKey];
-    if (!sheetName) continue;
+  // ── Historical stats cache: { "YYYY-MM-DD|LEAGUE" → teamMap } ──
+  // Uses Supabase daily_team_stats snapshots so feature reconstruction
+  // reflects stats *as they were* on the day each pick was made.
+  const historicalCache = {};
+
+  async function getTeamStats(pickDateISO, league) {
+    const cacheKey = `${pickDateISO}|${league}`;
+    if (historicalCache[cacheKey] !== undefined) return historicalCache[cacheKey];
+
+    // Try historical snapshot first
+    let statsMap = null;
     try {
-      const rows = await getValues(SPREADSHEET_ID, sheetName);
-      if (rows && rows.length > 1) {
-        const map = {};
-        for (const row of rows.slice(1)) {
-          map[row[2]] = {
-            pct: row[6], offRating: row[7] || '', defRating: row[8] || '',
-            pace: row[9] || '', runsPerGame: row[10] || '',
-            runsAllowedPerGame: row[11] || '', goalsFor: row[12] || '',
-            goalsAgainst: row[13] || '', pointsFor: row[14] || '',
-            pointsAgainst: row[15] || '', recentFormPct: row[16] || '',
-          };
-        }
-        teamStatsCache[league] = map;
-      }
+      statsMap = await getHistoricalTeamStats(pickDateISO, league);
     } catch (e) {
-      console.warn(`[game-optimizer] Could not load ${league} team stats: ${e.message}`);
+      console.warn(`[game-optimizer] Historical stats lookup failed for ${cacheKey}: ${e.message}`);
     }
+
+    if (statsMap && Object.keys(statsMap).length > 0) {
+      historicalCache[cacheKey] = statsMap;
+      return statsMap;
+    }
+
+    // Fallback: load current stats from Sheets (better than nothing)
+    if (!historicalCache[`current|${league}`]) {
+      const sheetKey = `${league}_TEAM_STATS`;
+      const sheetName = SHEETS[sheetKey];
+      if (sheetName) {
+        try {
+          const rows = await getValues(SPREADSHEET_ID, sheetName);
+          if (rows && rows.length > 1) {
+            const map = {};
+            for (const row of rows.slice(1)) {
+              map[row[2]] = {
+                pct: row[6], offRating: row[7] || '', defRating: row[8] || '',
+                pace: row[9] || '', runsPerGame: row[10] || '',
+                runsAllowedPerGame: row[11] || '', goalsFor: row[12] || '',
+                goalsAgainst: row[13] || '', pointsFor: row[14] || '',
+                pointsAgainst: row[15] || '', recentFormPct: row[16] || '',
+              };
+            }
+            historicalCache[`current|${league}`] = map;
+          }
+        } catch (e) {
+          console.warn(`[game-optimizer] Could not load ${league} current team stats: ${e.message}`);
+        }
+      }
+      if (!historicalCache[`current|${league}`]) {
+        historicalCache[`current|${league}`] = {};
+      }
+    }
+
+    historicalCache[cacheKey] = historicalCache[`current|${league}`];
+    return historicalCache[cacheKey];
   }
 
   const cutoff = new Date();
@@ -379,10 +409,9 @@ async function optimizeCSVWeights() {
 
   // For each league+market, collect feature values for W and L picks
   const results = {};
-  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
-    const teamsMap = teamStatsCache[league] || {};
-    if (Object.keys(teamsMap).length === 0) continue;
+  let historicalHits = 0, fallbackHits = 0;
 
+  for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
     const sheetName = sheetForLeague(league);
     const currentWeights = await readWeights(sheetName);
 
@@ -420,12 +449,28 @@ async function optimizeCSVWeights() {
         const pickDate = new Date(parseInt(parts[3]), parseInt(parts[1]) - 1, parseInt(parts[2]));
         if (pickDate < cutoff) continue;
 
+        // Convert to YYYY-MM-DD for Supabase lookup
+        const pickDateISO = pickDate.toISOString().slice(0, 10);
+
         const awayTeam = (row[3] || '').trim();
         const homeTeam = (row[4] || '').trim();
+
+        // Use historical stats for the pick date, not current stats
+        const teamsMap = await getTeamStats(pickDateISO, league);
+        if (!teamsMap) continue;
+
         const homeStats = teamsMap[homeTeam] || {};
         const awayStats = teamsMap[awayTeam] || {};
 
         if (!homeStats.pct && !awayStats.pct) continue;
+
+        // Track whether we used historical or fallback
+        const cacheKey = `${pickDateISO}|${league}`;
+        if (historicalCache[cacheKey] !== historicalCache[`current|${league}`]) {
+          historicalHits++;
+        } else {
+          fallbackHits++;
+        }
 
         const features = extractFeatures(homeStats, awayStats, null, league);
         const bucket = result === 'W' ? winFeatures : lossFeatures;
@@ -508,5 +553,6 @@ async function optimizeCSVWeights() {
     }
   }
 
+  console.log(`[game-optimizer] CSV weights done. Historical stats used: ${historicalHits}, fallback to current: ${fallbackHits}`);
   return results;
 }
