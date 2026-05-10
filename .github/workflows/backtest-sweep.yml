@@ -1,0 +1,40 @@
+name: Backtest Parameter Sweep
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Number of days to backtest'
+        required: false
+        default: '60'
+      top:
+        description: 'Number of top results to display'
+        required: false
+        default: '20'
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: npm install
+
+      - name: Run parameter sweep
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/backtest-sweep.js --days ${{ github.event.inputs.days }} --top ${{ github.event.inputs.top }}
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep-results
+          path: weight-reviews/sweep-results-*.json
+          retention-days: 30
