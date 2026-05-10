@@ -51,10 +51,12 @@ const LEAGUE_OVERRIDES = {
     maxUncertainty:   0.65,
   },
   MLB: {
+    // 2026-05-10: still bleeding at 46.6% win rate all-time, -18.67 units
+    // Raised minEdgePct 2.5→3.0 (weekly auto-tune)
     // MLB has been bleeding — tighten
     // 2026-04-26: spread ROI -17.3% on 138 bets, overall ROI -3.6 to -17.3%
     // Raised minEdgePct 2.0→2.5, minConfidence 6→7
-    minEdgePct:       2.5,
+    minEdgePct:       3.0,
     minConfidence:    7,
     minMarketQuality: 0.35,
   },
