@@ -1,24 +1,47 @@
-name: Backtest - Weight Sensitivity Analysis
+name: Backtest - Sensitivity & Counterfactual Analysis
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: 'Mode: "sensitivity" (modifier analysis) or "counterfactual" (full model re-run with historical snapshots)'
+        required: false
+        default: 'sensitivity'
       days:
         description: 'Number of days to backtest'
         required: false
-        default: '30'
+        default: '60'
+      mods:
+        description: 'Weight modifications JSON (counterfactual only). Example: [{"market":"all","key":"point_differential","action":"multiplyGroup","value":2}]'
+        required: false
+        default: '[]'
 
 jobs:
   backtest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm ci
-      - run: node src/triggers.js backtest
+
+      - name: Run sensitivity analysis
+        if: github.event.inputs.mode == 'sensitivity' || github.event.inputs.mode == ''
+        run: node src/triggers.js backtest
         env:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Run counterfactual backtest
+        if: github.event.inputs.mode == 'counterfactual'
+        run: node src/triggers.js backtest_counterfactual
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BACKTEST_DAYS: ${{ github.event.inputs.days }}
+          BACKTEST_MODS: ${{ github.event.inputs.mods }}

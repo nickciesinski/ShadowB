@@ -15,7 +15,7 @@ const { updatePlayerStatus } = require('./prop-status');
 const { snapPropLines, snapClosingPropLines, gradePropEdges, updateAllPropWeights } = require('./prop-clv');
 const { runAllOptimizations, syncPerformanceLog, seedPropWeights, seedModifiers } = require('./optimize');
 const { withMonitoring, trimAccumulatingSheets } = require('./monitoring');
-const { replayBacktest, sensitivityAnalysis, validateCurrentWeights } = require('./backtesting');
+const { replayBacktest, sensitivityAnalysis, validateCurrentWeights, counterfactualBacktest } = require('./backtesting');
 const { snapshotTeamStats, snapshotOdds, snapshotInjuries } = require('./snapshots');
 
 /** Small delay to spread Sheets writes across the quota window. */
@@ -143,6 +143,21 @@ const TRIGGERS = {
     const validation = await validateCurrentWeights(30);
     console.log('[backtest] Sensitivity:', sensitivity.length, 'segments analyzed');
     console.log('[backtest] Validation:', validation.valid ? 'PASS' : `FAIL — ${validation.misaligned.length} misaligned`);
+  }),
+
+  // Counterfactual backtest: re-runs full game model with historical snapshots
+  backtest_counterfactual: withMonitoring('backtest_counterfactual', async () => {
+    const days = parseInt(process.env.BACKTEST_DAYS || '60');
+    // Parse weight mods from env var (JSON array) if provided
+    let mods = [];
+    if (process.env.BACKTEST_MODS) {
+      try { mods = JSON.parse(process.env.BACKTEST_MODS); }
+      catch (e) { console.warn('[backtest-cf] Could not parse BACKTEST_MODS:', e.message); }
+    }
+    const result = await counterfactualBacktest(mods, { days });
+    if (result) {
+      console.log('[backtest-cf] Complete:', JSON.stringify(result.diff));
+    }
   }),
 
   // Trigger 17: Manual sheet capacity cleanup

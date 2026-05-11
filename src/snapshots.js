@@ -414,4 +414,76 @@ module.exports = {
   snapshotInjuries,
   getHistoricalTeamStats,
   getHistoricalInjuries,
+  getHistoricalOdds,
 };
+
+/**
+ * Read historical odds for a specific date + league from daily_odds.
+ * Returns array of game objects matching the format expected by
+ * buildGameObjects / generateGamePicks:
+ *   [{ home, away, commence, markets: { h2h: [...], spreads: [...], totals: [...] } }]
+ */
+async function getHistoricalOdds(date, league) {
+  if (!db.isEnabled()) return [];
+  const sb = db.getClient();
+  if (!sb) return [];
+
+  const { data, error } = await sb
+    .from('daily_odds')
+    .select('*')
+    .eq('date', date)
+    .eq('league', league);
+
+  if (error || !data || data.length === 0) return [];
+
+  // Group by game, then rebuild the game objects format
+  const gameMap = {}; // "away @ home" → { home, away, commence, markets }
+
+  for (const row of data) {
+    const gameId = row.game_id || `${row.away_team} @ ${row.home_team}`;
+    if (!gameMap[gameId]) {
+      gameMap[gameId] = {
+        home: row.home_team,
+        away: row.away_team,
+        commence: '',
+        markets: { h2h: [], spreads: [], totals: [] },
+      };
+    }
+
+    const g = gameMap[gameId];
+    const odds = row.odds || {};
+    const market = (row.market || '').toLowerCase();
+
+    // Map market names to game-model format
+    if (market === 'h2h' || market === 'moneyline') {
+      for (const [outcome, info] of Object.entries(odds)) {
+        g.markets.h2h.push({
+          outcome,
+          price: info.consensus_price,
+          point: null,
+          impliedProb: '0.500',
+        });
+      }
+    } else if (market === 'spreads' || market === 'spread') {
+      for (const [outcome, info] of Object.entries(odds)) {
+        g.markets.spreads.push({
+          outcome,
+          price: info.consensus_price,
+          point: info.consensus_line,
+          impliedProb: '0.500',
+        });
+      }
+    } else if (market === 'totals' || market === 'total') {
+      for (const [outcome, info] of Object.entries(odds)) {
+        g.markets.totals.push({
+          outcome,
+          price: info.consensus_price,
+          point: info.consensus_line,
+          impliedProb: '0.500',
+        });
+      }
+    }
+  }
+
+  return Object.values(gameMap);
+}

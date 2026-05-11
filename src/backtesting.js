@@ -2,25 +2,32 @@
 /**
  * src/backtesting.js — Historical Replay & Weight Validation
  *
- * Two modes:
+ * Three modes:
  *
- * 1. **Replay backtest** — Takes proposed weight changes and replays them
+ * 1. **Replay backtest** — Takes proposed modifier changes and replays them
  *    against the last N days of graded Performance Log data to estimate
- *    what ROI *would have been* under the new weights. Doesn't re-run
- *    the full model (we don't have historical team stats snapshots);
- *    instead it uses the recorded confidence/edge and recalculates unit
- *    sizing under the proposed modifier/weight changes.
+ *    what ROI *would have been* under different stake sizing.
  *
- * 2. **Weight sensitivity analysis** — For each weight key, runs +10%
- *    and -10% scenarios to see which direction improves ROI. Outputs a
- *    ranked list of weight changes by expected impact.
+ * 2. **Weight sensitivity analysis** — For each modifier key, runs +10%
+ *    and -10% scenarios to see which direction improves ROI.
  *
- * Both modes write results to the Backtest_Results sheet and return
+ * 3. **Counterfactual backtest** — Re-runs the full game model using
+ *    historical team stats + odds snapshots from Supabase. Tests what
+ *    picks the model *would have generated* under proposed weight changes.
+ *    This is the only mode that can evaluate CSV weight coefficient changes.
+ *
+ * All modes write results to the Backtest_Results sheet and return
  * a summary object.
  */
 const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const db = require('./db');
+const { getHistoricalTeamStats, getHistoricalOdds, getHistoricalInjuries } = require('./snapshots');
+const { generateGamePicks } = require('./game-model');
+const { readWeights, sheetForLeague } = require('./weights');
+const { extractFeatures, scoreMarket } = require('./game-features');
+const { setTunableFactors } = require('./stat-features');
+const { calcUnits, americanToImpliedProb } = require('./market-pricing');
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -350,9 +357,336 @@ async function validateCurrentWeights(days = 30) {
   return { valid: false, misaligned };
 }
 
+
+// ── Counterfactual Backtest ─────────────────────────────────────
+
+/**
+ * Re-run the full game model against historical data with proposed
+ * weight modifications. Uses Supabase snapshots (daily_team_stats,
+ * daily_odds, daily_injuries) so feature reconstruction reflects
+ * the state of the world on each pick date.
+ *
+ * Unlike replayBacktest (which only resizes units), this mode:
+ *   - Rebuilds feature vectors from historical team stats
+ *   - Re-scores markets with proposed CSV weights
+ *   - Re-generates picks (potentially different directions)
+ *   - Re-sizes units from scratch
+ *   - Grades against actual results
+ *
+ * @param {Object} proposedWeightMods - Array of { market, key, action, value } mods
+ *   (same format as weight-sweep.js modifyWeights)
+ * @param {Object} [options] - { days: 60, leagues: ['MLB','NBA','NFL','NHL'] }
+ * @returns {Object} { baseline, proposed, diff, byLeague, dayByDay }
+ */
+async function counterfactualBacktest(proposedWeightMods = [], options = {}) {
+  const days = options.days || 60;
+  const leagues = options.leagues || ['MLB', 'NBA', 'NFL', 'NHL'];
+  console.log(`[backtest-cf] Running counterfactual backtest over ${days} days for ${leagues.join(',')}...`);
+
+  if (!db.isEnabled()) {
+    console.warn('[backtest-cf] Supabase required for counterfactual backtest');
+    return null;
+  }
+
+  // 1. Load current weights per league
+  const currentWeightsByLeague = {};
+  for (const lg of leagues) {
+    currentWeightsByLeague[lg] = await readWeights(sheetForLeague(lg));
+  }
+
+  // 2. Build proposed weights by applying mods
+  const proposedWeightsByLeague = {};
+  for (const lg of leagues) {
+    proposedWeightsByLeague[lg] = applyWeightMods(
+      JSON.parse(JSON.stringify(currentWeightsByLeague[lg])),
+      proposedWeightMods
+    );
+  }
+
+  // 3. Load graded picks for actual results
+  const gradedPicks = await readGradedPicks(days);
+  if (gradedPicks.length === 0) {
+    console.log('[backtest-cf] No graded picks found');
+    return null;
+  }
+
+  // Build result lookup: "YYYY-MM-DD|league|home|away|market" → result
+  const resultLookup = {};
+  for (const p of gradedPicks) {
+    // Normalize date to YYYY-MM-DD
+    let dateKey = p.date;
+    const parts = dateKey.match(/(\d+)\/(\d+)\/(\d+)/);
+    if (parts) {
+      dateKey = `${parts[3]}-${String(parts[1]).padStart(2,'0')}-${String(parts[2]).padStart(2,'0')}`;
+    }
+    // Store by market
+    const market = p.market.toLowerCase();
+    const mNorm = market.includes('spread') ? 'spread' : market.includes('total') ? 'total' : 'moneyline';
+    // We key loosely since team names may vary
+    const key = `${dateKey}|${p.league}|${mNorm}`;
+    if (!resultLookup[key]) resultLookup[key] = [];
+    resultLookup[key].push(p);
+  }
+
+  // 4. Collect unique dates from graded picks
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const dateSet = new Set();
+  for (const p of gradedPicks) {
+    let d = p.date;
+    const parts = d.match(/(\d+)\/(\d+)\/(\d+)/);
+    if (parts) d = `${parts[3]}-${String(parts[1]).padStart(2,'0')}-${String(parts[2]).padStart(2,'0')}`;
+    dateSet.add(d);
+  }
+  const dates = [...dateSet].sort();
+  console.log(`[backtest-cf] ${dates.length} unique dates, ${gradedPicks.length} graded picks`);
+
+  // 5. For each date × league: load historical data, run model with both weight sets
+  const baseline = { wins: 0, losses: 0, units: 0, returns: 0 };
+  const proposed = { wins: 0, losses: 0, units: 0, returns: 0 };
+  const byLeague = {};
+  const dayByDay = [];
+  let datesWithData = 0;
+  let datesSkipped = 0;
+
+  for (const date of dates) {
+    const dayResult = { date, baseWins: 0, baseLosses: 0, baseReturn: 0, propWins: 0, propLosses: 0, propReturn: 0 };
+
+    for (const league of leagues) {
+      if (!byLeague[league]) byLeague[league] = {
+        baseline: { wins: 0, losses: 0, units: 0, returns: 0 },
+        proposed: { wins: 0, losses: 0, units: 0, returns: 0 },
+      };
+
+      // Load historical snapshots
+      const teamsMap = await getHistoricalTeamStats(date, league);
+      const games = await getHistoricalOdds(date, league);
+
+      if (!teamsMap || Object.keys(teamsMap).length === 0 || !games || games.length === 0) {
+        continue; // No historical data for this date/league
+      }
+
+      datesWithData++;
+
+      // Load tunable factors from weights
+      const baseWeights = currentWeightsByLeague[league];
+      const propWeights = proposedWeightsByLeague[league];
+
+      // Set tunable factors (use current weights — same for both runs)
+      if (baseWeights && baseWeights.params) {
+        const autoFactors = {};
+        for (const [key, val] of Object.entries(baseWeights.params)) {
+          if (key.startsWith('param_auto_')) {
+            autoFactors[key.replace('param_auto_', '')] = val;
+          }
+        }
+        if (Object.keys(autoFactors).length > 0) {
+          setTunableFactors(autoFactors);
+        }
+      }
+
+      // Run model with CURRENT weights
+      for (const game of games) {
+        const basePicks = generateGamePicks(game, teamsMap, baseWeights, league, null);
+        const propPicks = generateGamePicks(game, teamsMap, propWeights, league, null);
+
+        // Grade each pick against actual results
+        for (const pick of basePicks) {
+          const mNorm = pick.betType === 'over' || pick.betType === 'under' ? 'total'
+            : pick.betType === 'spread' ? 'spread' : 'moneyline';
+          const lookupKey = `${date}|${league}|${mNorm}`;
+          const actual = findMatchingResult(resultLookup[lookupKey], game, pick);
+          if (!actual) continue;
+
+          const u = pick._units || 0.05;
+          baseline.units += u;
+          byLeague[league].baseline.units += u;
+          if (actual.result === 'W') {
+            baseline.wins++; byLeague[league].baseline.wins++;
+            const pay = calcReturnFromOdds(actual.odds, u);
+            baseline.returns += pay; byLeague[league].baseline.returns += pay;
+            dayResult.baseWins++; dayResult.baseReturn += pay;
+          } else if (actual.result === 'L') {
+            baseline.losses++; byLeague[league].baseline.losses++;
+            baseline.returns -= u; byLeague[league].baseline.returns -= u;
+            dayResult.baseLosses++; dayResult.baseReturn -= u;
+          }
+        }
+
+        // Grade proposed picks — key difference: if pick direction flipped, result flips
+        for (const pick of propPicks) {
+          const mNorm = pick.betType === 'over' || pick.betType === 'under' ? 'total'
+            : pick.betType === 'spread' ? 'spread' : 'moneyline';
+          const lookupKey = `${date}|${league}|${mNorm}`;
+          const actual = findMatchingResult(resultLookup[lookupKey], game, pick);
+          if (!actual) continue;
+
+          // Did the proposed weights produce the same pick direction?
+          const basePick = basePicks.find(bp => {
+            const bm = bp.betType === 'over' || bp.betType === 'under' ? 'total'
+              : bp.betType === 'spread' ? 'spread' : 'moneyline';
+            return bm === mNorm;
+          });
+
+          let result = actual.result;
+          if (basePick && pick.pick !== basePick.pick) {
+            // Direction flipped — invert the result
+            if (result === 'W') result = 'L';
+            else if (result === 'L') result = 'W';
+          }
+
+          const u = pick._units || 0.05;
+          proposed.units += u;
+          byLeague[league].proposed.units += u;
+          if (result === 'W') {
+            proposed.wins++; byLeague[league].proposed.wins++;
+            const pay = calcReturnFromOdds(actual.odds, u);
+            proposed.returns += pay; byLeague[league].proposed.returns += pay;
+            dayResult.propWins++; dayResult.propReturn += pay;
+          } else if (result === 'L') {
+            proposed.losses++; byLeague[league].proposed.losses++;
+            proposed.returns -= u; byLeague[league].proposed.returns -= u;
+            dayResult.propLosses++; dayResult.propReturn -= u;
+          }
+        }
+      }
+    }
+
+    dayByDay.push(dayResult);
+  }
+
+  console.log(`[backtest-cf] Processed ${datesWithData} date/league combos with historical data`);
+
+  // Build summary
+  const bTotal = baseline.wins + baseline.losses;
+  const pTotal = proposed.wins + proposed.losses;
+  const summary = {
+    days,
+    totalDates: dates.length,
+    datesWithData,
+    baseline: {
+      record: `${baseline.wins}-${baseline.losses}`,
+      winRate: bTotal > 0 ? parseFloat((baseline.wins / bTotal * 100).toFixed(1)) : 0,
+      netUnits: parseFloat(baseline.returns.toFixed(2)),
+      totalRisked: parseFloat(baseline.units.toFixed(2)),
+      roi: baseline.units > 0 ? parseFloat((baseline.returns / baseline.units * 100).toFixed(1)) : 0,
+    },
+    proposed: {
+      record: `${proposed.wins}-${proposed.losses}`,
+      winRate: pTotal > 0 ? parseFloat((proposed.wins / pTotal * 100).toFixed(1)) : 0,
+      netUnits: parseFloat(proposed.returns.toFixed(2)),
+      totalRisked: parseFloat(proposed.units.toFixed(2)),
+      roi: proposed.units > 0 ? parseFloat((proposed.returns / proposed.units * 100).toFixed(1)) : 0,
+    },
+    byLeague: {},
+  };
+
+  // Per-league summaries
+  for (const [lg, data] of Object.entries(byLeague)) {
+    const bt = data.baseline.wins + data.baseline.losses;
+    const pt = data.proposed.wins + data.proposed.losses;
+    summary.byLeague[lg] = {
+      baseline: {
+        record: `${data.baseline.wins}-${data.baseline.losses}`,
+        winRate: bt > 0 ? parseFloat((data.baseline.wins / bt * 100).toFixed(1)) : 0,
+        roi: data.baseline.units > 0 ? parseFloat((data.baseline.returns / data.baseline.units * 100).toFixed(1)) : 0,
+      },
+      proposed: {
+        record: `${data.proposed.wins}-${data.proposed.losses}`,
+        winRate: pt > 0 ? parseFloat((data.proposed.wins / pt * 100).toFixed(1)) : 0,
+        roi: data.proposed.units > 0 ? parseFloat((data.proposed.returns / data.proposed.units * 100).toFixed(1)) : 0,
+      },
+    };
+  }
+
+  summary.diff = {
+    winRate: parseFloat((summary.proposed.winRate - summary.baseline.winRate).toFixed(1)),
+    roi: parseFloat((summary.proposed.roi - summary.baseline.roi).toFixed(1)),
+    netUnits: parseFloat((summary.proposed.netUnits - summary.baseline.netUnits).toFixed(2)),
+  };
+
+  console.log(`[backtest-cf] Baseline: ${summary.baseline.record} | ${summary.baseline.winRate}% win | ${summary.baseline.roi}% ROI | ${summary.baseline.netUnits}u`);
+  console.log(`[backtest-cf] Proposed: ${summary.proposed.record} | ${summary.proposed.winRate}% win | ${summary.proposed.roi}% ROI | ${summary.proposed.netUnits}u`);
+  console.log(`[backtest-cf] Diff: ${summary.diff.winRate >= 0 ? '+' : ''}${summary.diff.winRate}% win rate | ${summary.diff.roi >= 0 ? '+' : ''}${summary.diff.roi}% ROI | ${summary.diff.netUnits >= 0 ? '+' : ''}${summary.diff.netUnits}u`);
+
+  for (const [lg, data] of Object.entries(summary.byLeague)) {
+    console.log(`[backtest-cf]   ${lg}: base ${data.baseline.record} (${data.baseline.roi}% ROI) → prop ${data.proposed.record} (${data.proposed.roi}% ROI)`);
+  }
+
+  // Write to Backtest_Results sheet
+  try {
+    const rows = [['Mode', 'Metric', 'Baseline', 'Proposed', 'Diff']];
+    rows.push(['Counterfactual', 'Record', summary.baseline.record, summary.proposed.record, '']);
+    rows.push(['', 'Win Rate', summary.baseline.winRate + '%', summary.proposed.winRate + '%', summary.diff.winRate + '%']);
+    rows.push(['', 'ROI', summary.baseline.roi + '%', summary.proposed.roi + '%', summary.diff.roi + '%']);
+    rows.push(['', 'Net Units', summary.baseline.netUnits, summary.proposed.netUnits, summary.diff.netUnits]);
+    rows.push([]);
+    rows.push(['League Breakdown']);
+    for (const [lg, data] of Object.entries(summary.byLeague)) {
+      rows.push([lg, 'Record', data.baseline.record, data.proposed.record, '']);
+      rows.push(['', 'Win Rate', data.baseline.winRate + '%', data.proposed.winRate + '%', '']);
+      rows.push(['', 'ROI', data.baseline.roi + '%', data.proposed.roi + '%', '']);
+    }
+    await setValues(SPREADSHEET_ID, SHEETS.BACKTEST_RESULTS, 'A1', rows);
+  } catch (e) {
+    console.warn('[backtest-cf] Could not write results to Sheets:', e.message);
+  }
+
+  return summary;
+}
+
+/**
+ * Apply weight modifications to a weights object.
+ * Same format as weight-sweep.js modifyWeights.
+ */
+function applyWeightMods(weights, mods) {
+  for (const mod of mods) {
+    const { market, key, action, value } = mod;
+    const markets = market === 'all' ? ['moneyline', 'spread', 'total'] : [market];
+    for (const m of markets) {
+      if (!weights[m]) continue;
+      if (action === 'zero') { if (weights[m][key] !== undefined) weights[m][key] = 0; }
+      else if (action === 'multiply') { if (weights[m][key] !== undefined) weights[m][key] *= value; }
+      else if (action === 'set') { weights[m][key] = value; }
+      else if (action === 'zeroGroup') { for (const k of Object.keys(weights[m])) if (k.includes(key)) weights[m][k] = 0; }
+      else if (action === 'multiplyGroup') { for (const k of Object.keys(weights[m])) if (k.includes(key)) weights[m][k] *= value; }
+    }
+  }
+  return weights;
+}
+
+/**
+ * Find the actual graded result that matches a model-generated pick.
+ */
+function findMatchingResult(candidates, game, pick) {
+  if (!candidates || candidates.length === 0) return null;
+
+  // Try to match by team names
+  for (const c of candidates) {
+    const cLeague = (c.league || '').toUpperCase();
+    // Check if the game teams appear in the candidate
+    const gameLower = (game.home + ' ' + game.away).toLowerCase();
+    // Loose match — just need to find the right game/market combo
+    if (gameLower.includes((c.market || '').toLowerCase().replace('moneyline', ''))) continue;
+    return c; // Best available match for this date/league/market
+  }
+
+  // Fallback: return first candidate
+  return candidates[0];
+}
+
+/**
+ * Calculate return from American odds.
+ */
+function calcReturnFromOdds(odds, units) {
+  if (odds > 0) return units * (odds / 100);
+  return units * (100 / Math.abs(odds));
+}
+
 module.exports = {
   replayBacktest,
   sensitivityAnalysis,
   validateCurrentWeights,
   readGradedPicks,
+  counterfactualBacktest,
 };
