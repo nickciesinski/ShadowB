@@ -28,8 +28,11 @@
  * maxUncertainty    — maximum model uncertainty (0-1). High uncertainty
  *                     means wide projection spread → tracking only.
  */
+// 2026-05-10 backtest sweep (1000 picks, 60 days): minEdge filter was #1 lever.
+// Raising default 1.5→3.5 improves ROI 3.9%→4.5% by dropping ~290 low-edge bets.
+// All picks still log as tracking_only — only approval threshold changes.
 const DEFAULT_THRESHOLDS = {
-  minEdgePct:          1.5,
+  minEdgePct:          3.5,
   minMarketQuality:    0.3,
   minDataCompleteness: 0.3,
   minConfidence:       4,
@@ -39,7 +42,7 @@ const DEFAULT_THRESHOLDS = {
 const LEAGUE_OVERRIDES = {
   NHL: {
     // NHL has been our strongest league — loosen slightly
-    minEdgePct:       1.0,
+    minEdgePct:       2.5,
     minConfidence:    3,
   },
   NBA: {
@@ -47,7 +50,7 @@ const LEAGUE_OVERRIDES = {
     // per-market logic in shouldApprove, but keep defaults here
     // 2026-04-26: total ROI -11.6% on 167 bets (45.5% win rate)
     // Raised minEdgePct 1.5→2.0, lowered maxUncertainty 0.75→0.65
-    minEdgePct:       2.0,
+    minEdgePct:       3.5,
     maxUncertainty:   0.65,
   },
   MLB: {
@@ -56,7 +59,7 @@ const LEAGUE_OVERRIDES = {
     // MLB has been bleeding — tighten
     // 2026-04-26: spread ROI -17.3% on 138 bets, overall ROI -3.6 to -17.3%
     // Raised minEdgePct 2.0→2.5, minConfidence 6→7
-    minEdgePct:       3.0,
+    minEdgePct:       4.0,
     minConfidence:    7,
     minMarketQuality: 0.35,
   },
