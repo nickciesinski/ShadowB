@@ -1,0 +1,46 @@
+name: Weight Sweep Backtester
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Lookback window (days)'
+        required: false
+        default: '60'
+      top:
+        description: 'Top N results to display'
+        required: false
+        default: '30'
+      league:
+        description: 'Single league filter (NBA, NHL, MLB, NFL) or blank for all'
+        required: false
+        default: ''
+
+jobs:
+  weight-sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Run weight sweep
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS="--days ${{ github.event.inputs.days }} --top ${{ github.event.inputs.top }}"
+          if [ -n "${{ github.event.inputs.league }}" ]; then
+            ARGS="$ARGS --league ${{ github.event.inputs.league }}"
+          fi
+          node scripts/weight-sweep.js $ARGS
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weight-sweep-results
+          path: weight-reviews/weight-sweep-*.json
+          retention-days: 30
