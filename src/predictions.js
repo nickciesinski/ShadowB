@@ -60,15 +60,75 @@ function buildGameObjects(oddsRows, sportFilter) {
     games[gk].marketsRaw[mk].push(price);
   }
 
-  // Compute consensus (median) odds per outcome
+  // Compute consensus (median) odds per outcome.
+  // For totals and spreads, multiple bookmakers may report different point values
+  // (e.g., Over 8, Over 8.5, Over 9). We first find the consensus (median) point
+  // across all books for each outcome, then aggregate all odds near that point
+  // into a single entry per outcome. This prevents outlier lines (e.g., alternate
+  // totals at 12) from being used as the game's total line.
   return Object.values(games).map(g => {
     const markets = {};
+
+    // Group raw entries by market|outcome (ignoring point) to find consensus point
+    const byMarketOutcome = {};
     for (const [mk, prices] of Object.entries(g.marketsRaw)) {
       const [market, outcome, point] = mk.split('|');
+      const moKey = `${market}|${outcome}`;
+      if (!byMarketOutcome[moKey]) byMarketOutcome[moKey] = [];
+      byMarketOutcome[moKey].push({ point, prices });
+    }
+
+    for (const [moKey, entries] of Object.entries(byMarketOutcome)) {
+      const [market, outcome] = moKey.split('|');
       if (!markets[market]) markets[market] = [];
-      prices.sort((a, b) => a - b);
-      const median = prices[Math.floor(prices.length / 2)];
-      markets[market].push({ outcome, price: median, point, impliedProb: impliedProbability(median).toFixed(3) });
+
+      if ((market === 'totals' || market === 'spreads') && entries.length > 1) {
+        // Multiple point values reported — find consensus (median) point
+        // Weight each point by number of bookmakers reporting it
+        const pointCounts = [];
+        for (const e of entries) {
+          const pv = parseFloat(e.point);
+          if (!isNaN(pv)) {
+            for (let i = 0; i < e.prices.length; i++) pointCounts.push(pv);
+          }
+        }
+        pointCounts.sort((a, b) => a - b);
+
+        if (pointCounts.length > 0) {
+          const medianPoint = pointCounts[Math.floor(pointCounts.length / 2)];
+          // Gather all prices from books within 0.5 of the consensus point
+          const nearPrices = [];
+          for (const e of entries) {
+            const pv = parseFloat(e.point);
+            if (!isNaN(pv) && Math.abs(pv - medianPoint) <= 0.5) {
+              nearPrices.push(...e.prices);
+            }
+          }
+          if (nearPrices.length === 0) {
+            // Fallback: use the entry closest to median
+            for (const e of entries) nearPrices.push(...e.prices);
+          }
+          nearPrices.sort((a, b) => a - b);
+          const medianPrice = nearPrices[Math.floor(nearPrices.length / 2)];
+          markets[market].push({
+            outcome,
+            price: medianPrice,
+            point: String(medianPoint),
+            impliedProb: impliedProbability(medianPrice).toFixed(3),
+          });
+        }
+      } else {
+        // h2h or single point value — original logic
+        const allPrices = [];
+        let point = '';
+        for (const e of entries) {
+          point = e.point;
+          allPrices.push(...e.prices);
+        }
+        allPrices.sort((a, b) => a - b);
+        const median = allPrices[Math.floor(allPrices.length / 2)];
+        markets[market].push({ outcome, price: median, point, impliedProb: impliedProbability(median).toFixed(3) });
+      }
     }
     return { home: g.home, away: g.away, commence: g.commence, markets };
   });
