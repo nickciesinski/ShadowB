@@ -41,6 +41,11 @@ function impliedProbability(americanOdds) {
  * Each market has outcomes with median price across bookmakers.
  */
 function buildGameObjects(oddsRows, sportFilter) {
+  // Preferred bookmaker for line selection (totals/spreads point values).
+  // Use Bovada's line closest to even money (+100) as the canonical line,
+  // then fall back to median across all books if Bovada isn't available.
+  const PREFERRED_BOOK = 'bovada';
+
   const games = {}; // key: "away@home" -> { home, away, commence, marketsRaw }
   for (const row of oddsRows.slice(1)) {
     if (row[1] !== sportFilter) continue;
@@ -51,79 +56,111 @@ function buildGameObjects(oddsRows, sportFilter) {
     const outcome = row[6] || '';
     const price = parseFloat(row[7]);
     const point = row[8] || '';
+    const bookmaker = row[9] || '';
     if (isNaN(price)) continue;
 
     const gk = `${away}@${home}`;
     if (!games[gk]) games[gk] = { home, away, commence, marketsRaw: {} };
     const mk = `${market}|${outcome}|${point}`;
     if (!games[gk].marketsRaw[mk]) games[gk].marketsRaw[mk] = [];
-    games[gk].marketsRaw[mk].push(price);
+    games[gk].marketsRaw[mk].push({ price, bookmaker });
   }
 
-  // Compute consensus (median) odds per outcome.
-  // For totals and spreads, multiple bookmakers may report different point values
-  // (e.g., Over 8, Over 8.5, Over 9). We first find the consensus (median) point
-  // across all books for each outcome, then aggregate all odds near that point
-  // into a single entry per outcome. This prevents outlier lines (e.g., alternate
-  // totals at 12) from being used as the game's total line.
+  // Compute consensus odds per outcome.
+  // For totals and spreads: use Bovada's line closest to +100 (even money)
+  // as the canonical point. This is the "main" line — alternate totals will
+  // have heavily juiced odds far from +100. Falls back to median across all
+  // books if Bovada data is missing.
   return Object.values(games).map(g => {
     const markets = {};
 
-    // Group raw entries by market|outcome (ignoring point) to find consensus point
+    // Group raw entries by market|outcome (ignoring point)
     const byMarketOutcome = {};
-    for (const [mk, prices] of Object.entries(g.marketsRaw)) {
+    for (const [mk, entries] of Object.entries(g.marketsRaw)) {
       const [market, outcome, point] = mk.split('|');
       const moKey = `${market}|${outcome}`;
       if (!byMarketOutcome[moKey]) byMarketOutcome[moKey] = [];
-      byMarketOutcome[moKey].push({ point, prices });
+      byMarketOutcome[moKey].push({ point, entries });
     }
 
-    for (const [moKey, entries] of Object.entries(byMarketOutcome)) {
+    for (const [moKey, groups] of Object.entries(byMarketOutcome)) {
       const [market, outcome] = moKey.split('|');
       if (!markets[market]) markets[market] = [];
 
-      if ((market === 'totals' || market === 'spreads') && entries.length > 1) {
-        // Multiple point values reported — find consensus (median) point
-        // Weight each point by number of bookmakers reporting it
-        const pointCounts = [];
-        for (const e of entries) {
-          const pv = parseFloat(e.point);
-          if (!isNaN(pv)) {
-            for (let i = 0; i < e.prices.length; i++) pointCounts.push(pv);
+      if (market === 'totals' || market === 'spreads') {
+        // Strategy: prefer Bovada's line closest to +100 (even money).
+        // The main line is typically near -110/-110; alternate lines are
+        // far from even (e.g., -300/+240). Closest to +100 = main line.
+        let chosenPoint = null;
+        let chosenPrice = null;
+
+        // 1. Try Bovada entries — pick the point whose price is closest to +100
+        const bovadaEntries = [];
+        for (const g of groups) {
+          const pv = parseFloat(g.point);
+          if (isNaN(pv)) continue;
+          for (const e of g.entries) {
+            if (e.bookmaker === PREFERRED_BOOK) {
+              bovadaEntries.push({ point: pv, price: e.price });
+            }
           }
         }
-        pointCounts.sort((a, b) => a - b);
 
-        if (pointCounts.length > 0) {
-          const medianPoint = pointCounts[Math.floor(pointCounts.length / 2)];
-          // Gather all prices from books within 0.5 of the consensus point
+        if (bovadaEntries.length > 0) {
+          // Distance from +100: for american odds, closer to +/-100 = closer to even money
+          // -110 → distance 10, +150 → distance 50, -300 → distance 200
+          const distFromEven = (odds) => Math.abs(odds > 0 ? odds - 100 : odds + 100);
+          bovadaEntries.sort((a, b) => distFromEven(a.price) - distFromEven(b.price));
+          chosenPoint = bovadaEntries[0].point;
+          chosenPrice = bovadaEntries[0].price;
+        }
+
+        // 2. Fallback: median point across all bookmakers
+        if (chosenPoint === null) {
+          const allPoints = [];
+          for (const g of groups) {
+            const pv = parseFloat(g.point);
+            if (!isNaN(pv)) {
+              for (let i = 0; i < g.entries.length; i++) allPoints.push(pv);
+            }
+          }
+          allPoints.sort((a, b) => a - b);
+          if (allPoints.length > 0) {
+            chosenPoint = allPoints[Math.floor(allPoints.length / 2)];
+          }
+        }
+
+        if (chosenPoint !== null) {
+          // Aggregate all prices at or near the chosen point for median price
           const nearPrices = [];
-          for (const e of entries) {
-            const pv = parseFloat(e.point);
-            if (!isNaN(pv) && Math.abs(pv - medianPoint) <= 0.5) {
-              nearPrices.push(...e.prices);
+          for (const g of groups) {
+            const pv = parseFloat(g.point);
+            if (!isNaN(pv) && Math.abs(pv - chosenPoint) <= 0.5) {
+              for (const e of g.entries) nearPrices.push(e.price);
             }
           }
           if (nearPrices.length === 0) {
-            // Fallback: use the entry closest to median
-            for (const e of entries) nearPrices.push(...e.prices);
+            // Fallback: all prices
+            for (const g of groups) {
+              for (const e of g.entries) nearPrices.push(e.price);
+            }
           }
           nearPrices.sort((a, b) => a - b);
-          const medianPrice = nearPrices[Math.floor(nearPrices.length / 2)];
+          const medianPrice = chosenPrice !== null ? chosenPrice : nearPrices[Math.floor(nearPrices.length / 2)];
           markets[market].push({
             outcome,
             price: medianPrice,
-            point: String(medianPoint),
+            point: String(chosenPoint),
             impliedProb: impliedProbability(medianPrice).toFixed(3),
           });
         }
       } else {
-        // h2h or single point value — original logic
+        // h2h — original logic (no point values to reconcile)
         const allPrices = [];
         let point = '';
-        for (const e of entries) {
-          point = e.point;
-          allPrices.push(...e.prices);
+        for (const g of groups) {
+          point = g.point;
+          for (const e of g.entries) allPrices.push(e.price);
         }
         allPrices.sort((a, b) => a - b);
         const median = allPrices[Math.floor(allPrices.length / 2)];
