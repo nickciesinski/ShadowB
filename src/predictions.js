@@ -88,13 +88,14 @@ function buildGameObjects(oddsRows, sportFilter) {
       if (!markets[market]) markets[market] = [];
 
       if (market === 'totals' || market === 'spreads') {
-        // Strategy: prefer Bovada's line closest to +100 (even money).
-        // The main line is typically near -110/-110; alternate lines are
-        // far from even (e.g., -300/+240). Closest to +100 = main line.
+        // Strategy: prefer Bovada's line as the canonical point value.
+        // If Bovada has multiple entries (shouldn't happen with main markets),
+        // pick the one closest to -110 (standard juice). Falls back to the
+        // most common (mode) point across all bookmakers.
         let chosenPoint = null;
         let chosenPrice = null;
 
-        // 1. Try Bovada entries — pick the point whose price is closest to +100
+        // 1. Try Bovada — use their line (closest to -110 if multiple)
         const bovadaEntries = [];
         for (const g of groups) {
           const pv = parseFloat(g.point);
@@ -107,35 +108,41 @@ function buildGameObjects(oddsRows, sportFilter) {
         }
 
         if (bovadaEntries.length > 0) {
-          // Distance from +100: for american odds, closer to +/-100 = closer to even money
-          // -110 → distance 10, +150 → distance 50, -300 → distance 200
-          const distFromEven = (odds) => Math.abs(odds > 0 ? odds - 100 : odds + 100);
-          bovadaEntries.sort((a, b) => distFromEven(a.price) - distFromEven(b.price));
+          // Standard juice is -110. Pick the entry closest to that.
+          const distFromStdJuice = (odds) => Math.abs(odds - (-110));
+          bovadaEntries.sort((a, b) => distFromStdJuice(a.price) - distFromStdJuice(b.price));
           chosenPoint = bovadaEntries[0].point;
           chosenPrice = bovadaEntries[0].price;
+          console.log(`[buildGameObjects] ${market}|${outcome}: Bovada line = ${chosenPoint} @ ${chosenPrice}`);
         }
 
-        // 2. Fallback: median point across all bookmakers
+        // 2. Fallback: mode (most common) point across all bookmakers
+        //    Mode is better than median here because it picks the line most
+        //    books agree on, rather than a middle value between disagreeing lines.
         if (chosenPoint === null) {
-          const allPoints = [];
+          const pointFreq = {};
           for (const g of groups) {
             const pv = parseFloat(g.point);
             if (!isNaN(pv)) {
-              for (let i = 0; i < g.entries.length; i++) allPoints.push(pv);
+              pointFreq[pv] = (pointFreq[pv] || 0) + g.entries.length;
             }
           }
-          allPoints.sort((a, b) => a - b);
-          if (allPoints.length > 0) {
-            chosenPoint = allPoints[Math.floor(allPoints.length / 2)];
+          let bestPoint = null, bestCount = 0;
+          for (const [pv, count] of Object.entries(pointFreq)) {
+            if (count > bestCount) { bestPoint = parseFloat(pv); bestCount = count; }
+          }
+          if (bestPoint !== null) {
+            chosenPoint = bestPoint;
+            console.log(`[buildGameObjects] ${market}|${outcome}: No Bovada, using mode = ${chosenPoint} (${bestCount} books). All points: ${JSON.stringify(pointFreq)}`);
           }
         }
 
         if (chosenPoint !== null) {
-          // Aggregate all prices at or near the chosen point for median price
+          // Aggregate all prices at the chosen point for median price
           const nearPrices = [];
           for (const g of groups) {
             const pv = parseFloat(g.point);
-            if (!isNaN(pv) && Math.abs(pv - chosenPoint) <= 0.5) {
+            if (!isNaN(pv) && pv === chosenPoint) {
               for (const e of g.entries) nearPrices.push(e.price);
             }
           }
