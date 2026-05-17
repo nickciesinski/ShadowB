@@ -545,7 +545,7 @@ async function sendTriggerHealthCheck() {
     'trigger6', 'trigger7', 'trigger8', 'trigger9',
     'trigger10', 'trigger11', 'trigger12', 'trigger14',
   ];
-  if (dayOfWeek === 0) expectedDaily.push('trigger13'); // Sunday weekly summary
+  if (dayOfWeek === 1) expectedDaily.push('trigger13'); // trigger13 runs Mon 01:00 UTC (Sun 8PM ET)
 
   // Categorize
   const passed = [];

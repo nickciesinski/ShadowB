@@ -4,3 +4,4 @@ node_modules/
 weight-reviews/*.md
 weight-reviews/*.json
 !weight-reviews/README.md
+debug-totals.js

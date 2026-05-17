@@ -388,6 +388,9 @@ async function sendAutoApplyEmail(report) {
     if (report.totalClamped > 0) {
       html += `<p><em>${report.totalClamped} weight(s) were clamped to stay within the ${MAX_WEIGHT_DELTA_PCT}% max-change guardrail.</em></p>`;
     }
+    if (report.skippedLeagues && report.skippedLeagues.length > 0) {
+      html += `<p><em>Skipped (off-season/insufficient picks): ${report.skippedLeagues.join(', ')}</em></p>`;
+    }
   } else {
     html += `<h3>No Changes Applied</h3>`;
     html += `<p>Reason: ${report.skipReason}</p>`;
@@ -427,6 +430,18 @@ async function main() {
   const simPicks = useFeatures ? withFeatures : picks;
   console.log(`  ${picks.length} total picks, ${withFeatures.length} with features`);
   console.log(`  Mode: ${useFeatures ? 'feature-rescore' : 'result-replay'}`);
+
+  // Count picks per league to skip off-season leagues
+  const picksPerLeague = {};
+  for (const p of simPicks) {
+    picksPerLeague[p.league] = (picksPerLeague[p.league] || 0) + 1;
+  }
+  const MIN_LEAGUE_PICKS = 10; // need at least 10 picks to justify weight changes
+  const activeLeagues = Object.entries(picksPerLeague)
+    .filter(([, count]) => count >= MIN_LEAGUE_PICKS)
+    .map(([lg]) => lg);
+  console.log(`  Picks by league: ${JSON.stringify(picksPerLeague)}`);
+  console.log(`  Active leagues (>= ${MIN_LEAGUE_PICKS} picks): ${activeLeagues.join(', ') || 'none'}`);
 
   if (simPicks.length < MIN_PICKS) {
     console.log(`  Only ${simPicks.length} picks — need ${MIN_PICKS}. Aborting.`);
@@ -507,6 +522,12 @@ async function main() {
     let totalClamped = 0;
 
     for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
+      // Skip leagues with insufficient recent picks (off-season protection)
+      if (!activeLeagues.includes(league)) {
+        console.log(`  ${league}: skipped — only ${picksPerLeague[league] || 0} picks in ${DAYS}-day window (need ${MIN_LEAGUE_PICKS}+)`);
+        continue;
+      }
+
       const current = weightsByLeague[league];
       const { proposed, changes, clamped } = computeSafeWeightUpdates(current, winner.mods);
       totalClamped += clamped;
@@ -534,6 +555,7 @@ async function main() {
 
     report.applied = !DRY_RUN;
     report.totalClamped = totalClamped;
+    report.skippedLeagues = ['MLB', 'NBA', 'NFL', 'NHL'].filter(lg => !activeLeagues.includes(lg));
     if (DRY_RUN) report.skipReason = 'Dry run mode';
   }
 

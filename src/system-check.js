@@ -99,7 +99,7 @@ async function runHealthCheck() {
     'trigger10', 'trigger11', 'trigger12', 'trigger14', 'trigger16',
   ];
   const dayOfWeek = new Date().getDay();
-  if (dayOfWeek === 0) expectedDaily.push('trigger13');
+  if (dayOfWeek === 1) expectedDaily.push('trigger13'); // runs Mon 01:00 UTC
 
   const runMap = {};
   for (const t of triggerData) {
