@@ -29,6 +29,7 @@ const { getValues } = require('../src/sheets');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
 const db = require('../src/db');
 const { scoreMarket } = require('../src/game-features');
+const { calcUnits, americanToImpliedProb, calcEdge } = require('../src/market-pricing');
 const { readWeights, sheetForLeague, writeWeights } = require('../src/weights');
 
 const args = process.argv.slice(2);
@@ -161,35 +162,71 @@ function buildWeightCombos(refWeights) {
 }
 
 function simulate(picks, weightsByLeague, mods, useFeatures) {
-  let wins = 0, losses = 0, totalReturn = 0;
+  let wins = 0, losses = 0, totalReturn = 0, totalRisked = 0;
+  let edgeChanges = 0, unitChanges = 0;
   const byLeague = {};
 
   for (const pick of picks) {
     const lg = pick.league;
-    if (!byLeague[lg]) byLeague[lg] = { w: 0, l: 0, ret: 0 };
+    if (!byLeague[lg]) byLeague[lg] = { w: 0, l: 0, ret: 0, risked: 0 };
 
     let wouldWin;
+    let units;
+
     if (useFeatures && pick.features) {
       const baseW = weightsByLeague[lg] || weightsByLeague['NBA'];
       const modW = mods && mods.length > 0 ? modifyWeights(baseW, mods) : baseW;
       const baseScore = scoreMarket(pick.features, baseW[pick.market] || {});
       const modScore = scoreMarket(pick.features, modW[pick.market] || {});
-      if (Math.sign(modScore) === Math.sign(baseScore) || modScore === 0 || baseScore === 0) {
-        wouldWin = pick.actualResult === 'W';
+
+      // Determine if pick direction flips
+      if (baseScore !== 0 && Math.sign(modScore) !== Math.sign(baseScore)) {
+        // Score sign flipped — pick would have been on the other side
+        wouldWin = pick.actualResult === 'L'; // original L becomes W, W becomes L
       } else {
-        wouldWin = pick.actualResult === 'L';
+        wouldWin = pick.actualResult === 'W';
       }
+
+      // Re-compute edge under modified weights
+      // Edge is proportional to the score magnitude through the margin→prob pipeline.
+      // Scale the original edge by the score ratio to approximate the new edge.
+      const origEdge = pick.origEdge || 0;
+      let newEdge = origEdge;
+      if (origEdge > 0 && baseScore !== 0) {
+        // Score ratio tells us how much stronger/weaker the signal is
+        const scoreRatio = Math.abs(modScore) / Math.abs(baseScore);
+        newEdge = origEdge * scoreRatio;
+        // If score sign flipped, edge should be positive for the new side
+        if (Math.sign(modScore) !== Math.sign(baseScore)) {
+          newEdge = Math.abs(origEdge) * scoreRatio;
+        }
+        if (Math.abs(newEdge - origEdge) > 0.01) edgeChanges++;
+      }
+
+      // Re-compute units using the pricing model
+      const uncertainty = pick.dataCompleteness != null
+        ? 1 - Math.min(1, pick.dataCompleteness)
+        : 0.5;
+      const mktQuality = 0.7; // reasonable default — we don't store this per-pick
+      const perfMod = 1.0;    // baseline perf modifier
+      const calMod = 1.0;     // baseline calibration
+
+      units = calcUnits(Math.max(0, newEdge), uncertainty, mktQuality, perfMod, calMod);
+      if (Math.abs(units - (pick.origUnits || pick.units || 0.10)) > 0.005) unitChanges++;
     } else {
+      // No features — fall back to original result and units
       wouldWin = pick.actualResult === 'W';
+      units = pick.units || 0.10;
     }
 
-    const u = pick.units || 0.10;
+    totalRisked += units;
+
     if (wouldWin) {
       wins++;
-      const pay = pick.odds > 0 ? u * (pick.odds / 100) : u * (100 / Math.abs(pick.odds));
-      totalReturn += pay; byLeague[lg].w++; byLeague[lg].ret += pay;
+      const pay = pick.odds > 0 ? units * (pick.odds / 100) : units * (100 / Math.abs(pick.odds));
+      totalReturn += pay; byLeague[lg].w++; byLeague[lg].ret += pay; byLeague[lg].risked += units;
     } else {
-      losses++; totalReturn -= u; byLeague[lg].l++; byLeague[lg].ret -= u;
+      losses++; totalReturn -= units; byLeague[lg].l++; byLeague[lg].ret -= units; byLeague[lg].risked += units;
     }
   }
 
@@ -198,7 +235,10 @@ function simulate(picks, weightsByLeague, mods, useFeatures) {
     wins, losses,
     winRate: total > 0 ? parseFloat((wins / total * 100).toFixed(1)) : 0,
     totalReturn: parseFloat(totalReturn.toFixed(2)),
-    roi: total > 0 ? parseFloat((totalReturn / (total * 0.10) * 100).toFixed(1)) : 0,
+    totalRisked: parseFloat(totalRisked.toFixed(2)),
+    roi: totalRisked > 0 ? parseFloat((totalReturn / totalRisked * 100).toFixed(1)) : 0,
+    edgeChanges,
+    unitChanges,
     byLeague,
   };
 }
@@ -241,7 +281,7 @@ async function loadPicks() {
     try {
       const sb = db.getClient();
       const { data, error } = await sb.from('prediction_features')
-        .select('date, league, market, home_team, away_team, features')
+        .select('date, league, market, home_team, away_team, features, edge, predicted_prob, final_units, disagreement, data_completeness')
         .gte('date', cutoff.toISOString().slice(0, 10))
         .order('date', { ascending: false })
         .limit(5000);
@@ -252,19 +292,35 @@ async function loadPicks() {
           if (!row.features || typeof row.features !== 'object') continue;
           const key = `${row.date}|${row.league}|${row.market}`;
           if (!featureMap[key]) featureMap[key] = [];
-          featureMap[key].push({ features: row.features, home: row.home_team, away: row.away_team });
+          featureMap[key].push({
+            features: row.features, home: row.home_team, away: row.away_team,
+            origEdge: row.edge || 0, predictedProb: row.predicted_prob || null,
+            origUnits: row.final_units || 0, disagreement: row.disagreement || 0,
+            dataCompleteness: row.data_completeness || 0,
+          });
         }
 
         for (const pick of picks) {
           const key = `${pick.dateISO}|${pick.league}|${pick.market}`;
           const candidates = featureMap[key];
           if (!candidates || candidates.length === 0) continue;
-          if (candidates.length === 1) { pick.features = candidates[0].features; continue; }
+          if (candidates.length === 1) {
+            const c = candidates[0];
+            pick.features = c.features;
+            pick.origEdge = c.origEdge; pick.predictedProb = c.predictedProb;
+            pick.origUnits = c.origUnits; pick.disagreement = c.disagreement;
+            pick.dataCompleteness = c.dataCompleteness;
+            continue;
+          }
           const gameLower = pick.game.toLowerCase();
           const matched = candidates.find(c =>
             gameLower.includes((c.home || '').toLowerCase()) || gameLower.includes((c.away || '').toLowerCase())
           );
-          pick.features = (matched || candidates[0]).features;
+          const best = matched || candidates[0];
+          pick.features = best.features;
+          pick.origEdge = best.origEdge; pick.predictedProb = best.predictedProb;
+          pick.origUnits = best.origUnits; pick.disagreement = best.disagreement;
+          pick.dataCompleteness = best.dataCompleteness;
         }
       }
     } catch (e) {
@@ -373,9 +429,15 @@ async function sendAutoApplyEmail(report) {
 
   html += `<h3>Baseline</h3>`;
   html += `<p>${report.baseline.wins}W-${report.baseline.losses}L | Win%: ${report.baseline.winRate}% | ROI: ${report.baseline.roi}%</p>`;
+  if (report.baseline.totalReturn !== undefined) {
+    html += `<p>Return: ${report.baseline.totalReturn}u | Risked: ${report.baseline.totalRisked || 'N/A'}u</p>`;
+  }
 
   html += `<h3>Winner: ${report.winnerName}</h3>`;
   html += `<p>${report.winner.wins}W-${report.winner.losses}L | Win%: ${report.winner.winRate}% | ROI: ${report.winner.roi}%</p>`;
+  if (report.winner.totalReturn !== undefined) {
+    html += `<p>Return: ${report.winner.totalReturn}u | Risked: ${report.winner.totalRisked || 'N/A'}u | Edge changes: ${report.winner.edgeChanges || 0} | Unit changes: ${report.winner.unitChanges || 0}</p>`;
+  }
   html += `<p>Win% lift: <strong>${report.winRateLift >= 0 ? '+' : ''}${report.winRateLift}%</strong> | ROI lift: <strong>${report.roiLift >= 0 ? '+' : ''}${report.roiLift}%</strong></p>`;
 
   if (applied) {
@@ -480,16 +542,17 @@ async function main() {
   const winRateLift = parseFloat((winner.winRate - baseline.winRate).toFixed(1));
   const roiLift = parseFloat((winner.roi - baseline.roi).toFixed(1));
 
-  console.log(`\n  Baseline: ${baseline.wins}W-${baseline.losses}L | ${baseline.winRate}% | ROI ${baseline.roi}%`);
-  console.log(`  Winner:   ${winner.name} | ${winner.wins}W-${winner.losses}L | ${winner.winRate}% | ROI ${winner.roi}%`);
+  console.log(`\n  Baseline: ${baseline.wins}W-${baseline.losses}L | ${baseline.winRate}% | ROI ${baseline.roi}% | Units risked: ${baseline.totalRisked || 'N/A'}`);
+  console.log(`  Winner:   ${winner.name} | ${winner.wins}W-${winner.losses}L | ${winner.winRate}% | ROI ${winner.roi}% | Units risked: ${winner.totalRisked || 'N/A'}`);
   console.log(`  Lift:     Win% ${winRateLift >= 0 ? '+' : ''}${winRateLift} | ROI ${roiLift >= 0 ? '+' : ''}${roiLift}`);
+  console.log(`  Return:   Baseline ${baseline.totalReturn}u vs Winner ${winner.totalReturn}u (delta: ${(winner.totalReturn - baseline.totalReturn).toFixed(2)}u)`);
 
   // 4. Decide whether to apply
   const report = {
     totalPicks: simPicks.length,
     mode: useFeatures ? 'feature-rescore' : 'result-replay',
-    baseline: { wins: baseline.wins, losses: baseline.losses, winRate: baseline.winRate, roi: baseline.roi },
-    winner: { wins: winner.wins, losses: winner.losses, winRate: winner.winRate, roi: winner.roi },
+    baseline: { wins: baseline.wins, losses: baseline.losses, winRate: baseline.winRate, roi: baseline.roi, totalReturn: baseline.totalReturn, totalRisked: baseline.totalRisked },
+    winner: { wins: winner.wins, losses: winner.losses, winRate: winner.winRate, roi: winner.roi, totalReturn: winner.totalReturn, totalRisked: winner.totalRisked, edgeChanges: winner.edgeChanges, unitChanges: winner.unitChanges },
     winnerName: winner.name,
     winRateLift,
     roiLift,
@@ -500,12 +563,15 @@ async function main() {
     totalClamped: 0,
   };
 
-  // Check: statistical significance — need more than just a few flipped picks
+  // Check: statistical significance — need meaningful edge/unit changes, not just noise
   const flippedPicks = Math.abs(winner.wins - baseline.wins) + Math.abs(winner.losses - baseline.losses);
   const MIN_FLIPS = Math.max(5, Math.ceil(simPicks.length * 0.05)); // at least 5 or 5% of picks
-  if (winner.name !== 'BASELINE' && flippedPicks < MIN_FLIPS * 2) {
-    report.skipReason = `Too few pick flips to be meaningful: ${flippedPicks / 2} picks changed (need ${MIN_FLIPS}+). Likely noise.`;
-    console.log(`\n[4/5] Only ${flippedPicks / 2} picks flipped — below ${MIN_FLIPS} minimum. Skipping.`);
+  const edgeChangePct = winner.edgeChanges ? (winner.edgeChanges / simPicks.length * 100).toFixed(1) : '0';
+  const unitChangePct = winner.unitChanges ? (winner.unitChanges / simPicks.length * 100).toFixed(1) : '0';
+  console.log(`  Edge changes: ${winner.edgeChanges || 0} (${edgeChangePct}%) | Unit changes: ${winner.unitChanges || 0} (${unitChangePct}%)`);
+  if (winner.name !== 'BASELINE' && flippedPicks < MIN_FLIPS * 2 && (winner.edgeChanges || 0) < MIN_FLIPS) {
+    report.skipReason = `Too few meaningful changes: ${flippedPicks / 2} picks flipped, ${winner.edgeChanges || 0} edge changes (need ${MIN_FLIPS}+). Likely noise.`;
+    console.log(`\n[4/5] Only ${flippedPicks / 2} picks flipped and ${winner.edgeChanges || 0} edge changes — below ${MIN_FLIPS} minimum. Skipping.`);
   }
   // Check: is winner the baseline itself?
   else if (winner.name === 'BASELINE') {
