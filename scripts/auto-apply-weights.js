@@ -158,6 +158,124 @@ function buildWeightCombos(refWeights) {
     }
   }
 
+  // ── Gradient nudges (fine-tuning, smaller steps) ────────────────
+  for (const key of allKeys) {
+    for (const s of [0.8, 0.9, 1.1, 1.2, 1.3, 1.5]) {
+      combos.push({ name: `${s}x_${key}`, cat: 'nudge', mods: [{ market: 'all', key, action: 'multiply', value: s }] });
+    }
+  }
+  for (const [gn, pats] of Object.entries(groups)) {
+    for (const s of [0.7, 0.8, 0.9, 1.1, 1.2, 1.3, 1.5]) {
+      combos.push({ name: `${s}xGrp_${gn}`, cat: 'nudge_grp', mods: pats.map(p => ({ market: 'all', key: p, action: 'multiplyGroup', value: s })) });
+    }
+  }
+
+  // ── Per-market feature group scaling ──────────────────────────
+  // Different features matter differently per market type.
+  // e.g. pace matters more for totals, ratings more for spreads
+  for (const m of ['moneyline', 'spread', 'total']) {
+    for (const [gn, pats] of Object.entries(groups)) {
+      for (const s of [0, 0.5, 1.5, 2.0]) {
+        const action = s === 0 ? 'zeroGroup' : 'multiplyGroup';
+        const mods = pats.map(p => ({ market: m, key: p, action, ...(s !== 0 ? { value: s } : {}) }));
+        combos.push({ name: `${m}_${s === 0 ? 'zero' : s + 'x'}Grp_${gn}`, cat: 'mkt_grp', mods });
+      }
+    }
+  }
+
+  // ── Cross-group combos (boost X + reduce Y) ──────────────────
+  const crossPairs = [
+    ['ratings', 'recent_form', 'ratings_over_form'],
+    ['recent_form', 'ratings', 'form_over_ratings'],
+    ['core_diff', 'momentum', 'core_over_momentum'],
+    ['injury', 'misc', 'injury_over_misc'],
+    ['ratings', 'home', 'ratings_over_home'],
+    ['pace', 'shooting', 'pace_over_shooting'],
+    ['recent_form', 'injury', 'form_over_injury'],
+  ];
+  for (const [boostGrp, reduceGrp, name] of crossPairs) {
+    const boostPats = groups[boostGrp] || [];
+    const reducePats = groups[reduceGrp] || [];
+    combos.push({
+      name: `cross_${name}`, cat: 'cross',
+      mods: [
+        ...boostPats.map(p => ({ market: 'all', key: p, action: 'multiplyGroup', value: 1.5 })),
+        ...reducePats.map(p => ({ market: 'all', key: p, action: 'multiplyGroup', value: 0.5 })),
+      ]
+    });
+    // Also the stronger version
+    combos.push({
+      name: `cross_strong_${name}`, cat: 'cross',
+      mods: [
+        ...boostPats.map(p => ({ market: 'all', key: p, action: 'multiplyGroup', value: 2.0 })),
+        ...reducePats.map(p => ({ market: 'all', key: p, action: 'multiplyGroup', value: 0.3 })),
+      ]
+    });
+  }
+
+  // ── Market-specific strategy combos ───────────────────────────
+  // Totals-specific: pace and scoring volume matter most
+  combos.push({
+    name: 'totals_pace_heavy', cat: 'mkt_strategy', mods: [
+      { market: 'total', key: 'pace', action: 'multiplyGroup', value: 2.5 },
+      { market: 'total', key: 'offense_ppg', action: 'multiplyGroup', value: 2.0 },
+      { market: 'total', key: 'defense_papg', action: 'multiplyGroup', value: 2.0 },
+      { market: 'total', key: 'recent_form', action: 'multiplyGroup', value: 0.5 },
+    ]
+  });
+  combos.push({
+    name: 'totals_defense_focus', cat: 'mkt_strategy', mods: [
+      { market: 'total', key: 'defensive_rating', action: 'multiplyGroup', value: 2.5 },
+      { market: 'total', key: 'defense_papg', action: 'multiplyGroup', value: 2.0 },
+      { market: 'total', key: 'offensive_rating', action: 'multiplyGroup', value: 0.5 },
+    ]
+  });
+  // Spread-specific: ratings and point differential matter most
+  combos.push({
+    name: 'spread_ratings_focus', cat: 'mkt_strategy', mods: [
+      { market: 'spread', key: 'net_rating', action: 'multiplyGroup', value: 2.5 },
+      { market: 'spread', key: 'point_differential', action: 'multiplyGroup', value: 2.0 },
+      { market: 'spread', key: 'recent_form', action: 'multiplyGroup', value: 0.5 },
+    ]
+  });
+  combos.push({
+    name: 'spread_form_focus', cat: 'mkt_strategy', mods: [
+      { market: 'spread', key: 'recent_form', action: 'multiplyGroup', value: 2.5 },
+      { market: 'spread', key: 'momentum', action: 'multiplyGroup', value: 2.0 },
+      { market: 'spread', key: 'net_rating', action: 'multiplyGroup', value: 0.5 },
+    ]
+  });
+  // ML-specific: win probability drivers
+  combos.push({
+    name: 'ml_ratings_core', cat: 'mkt_strategy', mods: [
+      { market: 'moneyline', key: 'net_rating', action: 'multiplyGroup', value: 2.0 },
+      { market: 'moneyline', key: 'point_differential', action: 'multiplyGroup', value: 2.0 },
+      { market: 'moneyline', key: 'home_court', action: 'multiplyGroup', value: 1.5 },
+    ]
+  });
+  combos.push({
+    name: 'ml_form_momentum', cat: 'mkt_strategy', mods: [
+      { market: 'moneyline', key: 'recent_form', action: 'multiplyGroup', value: 2.0 },
+      { market: 'moneyline', key: 'momentum', action: 'multiplyGroup', value: 2.0 },
+      { market: 'moneyline', key: 'trend', action: 'multiplyGroup', value: 1.5 },
+    ]
+  });
+
+  // ── "Flatten" combos: bring extreme weights closer to 1.0 ────
+  // When a weight is > 1.5, multiply by 0.7; when < 0.5, multiply by 1.5
+  for (const m of ['moneyline', 'spread', 'total']) {
+    const mw = refWeights[m] || {};
+    const flattenMods = [];
+    for (const [k, v] of Object.entries(mw)) {
+      if (k.startsWith('param_') || k.startsWith('score_')) continue;
+      if (Math.abs(v) > 1.5) flattenMods.push({ market: m, key: k, action: 'multiply', value: 0.7 });
+      else if (Math.abs(v) > 0 && Math.abs(v) < 0.5) flattenMods.push({ market: m, key: k, action: 'multiply', value: 1.5 });
+    }
+    if (flattenMods.length > 0) {
+      combos.push({ name: `flatten_${m}`, cat: 'flatten', mods: flattenMods });
+    }
+  }
+
   return combos;
 }
 
