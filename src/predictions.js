@@ -44,8 +44,8 @@ function buildGameObjects(oddsRows, sportFilter) {
   // ── DIAGNOSTIC: dump raw totals data per game ──
   const rawTotalsDump = {};
   // Preferred bookmaker for line selection (totals/spreads point values).
-  // Use Bovada's line closest to even money (+100) as the canonical line,
-  // then fall back to median across all books if Bovada isn't available.
+  // Use mode (most common point across all books) as the canonical line,
+  // then prefer Bovada's price at that point. Falls back if no Bovada data.
   const PREFERRED_BOOK = 'bovada';
 
   const games = {}; // key: "away@home" -> { home, away, commence, marketsRaw }
@@ -89,10 +89,10 @@ function buildGameObjects(oddsRows, sportFilter) {
   }
 
   // Compute consensus odds per outcome.
-  // For totals and spreads: use Bovada's line closest to +100 (even money)
-  // as the canonical point. This is the "main" line — alternate totals will
-  // have heavily juiced odds far from +100. Falls back to median across all
-  // books if Bovada data is missing.
+  // For totals and spreads: use mode (consensus point) across all bookmakers
+  // as the canonical point, then use Bovada's price at that point.
+  // This avoids alternate lines (e.g., 12@-110) beating the main line
+  // (e.g., 8.5@-115) in a "closest to -110" tiebreak.
   return Object.values(games).map(g => {
     const markets = {};
 
@@ -110,14 +110,27 @@ function buildGameObjects(oddsRows, sportFilter) {
       if (!markets[market]) markets[market] = [];
 
       if (market === 'totals' || market === 'spreads') {
-        // Strategy: prefer Bovada's line as the canonical point value.
-        // If Bovada has multiple entries (shouldn't happen with main markets),
-        // pick the one closest to -110 (standard juice). Falls back to the
-        // most common (mode) point across all bookmakers.
+        // Strategy: use MODE (most common point across all books) as the canonical line,
+        // then prefer Bovada's price at that point. This avoids the bug where Bovada
+        // returns both the main line (e.g., 8.5@-115) and an alternate (e.g., 12@-110),
+        // and the alternate wins the "closest to -110" tiebreak despite being wrong.
         let chosenPoint = null;
         let chosenPrice = null;
 
-        // 1. Try Bovada — use their line (closest to -110 if multiple)
+        // 1. Compute mode (most common point) across ALL bookmakers
+        const pointFreq = {};
+        for (const g of groups) {
+          const pv = parseFloat(g.point);
+          if (!isNaN(pv)) {
+            pointFreq[pv] = (pointFreq[pv] || 0) + g.entries.length;
+          }
+        }
+        let modePoint = null, modeCount = 0;
+        for (const [pv, count] of Object.entries(pointFreq)) {
+          if (count > modeCount) { modePoint = parseFloat(pv); modeCount = count; }
+        }
+
+        // 2. Try Bovada at the mode point first
         const bovadaEntries = [];
         for (const g of groups) {
           const pv = parseFloat(g.point);
@@ -129,40 +142,29 @@ function buildGameObjects(oddsRows, sportFilter) {
           }
         }
 
-        if (bovadaEntries.length > 0) {
-          // Standard juice is -110. Pick the entry closest to that.
+        if (bovadaEntries.length > 0 && modePoint !== null) {
+          // Prefer Bovada's entry at the mode point
+          const bovadaAtMode = bovadaEntries.filter(e => e.point === modePoint);
+          if (bovadaAtMode.length > 0) {
+            chosenPoint = modePoint;
+            chosenPrice = bovadaAtMode[0].price;
+            console.log(`[buildGameObjects] ${market}|${outcome}: Bovada @ mode point ${chosenPoint} @ ${chosenPrice} (mode count: ${modeCount}). All points: ${JSON.stringify(pointFreq)}`);
+          } else {
+            // Bovada doesn't have the mode point — use mode point anyway (Bovada is on a different line)
+            chosenPoint = modePoint;
+            console.log(`[buildGameObjects] ${market}|${outcome}: Bovada has [${bovadaEntries.map(e => e.point).join(',')}] but mode is ${modePoint} (${modeCount} books). Using mode. All points: ${JSON.stringify(pointFreq)}`);
+          }
+        } else if (bovadaEntries.length > 0) {
+          // No mode available (shouldn't happen), fall back to Bovada closest to -110
           const distFromStdJuice = (odds) => Math.abs(odds - (-110));
           bovadaEntries.sort((a, b) => distFromStdJuice(a.price) - distFromStdJuice(b.price));
           chosenPoint = bovadaEntries[0].point;
           chosenPrice = bovadaEntries[0].price;
-          console.log(`[buildGameObjects] ${market}|${outcome}: Bovada line = ${chosenPoint} @ ${chosenPrice}`);
-          // Sanity check: flag if point is outside reasonable range for sport
-          const REASONABLE_TOTALS = { MLB: [4, 14], NBA: [180, 260], NHL: [3, 10], NFL: [30, 65] };
-          const range = REASONABLE_TOTALS[sportFilter];
-          if (range && market === 'totals' && (chosenPoint < range[0] || chosenPoint > range[1])) {
-            console.warn(`[buildGameObjects][WARN] Bovada total ${chosenPoint} outside reasonable range ${range} for ${sportFilter}! All bovada entries: ${JSON.stringify(bovadaEntries)}`);
-          }
-        }
-
-        // 2. Fallback: mode (most common) point across all bookmakers
-        //    Mode is better than median here because it picks the line most
-        //    books agree on, rather than a middle value between disagreeing lines.
-        if (chosenPoint === null) {
-          const pointFreq = {};
-          for (const g of groups) {
-            const pv = parseFloat(g.point);
-            if (!isNaN(pv)) {
-              pointFreq[pv] = (pointFreq[pv] || 0) + g.entries.length;
-            }
-          }
-          let bestPoint = null, bestCount = 0;
-          for (const [pv, count] of Object.entries(pointFreq)) {
-            if (count > bestCount) { bestPoint = parseFloat(pv); bestCount = count; }
-          }
-          if (bestPoint !== null) {
-            chosenPoint = bestPoint;
-            console.log(`[buildGameObjects] ${market}|${outcome}: No Bovada, using mode = ${chosenPoint} (${bestCount} books). All points: ${JSON.stringify(pointFreq)}`);
-          }
+          console.log(`[buildGameObjects] ${market}|${outcome}: No mode, Bovada fallback = ${chosenPoint} @ ${chosenPrice}`);
+        } else if (modePoint !== null) {
+          // No Bovada at all — use mode
+          chosenPoint = modePoint;
+          console.log(`[buildGameObjects] ${market}|${outcome}: No Bovada, using mode = ${chosenPoint} (${modeCount} books). All points: ${JSON.stringify(pointFreq)}`);
         }
 
         if (chosenPoint !== null) {
