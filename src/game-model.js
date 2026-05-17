@@ -504,6 +504,9 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
  * Sprint 2: Now accepts paceAdj from stat-features.
  */
 function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, csvTotalAdj) {
+  // Diagnostic: log what totalsMarket contains for this game
+  console.log(`[generateTotalPick] ${game.away}@${game.home} (${league}): totalsMarket has ${totalsMarket.length} entries: ${JSON.stringify(totalsMarket)}`);
+
   // Find over and under lines
   const overLine = totalsMarket.find(o => o.outcome === 'Over');
   const underLine = totalsMarket.find(o => o.outcome === 'Under');

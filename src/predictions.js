@@ -41,6 +41,8 @@ function impliedProbability(americanOdds) {
  * Each market has outcomes with median price across bookmakers.
  */
 function buildGameObjects(oddsRows, sportFilter) {
+  // ── DIAGNOSTIC: dump raw totals data per game ──
+  const rawTotalsDump = {};
   // Preferred bookmaker for line selection (totals/spreads point values).
   // Use Bovada's line closest to even money (+100) as the canonical line,
   // then fall back to median across all books if Bovada isn't available.
@@ -64,6 +66,26 @@ function buildGameObjects(oddsRows, sportFilter) {
     const mk = `${market}|${outcome}|${point}`;
     if (!games[gk].marketsRaw[mk]) games[gk].marketsRaw[mk] = [];
     games[gk].marketsRaw[mk].push({ price, bookmaker });
+
+    // Collect raw totals for diagnostic dump
+    if (market === 'totals') {
+      if (!rawTotalsDump[gk]) rawTotalsDump[gk] = [];
+      rawTotalsDump[gk].push({ outcome, point, price, bookmaker });
+    }
+  }
+
+  // Dump all raw totals data before processing
+  for (const [gk, entries] of Object.entries(rawTotalsDump)) {
+    const uniquePoints = [...new Set(entries.map(e => e.point))].sort();
+    const bookmakers = [...new Set(entries.map(e => e.bookmaker))];
+    console.log(`[buildGameObjects][RAW] ${gk} (${sportFilter}): ${entries.length} total rows, points=[${uniquePoints.join(',')}], books=[${bookmakers.join(',')}]`);
+    // Detail per point value
+    for (const pt of uniquePoints) {
+      const atPoint = entries.filter(e => e.point === pt);
+      const overAt = atPoint.filter(e => e.outcome === 'Over').map(e => `${e.bookmaker}:${e.price}`);
+      const underAt = atPoint.filter(e => e.outcome === 'Under').map(e => `${e.bookmaker}:${e.price}`);
+      console.log(`  point=${pt}: Over=[${overAt.join(',')}] Under=[${underAt.join(',')}]`);
+    }
   }
 
   // Compute consensus odds per outcome.
@@ -114,6 +136,12 @@ function buildGameObjects(oddsRows, sportFilter) {
           chosenPoint = bovadaEntries[0].point;
           chosenPrice = bovadaEntries[0].price;
           console.log(`[buildGameObjects] ${market}|${outcome}: Bovada line = ${chosenPoint} @ ${chosenPrice}`);
+          // Sanity check: flag if point is outside reasonable range for sport
+          const REASONABLE_TOTALS = { MLB: [4, 14], NBA: [180, 260], NHL: [3, 10], NFL: [30, 65] };
+          const range = REASONABLE_TOTALS[sportFilter];
+          if (range && market === 'totals' && (chosenPoint < range[0] || chosenPoint > range[1])) {
+            console.warn(`[buildGameObjects][WARN] Bovada total ${chosenPoint} outside reasonable range ${range} for ${sportFilter}! All bovada entries: ${JSON.stringify(bovadaEntries)}`);
+          }
         }
 
         // 2. Fallback: mode (most common) point across all bookmakers
