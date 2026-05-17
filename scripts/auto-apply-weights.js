@@ -293,11 +293,15 @@ function computeSafeWeightUpdates(currentWeights, winnerMods) {
       let safeVal = newVal;
 
       // Guardrail 1: max % change per weight
+      // Use additive clamping to handle negative weights correctly.
+      // Old formula "oldVal * (1 + dir * pct)" goes wrong for negative weights:
+      //   e.g. -0.3 * (1 + (-1)*0.3) = -0.21 (LESS negative, wrong direction).
+      // New formula: move oldVal toward newVal by at most 30% of |oldVal|.
       if (oldVal !== 0) {
         const deltaPct = Math.abs((newVal - oldVal) / oldVal) * 100;
         if (deltaPct > MAX_WEIGHT_DELTA_PCT) {
           const direction = newVal > oldVal ? 1 : -1;
-          safeVal = oldVal * (1 + direction * MAX_WEIGHT_DELTA_PCT / 100);
+          safeVal = oldVal + direction * Math.abs(oldVal) * MAX_WEIGHT_DELTA_PCT / 100;
           clamped++;
         }
       } else if (Math.abs(newVal) > 0.5) {
@@ -496,8 +500,15 @@ async function main() {
     totalClamped: 0,
   };
 
+  // Check: statistical significance — need more than just a few flipped picks
+  const flippedPicks = Math.abs(winner.wins - baseline.wins) + Math.abs(winner.losses - baseline.losses);
+  const MIN_FLIPS = Math.max(5, Math.ceil(simPicks.length * 0.05)); // at least 5 or 5% of picks
+  if (winner.name !== 'BASELINE' && flippedPicks < MIN_FLIPS * 2) {
+    report.skipReason = `Too few pick flips to be meaningful: ${flippedPicks / 2} picks changed (need ${MIN_FLIPS}+). Likely noise.`;
+    console.log(`\n[4/5] Only ${flippedPicks / 2} picks flipped — below ${MIN_FLIPS} minimum. Skipping.`);
+  }
   // Check: is winner the baseline itself?
-  if (winner.name === 'BASELINE') {
+  else if (winner.name === 'BASELINE') {
     report.skipReason = 'Baseline is already the best configuration';
     console.log('\n[4/5] Baseline is best — no changes needed.');
   }
