@@ -47,6 +47,20 @@ const {
   decomposeScore,
 } = require('./game-features');
 
+/**
+ * Standard normal CDF approximation (Abramowitz & Stegun).
+ * Used by MLB run line logic for more calibrated cover probabilities.
+ */
+function normalCDF(x) {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+  const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  const ax = Math.abs(x) / Math.sqrt(2);
+  const t = 1.0 / (1.0 + p * ax);
+  const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
+  return 0.5 * (1.0 + sign * y);
+}
+
 const { loadCalibration, getCalibrationMultiplier } = require('./calibration');
 const { loadInjuryImpact } = require('./injury-impact');
 
@@ -435,11 +449,91 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
     const homeSpread = parseFloat(homeLine.point) || 0;
     const awaySpread = parseFloat(awayLine.point) || 0;
 
-    // Cover probabilities: how likely each side covers their spread
+    if (league === 'MLB') {
+      // ── MLB Run Line: Independent value comparison ──
+      //
+      // The MLB run line is fixed at -1.5/+1.5, making it fundamentally different
+      // from NBA/NFL/NHL spreads that move with the line. Treat the two sides as
+      // independent value propositions:
+      //
+      //   -1.5 (Value play): "Win by 2+". Lower probability, plus-money odds.
+      //         Best when model projects a comfortable margin.
+      //   +1.5 (Safe play): "Don\'t lose by 2+". Higher probability, minus-money odds.
+      //         Best when model projects a close game or underdog win.
+      //
+      // Use normal CDF with calibrated stdev for more realistic cover probabilities,
+      // then compare expected profit from edge (edge * payout multiplier) to pick
+      // whichever side offers more value per unit risked.
+
+      // Cover probabilities using normal CDF (better calibrated tails than logistic)
+      const MLB_MARGIN_STDEV = 3.8;
+
+      // P(home margin > |homeSpread|) for the -1.5 side
+      const homeCoverProb = 1 - normalCDF((homeSpread - margin) / MLB_MARGIN_STDEV);
+      // P(away margin > |awaySpread|) for the +1.5 side
+      const awayCoverProb = 1 - normalCDF((awaySpread - (-margin)) / MLB_MARGIN_STDEV);
+
+      // Market implied cover probs (remove vig)
+      const homeImplied = americanToImpliedProb(homeLine.price);
+      const awayImplied = americanToImpliedProb(awayLine.price);
+      const [homeNoVig, awayNoVig] = removeVig(homeImplied, awayImplied);
+
+      // Edge: model probability minus market probability
+      const homeEdge = homeCoverProb - homeNoVig;
+      const awayEdge = awayCoverProb - awayNoVig;
+
+      // Expected profit from edge: edge * (1 + payout_multiplier)
+      // This weights the edge by how much it pays when right.
+      // -1.5 gets amplified by plus-money payout; +1.5 gets dampened by minus-money.
+      const homePayout = homeLine.price > 0 ? homeLine.price / 100 : 100 / Math.abs(homeLine.price);
+      const awayPayout = awayLine.price > 0 ? awayLine.price / 100 : 100 / Math.abs(awayLine.price);
+      const homeProfit = homeEdge * (1 + homePayout);
+      const awayProfit = awayEdge * (1 + awayPayout);
+
+      console.log(`[game-model] MLB run line: ${game.home} ${homeSpread} (cover ${(homeCoverProb*100).toFixed(1)}% vs mkt ${(homeNoVig*100).toFixed(1)}%, edge ${(homeEdge*100).toFixed(1)}%, profit ${(homeProfit*100).toFixed(1)}c, odds ${homeLine.price}) | ${game.away} ${awaySpread} (cover ${(awayCoverProb*100).toFixed(1)}% vs mkt ${(awayNoVig*100).toFixed(1)}%, edge ${(awayEdge*100).toFixed(1)}%, profit ${(awayProfit*100).toFixed(1)}c, odds ${awayLine.price}). Margin: ${margin.toFixed(2)}`);
+
+      if (homeProfit >= awayProfit) {
+        pickTeam = game.home;
+        spreadNum = homeSpread;
+        odds = homeLine.price;
+        modelProb = homeCoverProb;
+        marketProb = homeNoVig;
+      } else {
+        pickTeam = game.away;
+        spreadNum = awaySpread;
+        odds = awayLine.price;
+        modelProb = awayCoverProb;
+        marketProb = awayNoVig;
+      }
+
+      // Tag which value type was selected
+      const isValuePlay = (pickTeam === game.home && homeSpread < 0) || (pickTeam === game.away && awaySpread < 0);
+      const valueLabel = isValuePlay ? 'Value (-1.5)' : 'Safe (+1.5)';
+
+      const edge = (modelProb - marketProb) * 100;
+      const numBooks = spreadsMarket.length;
+      const mktQuality = scoreMarketQuality(numBooks, 0, numBooks > 0);
+
+      return {
+        team: pickTeam,
+        betType: 'spread',
+        line: spreadNum,
+        confidence: edgeToDisplayConfidence(edge),
+        rationale: `[${valueLabel}] Cover: ${(modelProb * 100).toFixed(1)}% vs market ${(marketProb * 100).toFixed(1)}% (${edge >= 0 ? '+' : ''}${edge.toFixed(1)}% edge). Spread: ${spreadNum}. Projected margin: ${margin.toFixed(1)}.`,
+        _modelProb: modelProb,
+        _marketImpliedProb: marketProb,
+        _edge: edge,
+        _units: 0,
+        _odds: odds,
+        _uncertainty: uncertainty,
+        _mktQuality: mktQuality,
+      };
+    }
+
+    // ── Non-MLB: standard edge comparison ──
     const homeCoverProb = marginToSpreadCoverProb(margin, homeSpread, league);
     const awayCoverProb = marginToSpreadCoverProb(-margin, awaySpread, league);
 
-    // Market implied cover probs (remove vig)
     const homeImplied = americanToImpliedProb(homeLine.price);
     const awayImplied = americanToImpliedProb(awayLine.price);
     const [homeNoVig, awayNoVig] = removeVig(homeImplied, awayImplied);
@@ -461,7 +555,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
       marketProb = awayNoVig;
     }
   } else {
-    // No spread data â use default, pick the model favorite
+    // No spread data — use default, pick the model favorite
     const defaultSpread = DEFAULT_SPREADS[league] || -1.5;
     if (margin >= 0) {
       pickTeam = game.home;
