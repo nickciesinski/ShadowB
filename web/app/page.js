@@ -541,7 +541,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               <div style={{
                 height: '100%',
                 width: `${getGameProgress(game) * 100}%`,
-                background: trend !== null && trend > 0.3 ? 'linear-gradient(90deg, #059669, #10B981)' : trend !== null && trend < -0.3 ? 'linear-gradient(90deg, #DC2626, #EF4444)' : 'linear-gradient(90deg, #475569, #64748B)',
+                background: 'linear-gradient(90deg, rgba(255,255,255,0.25), rgba(255,255,255,0.45))',
                 borderRadius: '0 0 12px 12px',
                 transition: 'width 1s ease-in-out',
                 animation: game.status === 'in' ? 'progressPulse 3s ease-in-out infinite' : 'none',
