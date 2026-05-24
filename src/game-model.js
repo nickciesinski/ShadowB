@@ -242,7 +242,7 @@ function modelDisagreement(mainProb, simpleProb, betType) {
  * @param {Object} [scheduleInfo] - Optional: { homeDaysOff, awayDaysOff, homeB2B, awayB2B }
  * @returns {Array} Array of 3 pick objects
  */
-function generateGamePicks(game, teamsMap, weights, league, scheduleInfo) {
+function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather) {
   // Team stats
   const homeStats = teamsMap[game.home] || {};
   const awayStats = teamsMap[game.away] || {};
@@ -597,7 +597,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
  * Generate total (over/under) pick for a game.
  * Sprint 2: Now accepts paceAdj from stat-features.
  */
-function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, csvTotalAdj) {
+function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, csvTotalAdj, weatherAdj) {
   // Diagnostic: log what totalsMarket contains for this game
   console.log(`[generateTotalPick] ${game.away}@${game.home} (${league}): totalsMarket has ${totalsMarket.length} entries: ${JSON.stringify(totalsMarket)}`);
 
@@ -624,7 +624,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
 
   // Project the total (now with pace adjustment)
   const baseProjTotal = projectTotal(homeStr, awayStr, marketTotal, league, paceAdj);
-  const projTotal = baseProjTotal + (csvTotalAdj || 0);
+  const projTotal = baseProjTotal + (csvTotalAdj || 0) + (weatherAdj || 0);
 
   // Over/under probabilities
   const overProb = totalToOverProb(projTotal, marketTotal, league);
@@ -690,7 +690,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
  * @param {Object} [scheduleMap] - Optional: { teamName: { homeDaysOff, awayDaysOff, homeB2B, awayB2B } }
  * @returns {Array} Flat array of pick objects with team, betType, line, confidence, rationale
  */
-async function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap) {
+async function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap, weatherMap) {
   // Load auto-tuned factors from weight sheet (param_auto_* keys)
   if (weights && weights.params) {
     const autoFactors = {};
@@ -716,7 +716,10 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
       ? (scheduleMap[game.home] || scheduleMap[game.away] || null)
       : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo);
+    // Look up weather for this game
+    const gameWeather = weatherMap ? weatherMap.get(`${game.away}@${game.home}`) : null;
+
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather);
 
     for (const pick of picks) {
       // Calculate final units using the sizing model

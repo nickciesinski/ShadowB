@@ -382,8 +382,17 @@ async function generateMLBPredictions() {
       };
   }
 
-  // Deterministic pick generation with schedule context
-  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap);
+  // Fetch game-day weather for outdoor stadiums
+  let weatherMap = new Map();
+  try {
+    weatherMap = await getGameWeather(games, 'MLB');
+    console.log(`[predictions] MLB weather data: ${weatherMap.size} games`);
+  } catch (err) {
+    console.warn('[predictions] MLB weather fetch failed, continuing without:', err.message);
+  }
+
+  // Deterministic pick generation with schedule context + weather
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap, weatherMap);
   console.log(`[predictions] MLB: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
