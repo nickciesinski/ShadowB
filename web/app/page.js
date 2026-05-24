@@ -1,6 +1,19 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 
+
+// ── Injected Styles ────────────────────────────────────────────────
+if (typeof document !== 'undefined' && !document.getElementById('sb-custom-styles')) {
+  const style = document.createElement('style');
+  style.id = 'sb-custom-styles';
+  style.textContent = `
+    @keyframes flashGreen { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes flashRed { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes progressPulse { 0%,100% { opacity: 0.8; } 50% { opacity: 1; } }
+  `;
+  document.head.appendChild(style);
+}
+
 // ── Constants ───────────────────────────────────────────────────────
 const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
@@ -166,6 +179,21 @@ function sortGames(games) {
   });
 }
 
+
+// ── Game Progress (0-1) for progress bar ────────────────────────────
+function getGameProgress(game) {
+  if (!game || game.status === 'pre') return 0;
+  if (game.status === 'post' || game.status === 'postponed') return 1;
+  const pNum = game.periodNum || 0;
+  const totalPeriods = { NBA: 4, NHL: 3, NFL: 4, MLB: 9 }[game.league] || 4;
+  // pNum is 1-indexed current period; for MLB "Top 5th" = period 5
+  // Base progress = completed periods / total
+  const base = Math.max(0, (pNum - 1)) / totalPeriods;
+  // Add partial credit (~half of current period)
+  const partial = 0.5 / totalPeriods;
+  return Math.min(base + partial, 0.98); // never fully 1 while live
+}
+
 // ── Filter Pills ────────────────────────────────────────────────────
 function Pills({ items, active, onChange, color = '#1F2937' }) {
   return (
@@ -238,9 +266,25 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet }) {
 
   const games = {};
   for (const p of filtered) {
-    const k = `${p.league}|${p.away}@${p.home}`;
+    // Include startTime in key to separate doubleheader games
+    const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
     if (!games[k]) games[k] = { ...p, picks: [] };
     games[k].picks.push(p);
+  }
+  // Detect doubleheaders: same league+matchup with different start times
+  const matchupCounts = {};
+  for (const k of Object.keys(games)) {
+    const g = games[k];
+    const mk = `${g.league}|${g.away}@${g.home}`;
+    if (!matchupCounts[mk]) matchupCounts[mk] = [];
+    matchupCounts[mk].push(k);
+  }
+  for (const [mk, keys] of Object.entries(matchupCounts)) {
+    if (keys.length > 1) {
+      // Sort by startTime and assign game numbers
+      keys.sort((a, b) => (games[a].startTime || '').localeCompare(games[b].startTime || ''));
+      keys.forEach((k, i) => { games[k]._gameNum = i + 1; });
+    }
   }
 
   if (!Object.keys(games).length) return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>No picks match filters</div>;
@@ -256,6 +300,7 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet }) {
               <TeamLogo team={g.away} league={g.league} size={16} />
               <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{g.away} @ {g.home}</span>
               <TeamLogo team={g.home} league={g.league} size={16} />
+              {g._gameNum && <span style={{ fontSize: 9, fontWeight: 700, color: '#94A3B8', background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 3 }}>GM {g._gameNum}</span>}
             </div>
             {g.startTime && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{cleanTime(g.startTime)}</span>}
           </div>
@@ -437,7 +482,24 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               </div>
             </div>
             {gamePicks.length > 0 && (
-              <div style={{ textAlign: 'center', fontSize: 10, color: '#64748B', marginTop: 4 }}>{isExp ? '▲ Hide picks' : `▼ ${gamePicks.length} picks`}</div>
+              <div style={{ textAlign: 'center', fontSize: 10, color: '#64748B', marginTop: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4 }}>
+                {isExp ? '▲ Hide picks' : (
+                  <>
+                    {displayPicks.map((dp, di) => {
+                      const st = getPickStatus(dp, game);
+                      const isInProgress = game.status === 'in';
+                      let dotColor = '#475569'; // gray default
+                      let anim = 'none';
+                      if (st === 'winning') { dotColor = '#10B981'; if (isInProgress) anim = 'flashGreen 1.5s ease-in-out infinite'; }
+                      else if (st === 'losing') { dotColor = '#EF4444'; if (isInProgress) anim = 'flashRed 1.5s ease-in-out infinite'; }
+                      else if (st === 'even') { dotColor = '#6B7280'; }
+                      else if (st === 'pending') { dotColor = '#475569'; }
+                      return <span key={di} style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, display: 'inline-block', animation: anim }} />;
+                    })}
+                    <span style={{ marginLeft: 2 }}>▼</span>
+                  </>
+                )}
+              </div>
             )}
           </div>
           {isExp && gamePicks.map((p, j) => {
@@ -473,6 +535,19 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               </div>
             );
           })}
+          {/* Progress bar */}
+          {(game.status === 'in' || game.status === 'post') && (
+            <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${getGameProgress(game) * 100}%`,
+                background: trend !== null && trend > 0.3 ? 'linear-gradient(90deg, #059669, #10B981)' : trend !== null && trend < -0.3 ? 'linear-gradient(90deg, #DC2626, #EF4444)' : 'linear-gradient(90deg, #475569, #64748B)',
+                borderRadius: '0 0 12px 12px',
+                transition: 'width 1s ease-in-out',
+                animation: game.status === 'in' ? 'progressPulse 3s ease-in-out infinite' : 'none',
+              }} />
+            </div>
+          )}
         </div>
       );
     });
@@ -1052,6 +1127,7 @@ async function fetchLiveScores() {
           status: isPostponed ? 'postponed' : status,
           statusDetail: isPostponed ? (statusDescription || statusName.replace('STATUS_', '')) : '',
           period,
+          periodNum,
           clock,
           isLate,
           gameNum: gameNum ? parseInt(gameNum) : null,
