@@ -20,6 +20,7 @@ const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb } = require('./market-pricing');
 const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
+const { getGameWeather } = require('./weather');
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -565,7 +566,16 @@ async function generateNFLPredictions() {
   }
 
   const scheduleMap = buildScheduleMap(scheduleRows, 'NFL');
-  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NFL', getPerformanceModifier, scheduleMap);
+
+  // Fetch game-day weather for outdoor stadiums
+  let weatherMap = new Map();
+  try {
+    weatherMap = await getGameWeather(games, 'NFL');
+    console.log(`[predictions] NFL weather data: ${weatherMap.size} games`);
+  } catch (err) {
+    console.warn('[predictions] NFL weather fetch failed, continuing without:', err.message);
+  }
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NFL', getPerformanceModifier, scheduleMap, weatherMap);
   console.log(`[predictions] NFL: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
