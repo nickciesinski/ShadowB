@@ -610,16 +610,33 @@ async function fetchYesterdayResults() {
       const games = await res.json();
 
       for (const game of games) {
-        if (!game.completed) continue;
-
         // Accept games from yesterday or the day before
         const gameDate = (game.commence_time || '').split('T')[0];
         if (gameDate !== yesterdayStr && gameDate !== twoDaysAgoStr) continue;
 
-        // Deduplicate
-        const dedupeKey = `${sportName}|${game.away_team}|${game.home_team}|${gameDate}`;
+        // Deduplicate using full commence_time (handles doubleheaders)
+        const dedupeKey = `${sportName}|${game.away_team}|${game.home_team}|${game.commence_time || gameDate}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
+
+        // Determine game status
+        let status = 'Final';
+        if (!game.completed) {
+          // Check for canceled/postponed/suspended
+          // The Odds API returns completed=false for games not yet played or canceled
+          // If the game date is in the past and it's not completed, it was likely postponed
+          const now = new Date();
+          const gameStart = new Date(game.commence_time);
+          const hoursSinceStart = (now - gameStart) / (1000 * 60 * 60);
+          if (hoursSinceStart > 6) {
+            // Game should have finished by now — likely postponed or canceled
+            status = 'Postponed';
+            console.log(`[data-collection] ${sportName}: ${game.away_team} @ ${game.home_team} appears postponed (${game.commence_time}, ${hoursSinceStart.toFixed(0)}h ago, not completed)`);
+          } else {
+            // Game hasn't started yet or is in progress — skip
+            continue;
+          }
+        }
 
         const scores = game.scores || [];
         const homeData = scores.find(s => s.name === game.home_team) || {};
@@ -630,12 +647,12 @@ async function fetchYesterdayResults() {
           game.commence_time || '',
           game.away_team || '',
           game.home_team || '',
-          parseFloat(awayData.score) || 0,
-          parseFloat(homeData.score) || 0,
-          'Final',
+          status === 'Final' ? (parseFloat(awayData.score) || 0) : '',
+          status === 'Final' ? (parseFloat(homeData.score) || 0) : '',
+          status,
         ]);
       }
-      console.log(`[data-collection] ${sportName}: found scores for ${allRows.length - 1} completed games`);
+      console.log(`[data-collection] ${sportName}: found ${allRows.length - 1} games (completed + postponed)`);
     } catch (err) {
       console.error(`[data-collection] Scores API ${sportName} error:`, err.message);
     }

@@ -356,7 +356,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
       const trend = getTrend(displayPicks, game);
       const isPre = game.status === 'pre';
       const isLive = game.status === 'in';
-      const isPost = game.status === 'post';
+      const isPost = game.status === 'post' || game.status === 'postponed';
       const diff = Math.abs(game.awayScore - game.homeScore);
       const isClose = isLive && game.isLate && diff <= 5;
 
@@ -371,9 +371,13 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
       const isExp = expanded[i] !== undefined ? expanded[i] : hasBets;
       const gameKey = `${game.league}|${game.away}@${game.home}`;
 
+      const isPostponed = game.status === 'postponed';
+      const gameNumLabel = game.gameNum ? ` (Game ${game.gameNum})` : '';
+
       let statusText = '';
       let statusColor = '#64748B';
-      if (isPre) { statusText = cleanTime(game.period) || 'Pregame'; statusColor = '#64748B'; }
+      if (isPostponed) { statusText = game.statusDetail || 'Postponed'; statusColor = '#F59E0B'; }
+      else if (isPre) { statusText = cleanTime(game.period) || 'Pregame'; statusColor = '#64748B'; }
       else if (isClose) { statusText = '🔥 Close game!'; statusColor = '#FCD34D'; }
       else if (isLive && trend !== null) {
         if (trend > 0.3) { statusText = 'Picks trending well'; statusColor = '#34D399'; }
@@ -381,6 +385,8 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
         else { statusText = 'Even'; statusColor = '#64748B'; }
       }
       else if (isPost) { statusText = 'Final'; statusColor = '#64748B'; }
+      // Append game number for doubleheaders
+      if (gameNumLabel) statusText = statusText + gameNumLabel;
 
       // Visual distinction: live games get full border + glow, finished games get left bar only
       const cardBorder = isLive
@@ -392,7 +398,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
       const cardShadow = isLive
         ? (hasFades ? '0 2px 16px rgba(249,115,22,0.25)' : hasBets ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)')
         : '0 1px 6px rgba(0,0,0,0.2)';
-      const cardOpacity = isPost ? 0.7 : 1;
+      const cardOpacity = game.status === 'postponed' ? 0.5 : isPost ? 0.7 : 1;
 
       return (
         <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: cardBorder, borderLeft: cardLeftBar || undefined, boxShadow: cardShadow, opacity: cardOpacity, transition: 'opacity 0.3s' }}>
@@ -1025,6 +1031,16 @@ async function fetchLiveScores() {
         if (league === 'NFL' && periodNum >= 4) isLate = true;
         if (league === 'MLB' && periodNum >= 7) isLate = true;
 
+        // Detect postponed/canceled/suspended
+        const statusName = event.status?.type?.name || '';  // e.g. 'STATUS_POSTPONED', 'STATUS_CANCELED'
+        const isPostponed = statusName.includes('POSTPONED') || statusName.includes('CANCELED') || statusName.includes('SUSPENDED');
+        const statusDescription = event.status?.type?.description || '';
+        
+        // Doubleheader: ESPN uses notes to indicate Game 1/Game 2
+        const notes = event.competitions?.[0]?.notes || [];
+        const gameNote = notes.find(n => /game\s*[12]/i.test(n.headline || ''));
+        const gameNum = gameNote ? (gameNote.headline.match(/game\s*(\d)/i)?.[1] || null) : null;
+
         games.push({
           league,
           eventId: event.id,
@@ -1033,10 +1049,12 @@ async function fetchLiveScores() {
           away: awayTeam?.team?.displayName || '',
           homeScore: parseInt(homeTeam?.score) || 0,
           awayScore: parseInt(awayTeam?.score) || 0,
-          status,
+          status: isPostponed ? 'postponed' : status,
+          statusDetail: isPostponed ? (statusDescription || statusName.replace('STATUS_', '')) : '',
           period,
           clock,
           isLate,
+          gameNum: gameNum ? parseInt(gameNum) : null,
         });
       }
     } catch (e) { /* skip */ }

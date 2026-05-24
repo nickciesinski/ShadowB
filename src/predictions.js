@@ -40,6 +40,40 @@ function impliedProbability(americanOdds) {
  * Returns array of { home, away, commence, markets: { h2h, spreads, totals } }
  * Each market has outcomes with median price across bookmakers.
  */
+
+/**
+ * Extract a short game identifier from commence_time for doubleheader differentiation.
+ * Returns the date portion (YYYY-MM-DD) to use as part of the game key.
+ * Two games on the same date with same teams = doubleheader.
+ */
+function commenceToDateKey(commence) {
+  if (!commence) return '';
+  return commence.split('T')[0] || '';
+}
+
+/**
+ * Assign game numbers (Game 1, Game 2) to doubleheader games.
+ * Input: array of game objects with { home, away, commence }.
+ * Mutates each game to add _gameNum (1 or 2) if it's part of a doubleheader.
+ */
+function assignGameNumbers(games) {
+  // Group by "away@home" (team matchup, ignoring time)
+  const matchups = {};
+  for (const g of games) {
+    const mk = `${g.away}@${g.home}`;
+    if (!matchups[mk]) matchups[mk] = [];
+    matchups[mk].push(g);
+  }
+  for (const [mk, group] of Object.entries(matchups)) {
+    if (group.length > 1) {
+      // Sort by commence_time to assign Game 1, Game 2
+      group.sort((a, b) => (a.commence || '').localeCompare(b.commence || ''));
+      group.forEach((g, i) => { g._gameNum = i + 1; });
+      console.log(`[predictions] Doubleheader detected: ${mk} — ${group.length} games`);
+    }
+  }
+}
+
 function buildGameObjects(oddsRows, sportFilter) {
   // ── DIAGNOSTIC: dump raw totals data per game ──
   const rawTotalsDump = {};
@@ -61,7 +95,9 @@ function buildGameObjects(oddsRows, sportFilter) {
     const bookmaker = row[9] || '';
     if (isNaN(price)) continue;
 
-    const gk = `${away}@${home}`;
+    // Include commence date in key so doubleheader games don't collide
+    const commenceDate = commenceToDateKey(commence);
+    const gk = `${away}@${home}|${commenceDate ? commence : ''}`;
     if (!games[gk]) games[gk] = { home, away, commence, marketsRaw: {} };
     const mk = `${market}|${outcome}|${point}`;
     if (!games[gk].marketsRaw[mk]) games[gk].marketsRaw[mk] = [];
@@ -323,6 +359,7 @@ async function generateMLBPredictions() {
   ]);
 
   const games = buildGameObjects(oddsRows, 'MLB');
+  assignGameNumbers(games);
   console.log(`[predictions] MLB: ${games.length} unique games found`);
   if (games.length === 0) {
     console.log('[predictions] No MLB games, skipping.');
@@ -384,6 +421,7 @@ async function generateNBAPredictions() {
   ]);
 
   const games = buildGameObjects(oddsRows, 'NBA');
+  assignGameNumbers(games);
   console.log(`[predictions] NBA: ${games.length} unique games found`);
   if (games.length === 0) {
     console.log('[predictions] No NBA games, skipping.');
@@ -444,6 +482,7 @@ async function generateNHLPredictions() {
   ]);
 
   const games = buildGameObjects(oddsRows, 'NHL');
+  assignGameNumbers(games);
   console.log(`[predictions] NHL: ${games.length} unique games found`);
   if (games.length === 0) {
     console.log('[predictions] No NHL games, skipping.');
@@ -494,6 +533,7 @@ async function generateNFLPredictions() {
   ]);
 
   const games = buildGameObjects(oddsRows, 'NFL');
+  assignGameNumbers(games);
   console.log(`[predictions] NFL: ${games.length} unique games found`);
   if (games.length === 0) {
     console.log('[predictions] No NFL games, skipping.');
@@ -1295,17 +1335,47 @@ async function gradePerformanceLog() {
     return { graded: 0 };
   }
 
-  // Build results lookup: key = "LEAGUE|away|home"
+  // Build results lookup: key = "LEAGUE|away|home" (primary)
+  // For doubleheaders, also keyed by "LEAGUE|away|home|gameDate|gameNum"
   const resultsMap = {};
+  // Track team matchups to detect doubleheaders in results
+  const resultMatchups = {}; // "LEAGUE|away|home|date" -> [rows]
   for (const row of resultsRows.slice(1)) {
     const league = row[0] || '';
+    const gameDate = (row[1] || '').split('T')[0] || '';
     const away = row[2] || '';
     const home = row[3] || '';
-    const key = `${league}|${away}|${home}`;
-    resultsMap[key] = {
+    const status = row[6] || 'Final';
+    const result = {
       awayScore: parseFloat(row[4]) || 0,
       homeScore: parseFloat(row[5]) || 0,
+      status,
+      commence: row[1] || '',
     };
+
+    // Primary key (works for single games)
+    const key = `${league}|${away}|${home}`;
+    // Doubleheader key
+    const dhGroupKey = `${key}|${gameDate}`;
+    if (!resultMatchups[dhGroupKey]) resultMatchups[dhGroupKey] = [];
+    resultMatchups[dhGroupKey].push({ row, result, commence: row[1] || '' });
+
+    // For non-doubleheaders, the primary key works fine
+    // For doubleheaders, we'll also set commence-specific keys below
+    if (!resultsMap[key]) resultsMap[key] = result;
+  }
+  // Add commence-specific keys for doubleheader results
+  for (const [dhKey, entries] of Object.entries(resultMatchups)) {
+    if (entries.length > 1) {
+      // Doubleheader — sort by commence time, assign Game 1/2 keys
+      entries.sort((a, b) => (a.commence || '').localeCompare(b.commence || ''));
+      entries.forEach((e, i) => {
+        const parts = dhKey.split('|');
+        const commenceKey = `${parts[0]}|${parts[1]}|${parts[2]}|${e.commence}`;
+        resultsMap[commenceKey] = e.result;
+      });
+      console.log(`[predictions] Doubleheader in results: ${dhKey} — ${entries.length} games`);
+    }
   }
   console.log(`[predictions] Loaded ${Object.keys(resultsMap).length} game results`);
 
@@ -1342,10 +1412,17 @@ async function gradePerformanceLog() {
 
     if (!league || !awayTeam || !homeTeam || !pick) continue;
 
-    // Find matching result
-    const key = `${league}|${awayTeam}|${homeTeam}`;
-    const result = resultsMap[key];
+    // Find matching result — try commence-specific key first (doubleheader-safe)
+    const commence = (row[5] || '').toString().trim();
+    const commenceKey = `${league}|${awayTeam}|${homeTeam}|${commence}`;
+    const simpleKey = `${league}|${awayTeam}|${homeTeam}`;
+    const result = resultsMap[commenceKey] || resultsMap[simpleKey];
     if (!result) continue;
+    // Skip grading if game was canceled/postponed
+    if (result.status && result.status !== 'Final') {
+      console.log(`[predictions] Skipping ${awayTeam} @ ${homeTeam} (${league}) — status: ${result.status}`);
+      continue;
+    }
 
     // Grade the bet
     const betResult = determineBetResult(market, pick, line, homeTeam, awayTeam, result.homeScore, result.awayScore);
