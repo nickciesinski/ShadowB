@@ -6,7 +6,7 @@
 // =============================================================
 
 const { validateConfig } = require('./config');
-const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults, updateScheduleContext } = require('./data-collection');
+const { updatePlayerStats, updateTeamStats, fetchOddsAndGrade, fetchYesterdayResults, updateScheduleContext, fetchInjuryReports } = require('./data-collection');
 const { generateMLBPredictions, generateNBAPredictions, generateNHLPredictions, generateNFLPredictions, takeCLVSnapshot, gradePerformanceLog } = require('./predictions');
 const { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck, sendPropAlertEmail } = require('./emails');
 const { updatePlayerProps, generatePropEdges, gradePropPicks } = require('./props');
@@ -36,6 +36,7 @@ const TRIGGERS = {
   trigger2: withMonitoring('trigger2', async () => {
     await updateTeamStats();
     await updateScheduleContext();
+    await fetchInjuryReports(); // ESPN injury reports for all 4 leagues
     await snapshotTeamStats(); // daily state snapshot for historical accuracy
   }),
 

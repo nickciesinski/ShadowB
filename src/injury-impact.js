@@ -76,10 +76,10 @@ async function buildPlayerLookup() {
         const score = posWeights[pos.toUpperCase()] || 30;
 
         let tier = 'D';
-        if (score >= 90) tier = 'S';
-        else if (score >= 75) tier = 'A';
-        else if (score >= 60) tier = 'B';
-        else if (score >= 45) tier = 'C';
+        if (score >= 85) tier = 'S';
+        else if (score >= 70) tier = 'A';
+        else if (score >= 50) tier = 'B';
+        else if (score >= 30) tier = 'C';
 
         const normName = name.toLowerCase().replace(/[^a-z\s]/g, '').trim();
         lookup[`${league}|${normName}`] = { team, league, tier, score };

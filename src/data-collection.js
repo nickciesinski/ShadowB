@@ -803,10 +803,84 @@ async function fetchYesterdayResults() {
   return allRows.length - 1;
 }
 
+
+/**
+ * Fetch injury reports from ESPN for all 4 leagues and write to Injury Summary sheet.
+ * ESPN's /injuries endpoint returns current team injury reports with player status.
+ * 
+ * Output format: [Timestamp, League, Team, Player, Status, Position, Impact]
+ * Called by trigger2 (daily stats) to ensure injury data is fresh before predictions.
+ */
+async function fetchInjuryReports() {
+  console.log('[data-collection] Fetching injury reports from ESPN...');
+  const ts = new Date().toISOString().split('T')[0];
+  const HEADER = ['Timestamp', 'League', 'Team', 'Player', 'Status', 'Position', 'Impact'];
+  const allRows = [HEADER];
+
+  for (const [label, { sport, league }] of Object.entries(ESPN_SPORTS)) {
+    try {
+      // ESPN injuries endpoint: returns per-team injury lists
+      const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/injuries`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+      if (!res.ok) {
+        console.warn(`[data-collection] ESPN ${label} injuries returned ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+
+      // ESPN response structure: { injuries: [{ team: {...}, injuries: [{...}] }] }
+      // OR alternate: { resultSets: [...] } or league-specific variations
+      const teamInjuries = data.injuries || data.resultSets || [];
+
+      for (const teamEntry of teamInjuries) {
+        const teamData = teamEntry.team || {};
+        const teamAbbr = teamData.abbreviation || teamData.abbrev || '';
+        const injuries = teamEntry.injuries || teamEntry.items || [];
+
+        for (const inj of injuries) {
+          const athlete = inj.athlete || {};
+          const playerName = athlete.displayName || athlete.fullName || '';
+          const status = (inj.status || inj.type?.description || '').toLowerCase();
+          const position = athlete.position?.abbreviation || '';
+
+          // Skip healthy/active players
+          if (!playerName || status === 'active' || status === 'healthy') continue;
+
+          // Map ESPN status to our severity scale
+          let impact = 0.3; // default moderate
+          if (status.includes('out') || status === 'injured reserve' || status === 'suspension') impact = 1.0;
+          else if (status.includes('doubtful')) impact = 0.75;
+          else if (status.includes('questionable')) impact = 0.5;
+          else if (status.includes('probable') || status.includes('day-to-day')) impact = 0.2;
+
+          allRows.push([ts, label, teamAbbr, playerName, status, position, impact]);
+        }
+      }
+
+      console.log(`[data-collection] ${label}: ${allRows.filter(r => r[1] === label).length} injury entries`);
+    } catch (err) {
+      console.error(`[data-collection] ESPN ${label} injuries error:`, err.message);
+    }
+  }
+
+  // Write to Injury Summary sheet (overwrite — fresh daily snapshot)
+  if (allRows.length > 1) {
+    await ensureSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    await clearSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    await setValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY, 'A1', allRows);
+    console.log(`[data-collection] Injury reports updated: ${allRows.length - 1} entries across 4 leagues`);
+  } else {
+    console.log('[data-collection] No injury data retrieved from ESPN');
+  }
+
+  return allRows.length - 1;
+}
+
 module.exports = {
   updatePlayerStats,
   updateTeamStats,
   updateScheduleContext,
   fetchOddsAndGrade,
   fetchYesterdayResults,
+  fetchInjuryReports,
 };
