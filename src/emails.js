@@ -296,6 +296,17 @@ async function sendPerformanceSummary() {
   const netColor = totalUnitsReturned >= 0 ? '#27ae60' : '#e74c3c';
   const netSign = totalUnitsReturned >= 0 ? '+' : '';
 
+  // Generate system health report for the weekly email
+  let healthReportHTML = '';
+  try {
+    const healthReport = await generateSystemHealthReport();
+    healthReportHTML = formatHealthReportHTML(healthReport);
+    console.log('[emails] Health report:', healthReport.summary);
+  } catch (e) {
+    console.warn('[emails] Health report generation failed:', e.message);
+    healthReportHTML = '<p style="color:#999;margin-top:20px;">System health report unavailable</p>';
+  }
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -348,6 +359,8 @@ async function sendPerformanceSummary() {
   <p style="color: #999; font-size: 11px; margin-top: 20px;">
     Generated ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} ET
   </p>
+
+  ${healthReportHTML}
 </body>
 </html>
 `;
