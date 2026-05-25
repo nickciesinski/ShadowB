@@ -11,7 +11,7 @@
  *   - Key positions (QB, SP/CP, G for NHL) → base score 30-90
  *   - Any player appearing in ESPN leaders gets a minimum B-tier floor
  */
-const { getValues, setValues, clearSheet } = require('./sheets');
+const { getValues, setValues, clearSheet, ensureSheet } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 // Position importance by sport (higher = more impactful when injured)
@@ -130,8 +130,9 @@ async function updatePlayerTiers() {
     return;
   }
 
-  // Write to PLAYER_TIERS sheet
+  // Write to PLAYER_TIERS sheet (auto-create if missing)
   const values = [['Player', 'Team', 'League', 'Score', 'Tier'], ...allTierRows];
+  await ensureSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
   await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
   await setValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS, 'A1', values);
 

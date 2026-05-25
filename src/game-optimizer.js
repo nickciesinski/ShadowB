@@ -38,6 +38,7 @@ const TUNABLE_FACTORS = {
   total_market_anchor:     { default: 0.80, min: 0.60, max: 0.95 },
   total_pace_dampening:    { default: 0.30, min: 0.05, max: 0.80 },
   confidence_power:        { default: 1.40, min: 0.80, max: 2.50 },
+  csv_dampen:              { default: 0.30, min: 0.10, max: 0.60 },
 };
 
 /**

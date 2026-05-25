@@ -35,7 +35,7 @@ const SHEETS = {
   MLB_TEAM_STATS:      'MLB Team Stats',
   NFL_TEAM_STATS:      'NFL Team Stats',
   NHL_TEAM_STATS:      'NHL Team Stats',
-  PLAYER_STATS:        'NBA Players',   // default for generic player stat calls
+  PLAYER_STATS:        'Player_Stats_All',
   TEAM_STATS:          'NBA Team Stats', // default for generic team stat calls
 
   // MLB specific
@@ -76,7 +76,7 @@ const SHEETS = {
   WEIGHTS_NBA:         'Weights_NBA',
   WEIGHTS_NFL:         'Weights_NFL',
   WEIGHTS_NHL:         'Weights_NHL',
-  PLAYER_TIERS:        'NBA Players',
+  PLAYER_TIERS:        'Player_Tiers',
 
   // Optimization & logs
   WEIGHT_OPT_LOG:      'Weight_Optimization_Log',

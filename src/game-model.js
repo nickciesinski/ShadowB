@@ -288,7 +288,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   const totalScore = scoreMarket(features, totalWeights);
 
   // Blend: base projection + CSV-weighted signal (dampened to prevent overshoot)
-  const csvDampen = 0.3; // 30% influence from CSV weights, grows as optimizer tunes
+  const csvDampen = getTunableFactor('csv_dampen', 0.3); // tunable via param_auto_csv_dampen
   const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen + pitcherAdj;
 
 
@@ -301,9 +301,9 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // Variance across: base model, CSV-adjusted model, simple W-L model
   const varianceScore = predictionVariance([baseWinProb, csvAdjWinProb, simpleHomeProb, mlAdjWinProb]);
 
-  // Data completeness scoring (replaces manual flag checks)
+  // Data completeness scoring (includes injury data availability check)
   const { score: completenessScore, flags: completenessFlags } = dataCompleteness(
-    homeStats, awayStats, scheduleInfo
+    homeStats, awayStats, scheduleInfo, league, game.home, game.away
   );
 
   // Uncertainty: inverse of data completeness (more data = less uncertainty)

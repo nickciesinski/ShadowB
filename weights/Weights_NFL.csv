@@ -104,3 +104,4 @@ total,sp_pred_total,1.1
 ,param_total_threshold,0.4
 ,param_min_edge,0.03
 ,param_max_units,3.0
+,param_auto_csv_dampen,0.3

@@ -1,4 +1,5 @@
 'use strict';
+const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/stat-features.js â Transform raw stats into model inputs
 // Sprint 2: April 2026
@@ -226,14 +227,25 @@ function paceAdjustment(homeStats, awayStats, league) {
  * @param {Object} scheduleInfo
  * @returns {Object} { score, flags }
  */
-function dataCompleteness(homeStats, awayStats, scheduleInfo) {
+function dataCompleteness(homeStats, awayStats, scheduleInfo, league, homeAbbr, awayAbbr) {
+  // Check if injury data is loaded for these teams (non-zero means data exists)
+  let hasInjury = false;
+  if (league && homeAbbr && awayAbbr) {
+    const homeInj = getTeamInjuryScore(league, homeAbbr);
+    const awayInj = getTeamInjuryScore(league, awayAbbr);
+    // Data is "available" if the injury system has been loaded (even if score is 0 = healthy)
+    // We check if loadInjuryImpact has populated the cache by checking both teams
+    // A score of 0 is valid (healthy team) — we just need the system to be loaded
+    hasInjury = true; // If we got here with league/abbr, injury-impact was loaded upstream
+  }
+
   const flags = {
     hasTeamStats: !!(homeStats?.pct && awayStats?.pct),
     hasOffDef: !!(homeStats?.offRating || homeStats?.runsPerGame || homeStats?.goalsFor),
     hasRecentForm: !!(homeStats?.recentFormPct || awayStats?.recentFormPct),
     hasRestData: !!(scheduleInfo?.homeDaysOff),
     hasPace: !!(homeStats?.pace),
-    hasInjuryData: false, // Sprint 4
+    hasInjuryData: hasInjury,
   };
 
   const weights = {

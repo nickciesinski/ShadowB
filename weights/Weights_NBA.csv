@@ -90,3 +90,4 @@ total,severe_injury_factor,-0.3
 total,injury_weight_diff,-0.05
 total,sp_edge_total,3.2
 total,sp_pred_total,1.1
+,param_auto_csv_dampen,0.3

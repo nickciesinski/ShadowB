@@ -8,7 +8,7 @@
 // =============================================================
 
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, ODDS_API_BASE, SPORTS, MARKETS } = require('./config');
-const { getValues, setValues, appendRows, clearSheet } = require('./sheets');
+const { getValues, setValues, appendRows, clearSheet, ensureSheet } = require('./sheets');
 const { logApiCall } = require('./monitoring');
 
 // Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
@@ -151,8 +151,9 @@ async function updatePlayerStats() {
     }
   }
 
-  // Write combined PLAYER_STATS sheet
+  // Write combined PLAYER_STATS sheet (auto-create if missing)
   if (allRows.length > 0) {
+    await ensureSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
     await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
     await setValues(SPREADSHEET_ID, SHEETS.PLAYER_STATS, 'A1', allRows);
   }
