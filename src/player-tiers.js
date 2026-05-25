@@ -2,13 +2,14 @@
 /**
  * player-tiers.js — Player Value Tier Calculations
  * 
- * Reads player rosters (Name, Team, League, Position, ESPN_ID, Jersey)
+ * Reads player rosters + stats (Name, Team, League, Position, ESPN_ID, Jersey, ...stats)
  * and Prop_Performance data to assign tier ratings (S/A/B/C/D).
  * 
- * Tier logic:
- *   - Players with high prop market frequency (many markets, many appearances) = higher tier
- *   - Key positions (QB, SP/CP, C/1B for MLB, G for NHL) get a position boost
- *   - Fallback: position-based defaults when no prop data exists
+ * Tier logic (3 signals, weighted):
+ *   - Real performance stats from ESPN leaders (cols 6+) → up to +30 boost
+ *   - Prop market frequency (many markets, many appearances) → up to +35 boost
+ *   - Key positions (QB, SP/CP, G for NHL) → base score 30-90
+ *   - Any player appearing in ESPN leaders gets a minimum B-tier floor
  */
 const { getValues, setValues, clearSheet } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
@@ -92,6 +93,17 @@ async function updatePlayerTiers() {
 
         // Base score from position importance
         let score = getPositionWeight(pos, league);
+
+        // Boost from real performance stats (columns 6+ from ESPN leaders)
+        const hasStats = row.length > 6 && row.slice(6).some(v => v !== '' && v !== undefined);
+        if (hasStats) {
+          // Players with actual ESPN leader stats are at least moderately important
+          const statCount = row.slice(6).filter(v => v !== '' && v !== undefined && v !== null).length;
+          // More stat categories present = more well-rounded player
+          score += Math.min(statCount * 4, 30); // up to +30 for appearing in 7+ stat categories
+          // Floor: any player in ESPN leaders is at least B-tier material
+          score = Math.max(score, 50);
+        }
 
         // Boost from prop market frequency (indicates star player)
         const freq = propFreq[name];

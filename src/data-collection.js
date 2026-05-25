@@ -30,7 +30,7 @@ const ESPN_SPORTS = {
  * Trigger 1: 3:30 AM ET daily (trigger1)
  */
 async function updatePlayerStats() {
-  console.log('[data-collection] Updating player rosters from ESPN...');
+  console.log('[data-collection] Updating player stats from ESPN (rosters + leaders)...');
   const sports = [
     { key: 'baseball', league: 'mlb', label: 'MLB', sheet: 'MLB_PLAYERS' },
     { key: 'basketball', league: 'nba', label: 'NBA', sheet: 'NBA_PLAYERS' },
@@ -38,20 +38,61 @@ async function updatePlayerStats() {
     { key: 'football', league: 'nfl', label: 'NFL', sheet: 'NFL_PLAYERS' },
   ];
 
-  const HEADER = ['Name', 'Team', 'League', 'Position', 'ESPN_ID', 'Jersey'];
-  const allRows = [HEADER];
+  // Stat columns appended after the base 6 roster columns
+  const STAT_COLS = {
+    MLB: ['AVG', 'HR', 'RBI', 'OPS', 'SB', 'ERA', 'W', 'SO', 'WHIP', 'SV'],
+    NBA: ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FG%', '3P%', 'MPG'],
+    NHL: ['G', 'A', 'PTS', '+/-', 'SOG', 'PPG', 'SV%', 'GAA', 'W-G'],
+    NFL: ['PASS_YD', 'PASS_TD', 'QBR', 'RUSH_YD', 'RUSH_TD', 'REC_YD', 'REC_TD', 'REC', 'SACK', 'INT'],
+  };
+
+  const HEADER_BASE = ['Name', 'Team', 'League', 'Position', 'ESPN_ID', 'Jersey'];
+  const allRows = [];
 
   for (const { key, league, label, sheet } of sports) {
+    const statCols = STAT_COLS[label] || [];
+    const HEADER = [...HEADER_BASE, ...statCols];
+    if (allRows.length === 0) allRows.push([...HEADER_BASE, 'Stat1', 'Stat2', 'Stat3', 'Stat4', 'Stat5']);
     const leagueRows = [HEADER];
+    const playerStats = {}; // ESPN_ID → { stat: value }
+
     try {
-      // Get all teams
+      // ── Step 1: Fetch leaders to get actual performance stats ──
+      const leadersUrl = `https://site.api.espn.com/apis/site/v2/sports/${key}/${league}/leaders?limit=100`;
+      let leadersData = null;
+      try {
+        const lRes = await fetch(leadersUrl, { signal: AbortSignal.timeout(15000) });
+        if (lRes.ok) leadersData = await lRes.json();
+      } catch (e) {
+        console.warn(`[data-collection] ESPN ${label} leaders fetch failed: ${e.message}`);
+      }
+
+      if (leadersData?.leaders) {
+        for (const cat of leadersData.leaders) {
+          const catName = (cat.abbreviation || cat.name || '').toLowerCase();
+          for (const leader of (cat.leaders || [])) {
+            const ath = leader.athlete;
+            if (!ath?.id) continue;
+            const id = String(ath.id);
+            if (!playerStats[id]) playerStats[id] = {};
+            playerStats[id][catName] = leader.value;
+            playerStats[id]._rank = playerStats[id]._rank || {};
+            playerStats[id]._rank[catName] = leader.rank || 999;
+            // Stash team from leaders in case roster is missing it
+            if (ath.team?.abbreviation) playerStats[id]._teamAbbr = ath.team.abbreviation;
+            if (ath.displayName) playerStats[id]._name = ath.displayName;
+          }
+        }
+        console.log(`[data-collection] ${label}: Leaders data for ${Object.keys(playerStats).length} players`);
+      }
+
+      // ── Step 2: Fetch full rosters (name→team mapping + position) ──
       const teamsUrl = `https://site.api.espn.com/apis/site/v2/sports/${key}/${league}/teams`;
       const teamsRes = await fetch(teamsUrl, { signal: AbortSignal.timeout(15000) });
       if (!teamsRes.ok) { console.warn(`ESPN ${label} teams returned ${teamsRes.status}`); continue; }
       const teamsData = await teamsRes.json();
       const teams = teamsData.sports?.[0]?.leagues?.[0]?.teams || [];
 
-      // Fetch roster for each team
       for (const { team } of teams) {
         const abbr = team.abbreviation || '';
         try {
@@ -64,21 +105,37 @@ async function updatePlayerStats() {
           for (const group of groups) {
             const players = group.items || [];
             for (const p of players) {
-              const row = [
-                p.displayName || p.fullName || '',
-                abbr,
-                label,
-                p.position?.abbreviation || '',
-                p.id || '',
-                p.jersey || '',
-              ];
+              const espnId = String(p.id || '');
+              const name = p.displayName || p.fullName || '';
+              const pos = p.position?.abbreviation || '';
+
+              // Build base row: [Name, Team, League, Position, ESPN_ID, Jersey]
+              const row = [name, abbr, label, pos, espnId, p.jersey || ''];
+
+              // Append stat values from leaders data (if this player appeared)
+              const stats = playerStats[espnId] || {};
+              const statValues = mapLeaderStatsToColumns(label, stats);
+              row.push(...statValues);
+
               leagueRows.push(row);
-              allRows.push(row);
+              allRows.push([name, abbr, label, pos, espnId, p.jersey || '', ...statValues.slice(0, 5)]);
             }
           }
         } catch (e) {
-          // Skip individual team roster failures
+          // Skip individual team roster failures silently
         }
+      }
+
+      // ── Step 3: Add leaders-only players not found on rosters ──
+      // (traded players, edge cases where roster didn't include them)
+      const rosterIds = new Set(leagueRows.slice(1).map(r => String(r[4])));
+      for (const [id, stats] of Object.entries(playerStats)) {
+        if (rosterIds.has(id)) continue;
+        if (!stats._name || !stats._teamAbbr) continue;
+        const row = [stats._name, stats._teamAbbr, label, '', id, ''];
+        const statValues = mapLeaderStatsToColumns(label, stats);
+        row.push(...statValues);
+        leagueRows.push(row);
       }
 
       // Write per-league sheet
@@ -86,18 +143,83 @@ async function updatePlayerStats() {
       if (sheetName && leagueRows.length > 1) {
         await clearSheet(SPREADSHEET_ID, sheetName);
         await setValues(SPREADSHEET_ID, sheetName, 'A1', leagueRows);
-        console.log(`[data-collection] ${label}: ${leagueRows.length - 1} players from rosters`);
+        const withStats = leagueRows.slice(1).filter(r => r.length > 6 && r.slice(6).some(v => v !== '')).length;
+        console.log(`[data-collection] ${label}: ${leagueRows.length - 1} players (${withStats} with stats)`);
       }
     } catch (err) {
-      console.error(`[data-collection] ESPN ${label} roster error:`, err.message);
+      console.error(`[data-collection] ESPN ${label} error:`, err.message);
     }
   }
 
-  // Also write combined PLAYER_STATS sheet
-  await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
-  await setValues(SPREADSHEET_ID, SHEETS.PLAYER_STATS, 'A1', allRows);
-  console.log(`[data-collection] Player rosters updated: ${allRows.length - 1} players across 4 leagues`);
+  // Write combined PLAYER_STATS sheet
+  if (allRows.length > 0) {
+    await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
+    await setValues(SPREADSHEET_ID, SHEETS.PLAYER_STATS, 'A1', allRows);
+  }
+  console.log(`[data-collection] Player stats updated: ${allRows.length - 1} players across 4 leagues`);
 }
+
+/**
+ * Map ESPN leaders stat names to our fixed column order per league.
+ * Returns an array of values matching STAT_COLS[league] order.
+ */
+function mapLeaderStatsToColumns(league, stats) {
+  // ESPN leaders use various stat name formats — normalize here
+  const STAT_MAPPING = {
+    MLB: [
+      s => s.avg || s.battingaverage || s.battingAverage || '',
+      s => s.homeRuns || s.homeruns || s.hr || '',
+      s => s.RBIs || s.rbis || s.rbi || '',
+      s => s.ops || s.OPS || '',
+      s => s.stolenBases || s.stolenbases || s.sb || '',
+      s => s.ERA || s.era || s.earnedRunAverage || '',
+      s => s.wins || s.w || '',
+      s => s.strikeouts || s.so || '',
+      s => s.WHIP || s.whip || '',
+      s => s.saves || s.sv || '',
+    ],
+    NBA: [
+      s => s.points || s.pts || s.pointsPerGame || '',
+      s => s.rebounds || s.reb || s.reboundsPerGame || '',
+      s => s.assists || s.ast || s.assistsPerGame || '',
+      s => s.steals || s.stl || s.stealsPerGame || '',
+      s => s.blocks || s.blk || s.blocksPerGame || '',
+      s => s.fieldGoalPct || s.fgPct || s['fg%'] || '',
+      s => s.threePointPct || s['3ptPct'] || s['3p%'] || '',
+      s => s.minutesPerGame || s.mpg || s.minutes || '',
+    ],
+    NHL: [
+      s => s.goals || s.g || '',
+      s => s.assists || s.a || '',
+      s => s.points || s.pts || '',
+      s => s.plusMinus || s['plus-minus'] || s['+/-'] || '',
+      s => s.shots || s.shotsOnGoal || s.sog || '',
+      s => s.powerPlayGoals || s.ppg || '',
+      s => s.savePct || s.savePercentage || s['sv%'] || '',
+      s => s.goalsAgainstAverage || s.gaa || '',
+      s => s['wins-goalie'] || s.winsGoalie || '',
+    ],
+    NFL: [
+      s => s.passingYards || s.passYards || '',
+      s => s.passingTouchdowns || s.passTD || '',
+      s => s.QBRating || s.qbr || s.passerRating || '',
+      s => s.rushingYards || s.rushYards || '',
+      s => s.rushingTouchdowns || s.rushTD || '',
+      s => s.receivingYards || s.recYards || '',
+      s => s.receivingTouchdowns || s.recTD || '',
+      s => s.receptions || s.rec || '',
+      s => s.sacks || '',
+      s => s.interceptions || s.int || '',
+    ],
+  };
+
+  const mappers = STAT_MAPPING[league] || [];
+  return mappers.map(fn => {
+    const val = fn(stats);
+    return val !== '' && val !== undefined && val !== null ? val : '';
+  });
+}
+
 
 /**
  * Fetch team stats from ESPN API and write to TeamStats sheet.
