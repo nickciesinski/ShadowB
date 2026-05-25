@@ -30,58 +30,73 @@ const ESPN_SPORTS = {
  * Trigger 1: 3:30 AM ET daily (trigger1)
  */
 async function updatePlayerStats() {
-  console.log('[data-collection] Updating player stats from ESPN...');
+  console.log('[data-collection] Updating player rosters from ESPN...');
   const sports = [
-    { key: 'baseball', league: 'mlb', sheet: 'MLB_PLAYERS' },
-    { key: 'basketball', league: 'nba', sheet: 'NBA_PLAYERS' },
-    { key: 'hockey', league: 'nhl', sheet: 'NHL_PLAYERS' },
-    { key: 'football', league: 'nfl', sheet: 'NFL_PLAYERS' },
+    { key: 'baseball', league: 'mlb', label: 'MLB', sheet: 'MLB_PLAYERS' },
+    { key: 'basketball', league: 'nba', label: 'NBA', sheet: 'NBA_PLAYERS' },
+    { key: 'hockey', league: 'nhl', label: 'NHL', sheet: 'NHL_PLAYERS' },
+    { key: 'football', league: 'nfl', label: 'NFL', sheet: 'NFL_PLAYERS' },
   ];
 
-  const allRows = [['Timestamp', 'Sport', 'PlayerName', 'Team', 'Position', 'Stat', 'Value']];
+  const HEADER = ['Name', 'Team', 'League', 'Position', 'ESPN_ID', 'Jersey'];
+  const allRows = [HEADER];
 
-  for (const { key, league } of sports) {
+  for (const { key, league, label, sheet } of sports) {
+    const leagueRows = [HEADER];
     try {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/${key}/${league}/athletes`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
-      if (!res.ok) {
-        console.warn(`ESPN ${league} returned ${res.status}`);
-        continue;
+      // Get all teams
+      const teamsUrl = `https://site.api.espn.com/apis/site/v2/sports/${key}/${league}/teams`;
+      const teamsRes = await fetch(teamsUrl, { signal: AbortSignal.timeout(15000) });
+      if (!teamsRes.ok) { console.warn(`ESPN ${label} teams returned ${teamsRes.status}`); continue; }
+      const teamsData = await teamsRes.json();
+      const teams = teamsData.sports?.[0]?.leagues?.[0]?.teams || [];
+
+      // Fetch roster for each team
+      for (const { team } of teams) {
+        const abbr = team.abbreviation || '';
+        try {
+          const rosterUrl = `https://site.api.espn.com/apis/site/v2/sports/${key}/${league}/teams/${abbr}/roster`;
+          const rosterRes = await fetch(rosterUrl, { signal: AbortSignal.timeout(10000) });
+          if (!rosterRes.ok) continue;
+          const rosterData = await rosterRes.json();
+          const groups = rosterData.athletes || [];
+
+          for (const group of groups) {
+            const players = group.items || [];
+            for (const p of players) {
+              const row = [
+                p.displayName || p.fullName || '',
+                abbr,
+                label,
+                p.position?.abbreviation || '',
+                p.id || '',
+                p.jersey || '',
+              ];
+              leagueRows.push(row);
+              allRows.push(row);
+            }
+          }
+        } catch (e) {
+          // Skip individual team roster failures
+        }
       }
-      const data = await res.json();
-      const athletes = data.athletes || [];
-      const ts = new Date().toISOString();
 
-      for (const athlete of athletes.slice(0, 200)) {
-        const name = athlete.displayName || athlete.fullName || '';
-        const team = athlete.team?.abbreviation || '';
-        const pos = athlete.position?.abbreviation || '';
-        allRows.push([ts, league.toUpperCase(), name, team, pos, 'active', '1']);
-      }
-    } catch (err) {
-      console.error(`[data-collection] ESPN ${league} error:`, err.message);
-    }
-  }
-
-  await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
-  await setValues(SPREADSHEET_ID, SHEETS.PLAYER_STATS, 'A1', allRows);
-
-  // Also write per-league sheets
-  for (const { league, sheet } of sports) {
-    const sheetName = SHEETS[sheet];
-    if (!sheetName) continue;
-    const leagueRows = allRows.filter((r, i) => i === 0 || r[1] === league.toUpperCase());
-    if (leagueRows.length > 1) {
-      try {
+      // Write per-league sheet
+      const sheetName = SHEETS[sheet];
+      if (sheetName && leagueRows.length > 1) {
         await clearSheet(SPREADSHEET_ID, sheetName);
         await setValues(SPREADSHEET_ID, sheetName, 'A1', leagueRows);
-      } catch (e) {
-        console.warn(`[data-collection] Could not write ${league} players: ${e.message}`);
+        console.log(`[data-collection] ${label}: ${leagueRows.length - 1} players from rosters`);
       }
+    } catch (err) {
+      console.error(`[data-collection] ESPN ${label} roster error:`, err.message);
     }
   }
 
-  console.log(`[data-collection] Player stats updated: ${allRows.length - 1} rows (4 leagues)`);
+  // Also write combined PLAYER_STATS sheet
+  await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_STATS);
+  await setValues(SPREADSHEET_ID, SHEETS.PLAYER_STATS, 'A1', allRows);
+  console.log(`[data-collection] Player rosters updated: ${allRows.length - 1} players across 4 leagues`);
 }
 
 /**

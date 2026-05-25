@@ -1,45 +1,53 @@
 'use strict';
 /**
  * player-tiers.js — Player Value Tier Calculations
- * Reads player stats for all 4 leagues and assigns tier ratings (S/A/B/C/D).
- * Writes results back to NBA Players sheet (Player Tiers alias).
+ * 
+ * Reads player rosters (Name, Team, League, Position, ESPN_ID, Jersey)
+ * and Prop_Performance data to assign tier ratings (S/A/B/C/D).
+ * 
+ * Tier logic:
+ *   - Players with high prop market frequency (many markets, many appearances) = higher tier
+ *   - Key positions (QB, SP/CP, C/1B for MLB, G for NHL) get a position boost
+ *   - Fallback: position-based defaults when no prop data exists
  */
-const { getValues, setValues } = require('./sheets');
+const { getValues, setValues, clearSheet } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
-const TIER_THRESHOLDS = {
-  S: 90,
-  A: 75,
-  B: 60,
-  C: 45,
-  D: 0,
+// Position importance by sport (higher = more impactful when injured)
+const POSITION_WEIGHTS = {
+  // MLB: Starting pitchers are most impactful
+  SP: 85, CP: 70, RP: 40, C: 50, '1B': 45, '2B': 45, SS: 50, '3B': 45, LF: 40, CF: 45, RF: 40, DH: 35, OF: 40,
+  // NBA: Stars play 30+ min regardless of position
+  PG: 55, SG: 50, SF: 50, PF: 50, 'C-NBA': 50,
+  // NHL: Goalies are most impactful
+  G: 85, D: 50, LW: 45, RW: 45, 'C-NHL': 50,
+  // NFL: QB is by far most impactful
+  QB: 90, RB: 55, WR: 50, TE: 45, OL: 40, DL: 40, LB: 45, CB: 45, S: 40, K: 35, P: 30,
 };
 
-/**
- * Compute a composite score (0–100) for a player row.
- * Column layout: Name, Team, stat1, stat2, stat3, stat4, form
- * Works across sports — the stat columns differ but the composite
- * still gives a reasonable relative ranking within each league.
- */
-function computeScore(row) {
-  const ppg  = parseFloat(row[2]) || 0;
-  const rpg  = parseFloat(row[3]) || 0;
-  const apg  = parseFloat(row[4]) || 0;
-  const fg   = parseFloat(row[5]) || 0;
-  const form = parseFloat(row[6]) || 0;
-  return Math.min(100, (ppg * 1.5) + (rpg * 0.8) + (apg * 1.0) + (fg * 0.3) + (form * 2.0));
+function getPositionWeight(pos, league) {
+  if (!pos) return 30;
+  const p = pos.toUpperCase();
+  // Handle ambiguous positions (C in NHL vs MLB vs NBA)
+  if (p === 'C') {
+    if (league === 'NHL') return POSITION_WEIGHTS['C-NHL'] || 50;
+    if (league === 'NBA') return POSITION_WEIGHTS['C-NBA'] || 50;
+    return POSITION_WEIGHTS['C'] || 50; // MLB catcher
+  }
+  return POSITION_WEIGHTS[p] || 30;
 }
 
 function assignTier(score) {
-  for (const [tier, threshold] of Object.entries(TIER_THRESHOLDS)) {
-    if (score >= threshold) return tier;
-  }
+  if (score >= 85) return 'S';
+  if (score >= 70) return 'A';
+  if (score >= 50) return 'B';
+  if (score >= 30) return 'C';
   return 'D';
 }
 
 /**
- * Read player stats from all 4 leagues, calculate tiers, and write results.
- * Writes to NBA Players sheet (the PLAYER_TIERS alias) for backward compat.
+ * Read player rosters + prop performance data to calculate tiers.
+ * Players who appear in more prop markets with better results get higher tiers.
  */
 async function updatePlayerTiers() {
   const leagueSheets = [
@@ -49,18 +57,54 @@ async function updatePlayerTiers() {
     { league: 'NHL', sheet: SHEETS.NHL_PLAYERS },
   ];
 
+  // Build prop frequency map: player name → market count from Prop_Performance
+  const propFreq = {};
+  try {
+    const propRows = await getValues(SPREADSHEET_ID, SHEETS.PROP_PERFORMANCE);
+    if (propRows && propRows.length > 1) {
+      for (let i = 1; i < propRows.length; i++) {
+        const player = (propRows[i][2] || '').trim(); // Column C = player name
+        const market = (propRows[i][3] || '').trim(); // Column D = market
+        if (!player) continue;
+        if (!propFreq[player]) propFreq[player] = { markets: new Set(), appearances: 0 };
+        propFreq[player].markets.add(market);
+        propFreq[player].appearances++;
+      }
+    }
+  } catch (e) {
+    console.warn('[player-tiers] Could not read Prop_Performance:', e.message);
+  }
+
   const allTierRows = [];
 
   for (const { league, sheet } of leagueSheets) {
     try {
-      const statsRows = await getValues(SPREADSHEET_ID, sheet);
-      if (!statsRows || statsRows.length < 2) continue;
+      const rows = await getValues(SPREADSHEET_ID, sheet);
+      if (!rows || rows.length < 2) continue;
 
-      for (let i = 1; i < statsRows.length; i++) {
-        const row = statsRows[i];
-        const name = row[0] || '';
-        const team = row[1] || '';
-        const score = computeScore(row);
+      // New schema: Name(0), Team(1), League(2), Position(3), ESPN_ID(4), Jersey(5)
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const name = (row[0] || '').trim();
+        const team = (row[1] || '').trim();
+        const pos = (row[3] || '').trim();
+        if (!name) continue;
+
+        // Base score from position importance
+        let score = getPositionWeight(pos, league);
+
+        // Boost from prop market frequency (indicates star player)
+        const freq = propFreq[name];
+        if (freq) {
+          const marketCount = freq.markets.size;
+          const appearances = freq.appearances;
+          // More unique markets = more well-rounded star
+          score += Math.min(marketCount * 5, 20); // up to +20 for 4+ markets
+          // More appearances = more consistently featured
+          score += Math.min(appearances * 0.5, 15); // up to +15 for 30+ appearances
+        }
+
+        score = Math.min(100, score);
         const tier = assignTier(score);
         allTierRows.push([name, team, league, score.toFixed(1), tier]);
       }
@@ -70,15 +114,18 @@ async function updatePlayerTiers() {
   }
 
   if (allTierRows.length === 0) {
-    console.log('[player-tiers] No player stats found');
+    console.log('[player-tiers] No player data found');
     return;
   }
 
-  // Write to PLAYER_TIERS sheet (NBA Players alias)
+  // Write to PLAYER_TIERS sheet
   const values = [['Player', 'Team', 'League', 'Score', 'Tier'], ...allTierRows];
+  await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
   await setValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS, 'A1', values);
 
-  console.log(`[player-tiers] Updated ${allTierRows.length} player tiers across all leagues`);
+  const tierCounts = { S: 0, A: 0, B: 0, C: 0, D: 0 };
+  for (const [, , , , t] of allTierRows) tierCounts[t]++;
+  console.log(`[player-tiers] Updated ${allTierRows.length} tiers — S:${tierCounts.S} A:${tierCounts.A} B:${tierCounts.B} C:${tierCounts.C} D:${tierCounts.D}`);
 }
 
 /**

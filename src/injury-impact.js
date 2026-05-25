@@ -65,17 +65,15 @@ async function buildPlayerLookup() {
 
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
+        // New schema: Name(0), Team(1), League(2), Position(3), ESPN_ID(4), Jersey(5)
         const name = (row[0] || '').trim();
         const team = (row[1] || '').trim().toUpperCase();
         if (!name || !team) continue;
 
-        // Compute simple composite score for tier assignment
-        const ppg  = parseFloat(row[2]) || 0;
-        const rpg  = parseFloat(row[3]) || 0;
-        const apg  = parseFloat(row[4]) || 0;
-        const fg   = parseFloat(row[5]) || 0;
-        const form = parseFloat(row[6]) || 0;
-        const score = Math.min(100, (ppg * 1.5) + (rpg * 0.8) + (apg * 1.0) + (fg * 0.3) + (form * 2.0));
+        const pos = (row[3] || '').trim();
+        // Position-based score for tier assignment (matches player-tiers.js logic)
+        const posWeights = { SP: 85, CP: 70, QB: 90, G: 85, RP: 40, C: 50, SS: 50, PG: 55, SG: 50, SF: 50, PF: 50, RB: 55, WR: 50, TE: 45, D: 50, LW: 45, RW: 45 };
+        const score = posWeights[pos.toUpperCase()] || 30;
 
         let tier = 'D';
         if (score >= 90) tier = 'S';
