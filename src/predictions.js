@@ -21,6 +21,7 @@ const { americanToImpliedProb } = require('./market-pricing');
 const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
+const { fetchProbablePitchers } = require('./pitcher-data');
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -383,6 +384,15 @@ async function generateMLBPredictions() {
       };
   }
 
+  // Fetch probable pitchers from ESPN
+  let pitcherMap = new Map();
+  try {
+    pitcherMap = await fetchProbablePitchers();
+    console.log(`[predictions] MLB pitcher data: ${pitcherMap.size} games`);
+  } catch (err) {
+    console.warn('[predictions] MLB pitcher fetch failed, continuing without:', err.message);
+  }
+
   // Fetch game-day weather for outdoor stadiums
   let weatherMap = new Map();
   try {
@@ -393,7 +403,7 @@ async function generateMLBPredictions() {
   }
 
   // Deterministic pick generation with schedule context + weather
-  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap, weatherMap);
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'MLB', getPerformanceModifier, scheduleMap, weatherMap, pitcherMap);
   console.log(`[predictions] MLB: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging

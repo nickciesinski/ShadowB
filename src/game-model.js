@@ -242,7 +242,7 @@ function modelDisagreement(mainProb, simpleProb, betType) {
  * @param {Object} [scheduleInfo] - Optional: { homeDaysOff, awayDaysOff, homeB2B, awayB2B }
  * @returns {Array} Array of 3 pick objects
  */
-function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather) {
+function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData) {
   // Team stats
   const homeStats = teamsMap[game.home] || {};
   const awayStats = teamsMap[game.away] || {};
@@ -272,6 +272,12 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // Core projection: margin (home perspective, positive = home favored)
   const baseMargin = projectMargin(homeStr, awayStr, league, restAdj, homeFormAdj, awayFormAdj);
 
+  // MLB probable pitcher adjustment (positive = home pitcher advantage)
+  const pitcherAdj = (league === 'MLB' && pitcherData?.pitcherAdj) ? pitcherData.pitcherAdj : 0;
+  if (pitcherAdj !== 0) {
+    console.log(`[game-model] ${game.away}@${game.home}: pitcher adj = ${pitcherAdj.toFixed(2)} runs (${pitcherData.awayPitcher?.name || 'TBD'} vs ${pitcherData.homePitcher?.name || 'TBD'})`);
+  }
+
   // CSV-weighted adjustment: if weights exist for moneyline/spread, blend in
   const mlWeights = (weights && weights.moneyline) || {};
   const spreadWeights = (weights && weights.spread) || {};
@@ -283,7 +289,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
 
   // Blend: base projection + CSV-weighted signal (dampened to prevent overshoot)
   const csvDampen = 0.3; // 30% influence from CSV weights, grows as optimizer tunes
-  const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen;
+  const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen + pitcherAdj;
 
 
   // ── Prediction variance: how much do different signals agree? ──
@@ -316,7 +322,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // Update SP features with our projections (self-referential signal)
   features.sp_pred_margin = margin / (STRENGTH_TO_MARGIN[league] || 20);
 
-  const mlMargin = baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen;
+  const mlMargin = baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen + pitcherAdj;
   const mlPick = generateMLPick(game, mlMargin, league, h2hMarket, uncertainty);
   if (mlPick) {
     const mlMainProb = projectWinProb(mlMargin, league);
@@ -340,7 +346,20 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
 
   // ââ Total Pick ââââââââââââââââââââââââââââââââââââââââââââ
   const totalAdj = scoreToTotalAdj(totalScore, league) * csvDampen;
-  const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, totalAdj);
+  // Pitcher impact on totals: both good pitchers = lower total, both bad = higher
+  let pitcherTotalAdj = 0;
+  if (league === 'MLB' && pitcherData) {
+    const AVG_ERA = 4.20;
+    const homeERA = pitcherData.homePitcher?.era ?? AVG_ERA;
+    const awayERA = pitcherData.awayPitcher?.era ?? AVG_ERA;
+    // Average ERA deviation × innings factor = total runs adjustment
+    const avgDeviation = ((homeERA - AVG_ERA) + (awayERA - AVG_ERA)) / 2;
+    pitcherTotalAdj = avgDeviation * (6 / 9); // ~6 innings per starter
+    pitcherTotalAdj = Math.max(-1.5, Math.min(1.5, pitcherTotalAdj));
+  }
+  const weatherAdj = gameWeather?.impact || 0;
+  const combinedTotalAdj = totalAdj + pitcherTotalAdj + weatherAdj;
+  const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, combinedTotalAdj);
   if (totalPick) {
     totalPick._disagreement = 0; // Simple model has no total projection
     const totContribs = decomposeScore(features, totalWeights);
@@ -597,7 +616,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
  * Generate total (over/under) pick for a game.
  * Sprint 2: Now accepts paceAdj from stat-features.
  */
-function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, csvTotalAdj, weatherAdj) {
+function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, csvTotalAdj) {
   // Diagnostic: log what totalsMarket contains for this game
   console.log(`[generateTotalPick] ${game.away}@${game.home} (${league}): totalsMarket has ${totalsMarket.length} entries: ${JSON.stringify(totalsMarket)}`);
 
@@ -624,7 +643,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
 
   // Project the total (now with pace adjustment)
   const baseProjTotal = projectTotal(homeStr, awayStr, marketTotal, league, paceAdj);
-  const projTotal = baseProjTotal + (csvTotalAdj || 0) + (weatherAdj || 0);
+  const projTotal = baseProjTotal + (csvTotalAdj || 0);
 
   // Over/under probabilities
   const overProb = totalToOverProb(projTotal, marketTotal, league);
@@ -690,7 +709,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
  * @param {Object} [scheduleMap] - Optional: { teamName: { homeDaysOff, awayDaysOff, homeB2B, awayB2B } }
  * @returns {Array} Flat array of pick objects with team, betType, line, confidence, rationale
  */
-async function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap, weatherMap) {
+async function generateAllPicks(games, teamsMap, weights, league, getPerformanceModifier, scheduleMap, weatherMap, pitcherMap) {
   // Load auto-tuned factors from weight sheet (param_auto_* keys)
   if (weights && weights.params) {
     const autoFactors = {};
@@ -719,7 +738,10 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Look up weather for this game
     const gameWeather = weatherMap ? weatherMap.get(`${game.away}@${game.home}`) : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather);
+    // Look up probable pitcher data (MLB only)
+    const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
+
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData);
 
     for (const pick of picks) {
       // Calculate final units using the sizing model
