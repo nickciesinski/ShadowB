@@ -2,7 +2,7 @@ name: Trigger 2 — Update Team Stats
 
 on:
   schedule:
-    - cron: '0 9 * * *'  # 4:00 AM ET = 09:00 UTC
+    - cron: '0 6 * * *'  # 2:00 AM EDT = 06:00 UTC
   workflow_dispatch:
 
 jobs:
