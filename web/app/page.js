@@ -256,7 +256,7 @@ function BestBets({ picks }) {
 }
 
 // ── Picks Tab ───────────────────────────────────────────────────────
-function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet }) {
+function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames }) {
   const dedupedPicks = dedup(picks);
   const filtered = dedupedPicks.filter(p =>
     (sf === 'All' || p.league === sf) &&
@@ -304,6 +304,26 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet }) {
             </div>
             {g.startTime && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{cleanTime(g.startTime)}</span>}
           </div>
+          {/* MLB Starting Pitchers */}
+          {g.league === 'MLB' && (() => {
+            const matched = (liveGames || []).find(lg => lg.league === 'MLB' && lg.status === 'pre' &&
+              g.home && lg.home && g.away && lg.away &&
+              lg.home.toLowerCase().includes(g.home.split(' ').pop().toLowerCase()) &&
+              lg.away.toLowerCase().includes(g.away.split(' ').pop().toLowerCase()));
+            if (!matched || (!matched.homePitcher && !matched.awayPitcher)) return null;
+            const ap = matched.awayPitcher;
+            const hp = matched.homePitcher;
+            return (
+              <div style={{ padding: '3px 12px 5px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 10, color: '#94A3B8' }}>&#9918;</span>
+                <span style={{ fontSize: 10, color: '#94A3B8' }}>
+                  {ap ? `${ap.name}${ap.era ? ` (${ap.era})` : ''}` : 'TBD'}
+                  {' vs '}
+                  {hp ? `${hp.name}${hp.era ? ` (${hp.era})` : ''}` : 'TBD'}
+                </span>
+              </div>
+            );
+          })()}
           {g.picks.map((p, j) => {
             const dimmed = p.units === 0;
             const selected = isBet(p);
@@ -1116,6 +1136,21 @@ async function fetchLiveScores() {
         const gameNote = notes.find(n => /game\s*[12]/i.test(n.headline || ''));
         const gameNum = gameNote ? (gameNote.headline.match(/game\s*(\d)/i)?.[1] || null) : null;
 
+        // Extract probable pitchers for MLB pre-game
+        let homePitcher = null, awayPitcher = null;
+        if (league === 'MLB' && status === 'pre') {
+          const extractPitcher = (team) => {
+            const p = team?.probables?.[0];
+            if (!p?.athlete) return null;
+            const era = p.statistics?.find(s => s.name === 'ERA')?.displayValue;
+            const w = p.statistics?.find(s => s.name === 'wins')?.displayValue;
+            const l = p.statistics?.find(s => s.name === 'losses')?.displayValue;
+            return { name: p.athlete.shortName, era: era || null, record: (w && l) ? `${w}-${l}` : null };
+          };
+          homePitcher = extractPitcher(homeTeam);
+          awayPitcher = extractPitcher(awayTeam);
+        }
+
         games.push({
           league,
           eventId: event.id,
@@ -1131,6 +1166,8 @@ async function fetchLiveScores() {
           clock,
           isLate,
           gameNum: gameNum ? parseInt(gameNum) : null,
+          homePitcher,
+          awayPitcher,
         });
       }
     } catch (e) { /* skip */ }
@@ -1622,7 +1659,7 @@ export default function App() {
       <div style={{ padding: '8px 12px 90px' }}>
         {loading && <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>Loading...</div>}
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
-        {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} />}
+        {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} liveGames={liveGames} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames.filter(g => {
           // Hide off-season games (e.g. Super Bowl replay in April)
           if (g.status === 'in') return true;
