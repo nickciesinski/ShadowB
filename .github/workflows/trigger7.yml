@@ -2,7 +2,7 @@ name: Trigger 7 — Platform Combos
 
 on:
   schedule:
-    - cron: '15 11 * * *'  # 6:15 AM ET
+    - cron: '0 8 * * *'  # 4:00 AM EDT = 08:00 UTC
   workflow_dispatch:
 
 jobs:
