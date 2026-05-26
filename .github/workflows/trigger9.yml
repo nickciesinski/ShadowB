@@ -2,7 +2,7 @@ name: Trigger 9 — Send Daily Picks Email
 
 on:
   schedule:
-    - cron: '30 11 * * *'  # 6:30 AM ET = 11:30 UTC
+    - cron: '0 9 * * *'  # 5:00 AM EDT = 09:00 UTC
   workflow_dispatch:
 
 jobs:
