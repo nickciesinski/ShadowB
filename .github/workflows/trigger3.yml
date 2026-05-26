@@ -2,7 +2,7 @@ name: Trigger 3 — Odds + Grade + CLV
 
 on:
   schedule:
-    - cron: '30 9 * * *'  # 4:30 AM ET = 09:30 UTC
+    - cron: '30 6 * * *'  # 2:30 AM EDT = 06:30 UTC
   workflow_dispatch:
 
 jobs:
