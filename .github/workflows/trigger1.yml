@@ -1,7 +1,7 @@
 name: Trigger 1 — Update Player Stats
 on:
   schedule:
-    - cron: '30 7 * * *'  # 3:30 AM EDT = 07:30 UTC
+    - cron: '30 5 * * *'  # 1:30 AM EDT = 05:30 UTC
   workflow_dispatch:
 jobs:
   run:
