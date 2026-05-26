@@ -2,7 +2,7 @@ name: Trigger 8 — Player Tiers
 
 on:
   schedule:
-    - cron: '20 11 * * *'  # 6:20 AM ET
+    - cron: '30 8 * * *'  # 4:30 AM EDT = 08:30 UTC
   workflow_dispatch:
 
 jobs:
