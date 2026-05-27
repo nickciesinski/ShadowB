@@ -2,7 +2,7 @@ name: Trigger 16 — Daily Health Check
 
 on:
   schedule:
-    - cron: '0 5 * * *'  # Midnight ET = 05:00 UTC
+    - cron: '30 9 * * *'  # 5:30 AM EDT = 09:30 UTC (after morning chain)
   workflow_dispatch:
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm' }
+        with: { node-version: '24', cache: 'npm' }
       - run: npm ci
       - name: Daily trigger health check
         run: node src/triggers.js trigger16
