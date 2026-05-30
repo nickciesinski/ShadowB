@@ -17,6 +17,7 @@ const { runAllOptimizations, syncPerformanceLog, seedPropWeights, seedModifiers 
 const { withMonitoring, trimAccumulatingSheets } = require('./monitoring');
 const { replayBacktest, sensitivityAnalysis, validateCurrentWeights, counterfactualBacktest } = require('./backtesting');
 const { snapshotTeamStats, snapshotOdds, snapshotInjuries } = require('./snapshots');
+const { updateAllPlayerRankings } = require('./player-rankings');
 
 /** Small delay to spread Sheets writes across the quota window. */
 const pause = (ms) => new Promise(r => setTimeout(r, ms));
@@ -163,6 +164,11 @@ const TRIGGERS = {
 
   // Trigger 17: Manual sheet capacity cleanup
   trigger17: withMonitoring('trigger17', trimAccumulatingSheets),
+
+  // Trigger 18: Tuesday 3:00 AM PT — Weekly player rankings refresh
+  // Fetches individual player stats from ESPN, computes z-score composite
+  // rankings per position group, writes to separate Player Stats spreadsheet.
+  trigger18: withMonitoring('trigger18', updateAllPlayerRankings),
 };
 
 // ── Main Entry Point ─────────────────────────────────────────────
