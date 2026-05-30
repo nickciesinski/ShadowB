@@ -51,14 +51,13 @@ const PR_CONFIG = {
         { key: 'runs', display: 'R' },
         { key: 'stolenBases', display: 'SB' },
         { key: 'doubles', display: '2B' },
-        { key: 'totalBases', display: 'TB' },
       ],
       rate: [
         { key: 'avg', display: 'AVG' },
-        { key: 'OBP', display: 'OBP' },
-        { key: 'slugPct', display: 'SLG' },
+        { key: 'onBasePct', display: 'OBP' },
+        { key: 'slugAvg', display: 'SLG' },
         { key: 'OPS', display: 'OPS' },
-        { key: 'onBasePlusSlugging', display: 'OPS' },
+        { key: 'WARBR', display: 'WAR' },
       ],
     },
     MLB_PITCHER: {
@@ -67,15 +66,15 @@ const PR_CONFIG = {
         { key: 'losses', display: 'L' },
         { key: 'strikeouts', display: 'SO' },
         { key: 'saves', display: 'SV' },
-        { key: 'inningsPitched', display: 'IP' },
+        { key: 'innings', display: 'IP' },
         { key: 'holds', display: 'HLD' },
       ],
       rate: [
         { key: 'ERA', display: 'ERA', invert: true },
         { key: 'WHIP', display: 'WHIP', invert: true },
         { key: 'strikeoutsPerNineInnings', display: 'K/9' },
-        { key: 'walksPerNineInnings', display: 'BB/9', invert: true },
         { key: 'strikeoutToWalkRatio', display: 'K/BB' },
+        { key: 'winPct', display: 'W%' },
       ],
     },
     NHL_SKATER: {
@@ -83,15 +82,15 @@ const PR_CONFIG = {
         { key: 'goals', display: 'G' },
         { key: 'assists', display: 'A' },
         { key: 'points', display: 'PTS' },
-        { key: 'shots', display: 'SOG' },
-        { key: 'hits', display: 'Hits' },
-        { key: 'blockedShots', display: 'BLK' },
+        { key: 'powerPlayGoals', display: 'PPG' },
+        { key: 'powerPlayAssists', display: 'PPA' },
+        { key: 'gameWinningGoals', display: 'GWG' },
       ],
       rate: [
         { key: 'plusMinus', display: '+/-' },
-        { key: 'avgTimeOnIce', display: 'TOI/GP' },
-        { key: 'pointsPerGame', display: 'PTS/GP' },
-        { key: 'shootingPctg', display: 'SH%' },
+        { key: 'timeOnIcePerGame', display: 'TOI/GP' },
+        { key: 'production', display: 'P/GP' },
+        { key: 'shootingPct', display: 'SH%' },
       ],
     },
     NHL_GOALIE: {
@@ -99,7 +98,7 @@ const PR_CONFIG = {
         { key: 'wins', display: 'W' },
         { key: 'losses', display: 'L' },
         { key: 'shutouts', display: 'SO' },
-        { key: 'gamesPlayed', display: 'GP' },
+        { key: 'games', display: 'GP' },
         { key: 'saves', display: 'Saves' },
       ],
       rate: [
@@ -122,8 +121,6 @@ const PR_CONFIG = {
         { key: 'threePointFieldGoalPct', display: '3P%' },
         { key: 'freeThrowPct', display: 'FT%' },
         { key: 'avgTurnovers', display: 'TOV', invert: true },
-        { key: 'PER', display: 'PER' },
-        { key: 'trueShootingPct', display: 'TS%' },
       ],
     },
     NFL_QB: {
@@ -283,66 +280,50 @@ async function readRoster(sport) {
  * ESPN returns nested categories > splits > stats arrays.
  * We try multiple response shapes since ESPN varies by sport.
  */
+/**
+ * Parse stats from ESPN common/v3 /stats endpoint.
+ * Response shape: { categories: [ { name, names: [...statNames], statistics: [ { season, stats: [...values] } ] } ] }
+ * Uses parallel arrays: names[i] corresponds to statistics[last].stats[i].
+ * We take the most recent season entry.
+ */
 function flattenAthleteStats(data) {
   const result = {};
 
-  // Try multiple response shapes
-  const trySources = [
-    data?.statistics,
-    data?.stats,
-    data?.athlete?.statistics,
-  ];
+  // ── Shape A: /stats endpoint — parallel arrays in categories ──
+  const cats = data?.categories;
+  if (cats) {
+    const catArr = Array.isArray(cats) ? cats : Object.values(cats);
+    for (const cat of catArr) {
+      const catName = (cat.name || '').toLowerCase();
+      // Only use regular-season career stats (skip postseason, expanded, advanced for now)
+      // Career batting/pitching = current-season last entry; position-named cats (center, goalie, etc.) also fine
+      if (catName.includes('postseason')) continue;
 
-  for (const source of trySources) {
-    if (!source) continue;
+      const names = cat.names;
+      const seasons = cat.statistics;
+      if (!names || !seasons || !seasons.length) continue;
 
-    // Could be an array of category objects or splits
-    const items = Array.isArray(source) ? source : [source];
-    for (const item of items) {
-      // Shape 1: { categories: [{ stats: [{ name, value }] }] }
-      const cats = item.categories || item.splits?.categories || [];
-      for (const cat of cats) {
-        const stats = cat.stats || [];
-        for (const s of stats) {
-          if (s.name && s.value !== undefined && s.value !== null) {
-            result[s.name] = parseFloat(s.value) || 0;
-          }
-          if (s.abbreviation && s.value !== undefined && s.value !== null) {
-            result[s.abbreviation] = parseFloat(s.value) || 0;
-          }
+      // Take the most recent season
+      const latest = seasons[seasons.length - 1];
+      if (!latest?.stats) continue;
+
+      for (let i = 0; i < names.length; i++) {
+        const val = parseFloat(latest.stats[i]);
+        if (!isNaN(val)) {
+          result[names[i]] = val;
         }
       }
+    }
+  }
 
-      // Shape 2: { stats: [{ name, value }] } directly
-      if (item.stats && Array.isArray(item.stats)) {
-        for (const s of item.stats) {
-          if (s.name && s.value !== undefined) {
-            result[s.name] = parseFloat(s.value) || 0;
-          }
-        }
-      }
-
-      // Shape 3: splits array with stat objects
-      const splits = item.splits || [];
-      for (const split of splits) {
-        const stats = split.stats || [];
-        for (const s of stats) {
-          if (s.name && s.value !== undefined) {
-            result[s.name] = parseFloat(s.value) || 0;
-          }
-        }
-        // Also check split.categories
-        const splitCats = split.categories || [];
-        for (const cat of splitCats) {
-          const catStats = cat.stats || [];
-          for (const s of catStats) {
-            if (s.name && s.value !== undefined) {
-              result[s.name] = parseFloat(s.value) || 0;
-            }
-            if (s.abbreviation && s.value !== undefined) {
-              result[s.abbreviation] = parseFloat(s.value) || 0;
-            }
-          }
+  // ── Shape B: statsSummary from base athlete endpoint — array of { name, value } objects ──
+  const summary = data?.athlete?.statsSummary?.statistics || data?.statsSummary?.statistics;
+  if (summary && Array.isArray(summary)) {
+    for (const s of summary) {
+      if (s.name && s.value !== undefined && s.value !== null) {
+        const val = parseFloat(s.value);
+        if (!isNaN(val) && !(s.name in result)) {
+          result[s.name] = val;
         }
       }
     }
@@ -360,28 +341,42 @@ async function fetchAthleteStats(player, sport) {
   if (!espn || !player.espnId) return null;
 
   try {
-    // Primary: athlete summary (includes stats + bio)
-    const url = `https://site.api.espn.com/apis/site/v2/sports/${espn.sport}/${espn.league}/athletes/${player.espnId}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return null;
+    const baseUrl = `https://site.web.api.espn.com/apis/common/v3/sports/${espn.sport}/${espn.league}/athletes/${player.espnId}`;
 
-    const data = await res.json();
+    // Fetch full stats from /stats endpoint (parallel arrays format)
+    const statsUrl = `${baseUrl}/stats`;
+    const statsRes = await fetch(statsUrl, { signal: AbortSignal.timeout(10000) });
 
-    // Extract bio info
-    player.age = data.age || data.athlete?.age || '';
+    let stats = {};
+    if (statsRes.ok) {
+      const statsData = await statsRes.json();
+      stats = flattenAthleteStats(statsData);
+    }
 
-    // Extract stats from the athlete response
-    const stats = flattenAthleteStats(data);
-
-    // If no stats in main response, try the /statistics sub-endpoint
-    if (Object.keys(stats).length < 2) {
+    // If /stats returned data, try base endpoint just for age (lighter call)
+    if (Object.keys(stats).length > 0) {
       try {
-        const statsUrl = `https://site.api.espn.com/apis/site/v2/sports/${espn.sport}/${espn.league}/athletes/${player.espnId}/statistics`;
-        const statsRes = await fetch(statsUrl, { signal: AbortSignal.timeout(10000) });
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          const moreStats = flattenAthleteStats(statsData);
-          Object.assign(stats, moreStats);
+        const bioRes = await fetch(baseUrl, { signal: AbortSignal.timeout(8000) });
+        if (bioRes.ok) {
+          const bioData = await bioRes.json();
+          player.age = bioData.athlete?.age || '';
+          // Also merge any summary stats we might have missed
+          const summaryStats = flattenAthleteStats(bioData);
+          for (const [k, v] of Object.entries(summaryStats)) {
+            if (!(k in stats)) stats[k] = v;
+          }
+        }
+      } catch (e) {
+        // Age is cosmetic, non-fatal
+      }
+    } else {
+      // Fallback: try base endpoint for summary stats + age
+      try {
+        const bioRes = await fetch(baseUrl, { signal: AbortSignal.timeout(10000) });
+        if (bioRes.ok) {
+          const bioData = await bioRes.json();
+          player.age = bioData.athlete?.age || '';
+          stats = flattenAthleteStats(bioData);
         }
       } catch (e) {
         // Non-fatal
@@ -389,7 +384,7 @@ async function fetchAthleteStats(player, sport) {
     }
 
     player.stats = stats;
-    return player;
+    return Object.keys(stats).length > 0 ? player : null;
   } catch (err) {
     return null;
   }
@@ -432,6 +427,12 @@ async function fetchAllPlayerStats(roster, sport) {
   }
 
   console.log(`[player-rankings] ${sport}: ${fetched} fetched, ${withStats} with stats out of ${roster.length} total`);
+
+  // Diagnostic: log available stat keys for first player that has stats
+  const samplePlayer = roster.find(p => p.stats && Object.keys(p.stats).length > 0);
+  if (samplePlayer) {
+    console.log(`[player-rankings] ${sport} sample stat keys (${samplePlayer.name}): ${Object.keys(samplePlayer.stats).join(', ')}`);
+  }
 
   // Filter to only players that have at least some stats
   return roster.filter(p => p.stats && Object.keys(p.stats).length > 0);
