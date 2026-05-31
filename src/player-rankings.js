@@ -221,6 +221,9 @@ const PR_CONFIG = {
   // Rate limiting: pause between batches of athlete fetches
   fetchBatchSize: 25,
   fetchBatchPauseMs: 1000,
+
+  // Max roster size per sport (safety valve against bloated sheets)
+  maxRosterPerSport: 1500,
 };
 
 // ── ESPN Sport Config ──────────────────────────────────────────
@@ -263,6 +266,13 @@ async function readRoster(sport) {
       if (!name || !espnId) continue;
 
       players.push({ name, team, league: sport, pos, espnId });
+    }
+
+    // Cap roster size to avoid rate-limiting on large historical rosters
+    const cap = PR_CONFIG.maxRosterPerSport;
+    if (players.length > cap) {
+      console.log(`[player-rankings] ${sport}: capping roster from ${players.length} to ${cap}`);
+      players.length = cap;
     }
 
     console.log(`[player-rankings] ${sport}: read ${players.length} players from roster`);
@@ -341,51 +351,27 @@ async function fetchAthleteStats(player, sport) {
   if (!espn || !player.espnId) return null;
 
   try {
-    const baseUrl = `https://site.web.api.espn.com/apis/common/v3/sports/${espn.sport}/${espn.league}/athletes/${player.espnId}`;
-
-    // Fetch full stats from /stats endpoint (parallel arrays format)
-    const statsUrl = `${baseUrl}/stats`;
+    const statsUrl = `https://site.web.api.espn.com/apis/common/v3/sports/${espn.sport}/${espn.league}/athletes/${player.espnId}/stats`;
     const statsRes = await fetch(statsUrl, { signal: AbortSignal.timeout(10000) });
 
-    let stats = {};
-    if (statsRes.ok) {
-      const statsData = await statsRes.json();
-      stats = flattenAthleteStats(statsData);
+    if (!statsRes.ok) {
+      // Track error types for diagnostics
+      if (!fetchAthleteStats._errors) fetchAthleteStats._errors = {};
+      const code = statsRes.status;
+      fetchAthleteStats._errors[code] = (fetchAthleteStats._errors[code] || 0) + 1;
+      return null;
     }
 
-    // If /stats returned data, try base endpoint just for age (lighter call)
-    if (Object.keys(stats).length > 0) {
-      try {
-        const bioRes = await fetch(baseUrl, { signal: AbortSignal.timeout(8000) });
-        if (bioRes.ok) {
-          const bioData = await bioRes.json();
-          player.age = bioData.athlete?.age || '';
-          // Also merge any summary stats we might have missed
-          const summaryStats = flattenAthleteStats(bioData);
-          for (const [k, v] of Object.entries(summaryStats)) {
-            if (!(k in stats)) stats[k] = v;
-          }
-        }
-      } catch (e) {
-        // Age is cosmetic, non-fatal
-      }
-    } else {
-      // Fallback: try base endpoint for summary stats + age
-      try {
-        const bioRes = await fetch(baseUrl, { signal: AbortSignal.timeout(10000) });
-        if (bioRes.ok) {
-          const bioData = await bioRes.json();
-          player.age = bioData.athlete?.age || '';
-          stats = flattenAthleteStats(bioData);
-        }
-      } catch (e) {
-        // Non-fatal
-      }
-    }
+    const statsData = await statsRes.json();
+    const stats = flattenAthleteStats(statsData);
+
+    if (Object.keys(stats).length === 0) return null;
 
     player.stats = stats;
-    return Object.keys(stats).length > 0 ? player : null;
+    return player;
   } catch (err) {
+    if (!fetchAthleteStats._errors) fetchAthleteStats._errors = {};
+    fetchAthleteStats._errors['timeout'] = (fetchAthleteStats._errors['timeout'] || 0) + 1;
     return null;
   }
 }
@@ -427,6 +413,12 @@ async function fetchAllPlayerStats(roster, sport) {
   }
 
   console.log(`[player-rankings] ${sport}: ${fetched} fetched, ${withStats} with stats out of ${roster.length} total`);
+
+  // Log any HTTP errors encountered
+  if (fetchAthleteStats._errors && Object.keys(fetchAthleteStats._errors).length > 0) {
+    console.log(`[player-rankings] ${sport} fetch errors: ${JSON.stringify(fetchAthleteStats._errors)}`);
+    fetchAthleteStats._errors = {};  // Reset for next sport
+  }
 
   // Diagnostic: log available stat keys for first player that has stats
   const samplePlayer = roster.find(p => p.stats && Object.keys(p.stats).length > 0);
@@ -785,14 +777,15 @@ async function updateAllPlayerRankings() {
   const injuryMap = await loadInjuryData();
   const counts = {};
 
+  // NBA first — largest roster, most likely to hit rate limits if run late
+  try { counts.NBA = await updateNBARankings(injuryMap); } catch (e) {
+    console.error('[player-rankings] NBA failed:', e.message); counts.NBA = 0;
+  }
   try { counts.MLB = await updateMLBRankings(injuryMap); } catch (e) {
     console.error('[player-rankings] MLB failed:', e.message); counts.MLB = 0;
   }
   try { counts.NHL = await updateNHLRankings(injuryMap); } catch (e) {
     console.error('[player-rankings] NHL failed:', e.message); counts.NHL = 0;
-  }
-  try { counts.NBA = await updateNBARankings(injuryMap); } catch (e) {
-    console.error('[player-rankings] NBA failed:', e.message); counts.NBA = 0;
   }
   try { counts.NFL = await updateNFLRankings(injuryMap); } catch (e) {
     console.error('[player-rankings] NFL failed:', e.message); counts.NFL = 0;
