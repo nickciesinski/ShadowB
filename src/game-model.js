@@ -148,8 +148,12 @@ function projectTotal(homeStrength, awayStrength, marketTotal, league, paceAdj) 
   const paceDamp = getTunableFactor('total_pace_dampening', 0.3);
   const totalPaceAdj = (paceAdj || 0) * paceDamp
 
-  // Anchor heavily to market total (80%), blend in our adjustment (20%).
-  const anchor = getTunableFactor('total_market_anchor', 0.80);
+  // Anchor heavily to market total. 2026-05-31: raised default 0.80 -> 0.95.
+  // The 20% blend toward AVG_TOTAL produced a structural Over bias on lines below
+  // the league average (e.g., +0.16 runs at line 8.0). The market line already
+  // encodes the league environment; pulling it back to AVG_TOTAL adds bias, not
+  // signal. Sims showed this single change drops MLB Over rate from 70% to ~62%.
+  const anchor = getTunableFactor('total_market_anchor', 0.95);
   return marketTotal * anchor + (AVG_TOTAL[league] || marketTotal) * (1 - anchor) + strengthAdj + totalPaceAdj;
 }
 
@@ -347,9 +351,12 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // ââ Total Pick ââââââââââââââââââââââââââââââââââââââââââââ
   const totalAdj = scoreToTotalAdj(totalScore, league) * csvDampen;
   // Pitcher impact on totals: both good pitchers = lower total, both bad = higher
+  // 2026-05-31: bumped AVG_ERA 4.20 -> 4.40 to match current MLB scoring environment.
+  // Old 4.20 baseline produced systematic +0.10 run Over bias because most starter
+  // ERAs in 2025-26 sit above 4.20. Simulated 70% Over pick rate before this fix.
   let pitcherTotalAdj = 0;
   if (league === 'MLB' && pitcherData) {
-    const AVG_ERA = 4.20;
+    const AVG_ERA = 4.40;
     const homeERA = pitcherData.homePitcher?.era ?? AVG_ERA;
     const awayERA = pitcherData.awayPitcher?.era ?? AVG_ERA;
     // Average ERA deviation × innings factor = total runs adjustment
@@ -658,8 +665,11 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
   const overEdge = calcEdge(overProb, overNoVig);
   const underEdge = calcEdge(underProb, underNoVig);
 
+  // 2026-05-31: strict > so an exact-tie (e.g., projTotal == marketTotal, both
+  // sides equally priced) doesn't deterministically pick Over. With Over rate
+  // already biased upward, the >= tiebreaker compounded the lean.
   let direction, modelProb, marketProb, odds, edge;
-  if (overEdge >= underEdge) {
+  if (overEdge > underEdge) {
     direction = 'Over';
     modelProb = overProb;
     marketProb = overNoVig;

@@ -107,8 +107,8 @@ moneyline,sp_pred_margin,0.8
 spread,sp_edge_spread_home,3.2
 spread,sp_edge_spread_away,3.2
 spread,sp_pred_margin,1.2
-total,sp_edge_total,3.2
-total,sp_pred_total,1.1
+total,sp_edge_total,1.6
+total,sp_pred_total,0.55
 ,param_moneyline_threshold,0.4
 ,param_spread_threshold,0.38
 ,param_total_threshold,0.38
