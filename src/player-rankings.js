@@ -352,7 +352,14 @@ async function fetchAthleteStats(player, sport) {
 
   try {
     const statsUrl = `https://site.web.api.espn.com/apis/common/v3/sports/${espn.sport}/${espn.league}/athletes/${player.espnId}/stats`;
-    const statsRes = await fetch(statsUrl, { signal: AbortSignal.timeout(10000) });
+    const statsRes = await fetch(statsUrl, {
+      signal: AbortSignal.timeout(10000),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Origin': 'https://www.espn.com',
+        'Referer': 'https://www.espn.com/',
+      },
+    });
 
     if (!statsRes.ok) {
       // Track error types for diagnostics
