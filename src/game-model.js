@@ -425,7 +425,7 @@ function generateMLPick(game, margin, league, h2hMarket, uncertainty) {
   const awayEdge = calcEdge(awayWinProb, awayNoVig);
 
   let pickTeam, modelProb, marketProb, odds, edge;
-  if (homeEdge >= awayEdge) {
+  if (homeEdge > awayEdge) {
     pickTeam = game.home;
     modelProb = homeWinProb;
     marketProb = homeNoVig;
@@ -491,13 +491,18 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
       // then compare expected profit from edge (edge * payout multiplier) to pick
       // whichever side offers more value per unit risked.
 
-      // Cover probabilities using normal CDF (better calibrated tails than logistic)
+      // Cover probabilities using normal CDF (better calibrated tails than logistic).
+      // 2026-05-31: fixed sign error. The home team covers -1.5 when actual_margin
+      // exceeds +1.5, i.e. actual_margin > -homeSpread. Previously this asked the
+      // wrong question, returning P(actual > homeSpread) which inflated the
+      // favorite's cover probability by ~30 percentage points and produced 100%
+      // favorite picks on MLB run lines in simulation.
       const MLB_MARGIN_STDEV = 3.8;
 
-      // P(home margin > |homeSpread|) for the -1.5 side
-      const homeCoverProb = 1 - normalCDF((homeSpread - margin) / MLB_MARGIN_STDEV);
-      // P(away margin > |awaySpread|) for the +1.5 side
-      const awayCoverProb = 1 - normalCDF((awaySpread - (-margin)) / MLB_MARGIN_STDEV);
+      // P(home margin > -homeSpread) for the -1.5 side
+      const homeCoverProb = normalCDF((margin + homeSpread) / MLB_MARGIN_STDEV);
+      // P(away margin > -awaySpread) for the +1.5 side
+      const awayCoverProb = normalCDF(((-margin) + awaySpread) / MLB_MARGIN_STDEV);
 
       // Market implied cover probs (remove vig)
       const homeImplied = americanToImpliedProb(homeLine.price);
@@ -518,7 +523,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
 
       console.log(`[game-model] MLB run line: ${game.home} ${homeSpread} (cover ${(homeCoverProb*100).toFixed(1)}% vs mkt ${(homeNoVig*100).toFixed(1)}%, edge ${(homeEdge*100).toFixed(1)}%, profit ${(homeProfit*100).toFixed(1)}c, odds ${homeLine.price}) | ${game.away} ${awaySpread} (cover ${(awayCoverProb*100).toFixed(1)}% vs mkt ${(awayNoVig*100).toFixed(1)}%, edge ${(awayEdge*100).toFixed(1)}%, profit ${(awayProfit*100).toFixed(1)}c, odds ${awayLine.price}). Margin: ${margin.toFixed(2)}`);
 
-      if (homeProfit >= awayProfit) {
+      if (homeProfit > awayProfit) {
         pickTeam = game.home;
         spreadNum = homeSpread;
         odds = homeLine.price;
@@ -567,7 +572,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
     const homeEdge = calcEdge(homeCoverProb, homeNoVig);
     const awayEdge = calcEdge(awayCoverProb, awayNoVig);
 
-    if (homeEdge >= awayEdge) {
+    if (homeEdge > awayEdge) {
       pickTeam = game.home;
       spreadNum = homeSpread;
       odds = homeLine.price;

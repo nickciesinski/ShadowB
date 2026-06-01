@@ -79,13 +79,18 @@ function marginToSpreadCoverProb(projectedMargin, marketSpread, league) {
 
   const stdev = MARGIN_STDEV[league] || 10.0;
 
-  // The spread "edge" is how much better we expect the pick to perform
-  // vs what the market spread implies. Positive = we expect to beat the spread.
-  // For the picked side: if we're picking home at -3.5, and we project home by -5,
-  // the advantage is |projectedMargin| - |marketSpread| in the pick's direction.
-  // Simplification: assume projectedMargin and marketSpread are both from the same
-  // team's perspective. The edge = projectedMargin - marketSpread.
-  const advantage = projectedMargin - marketSpread;
+  // The spread "edge" is how much actual margin we expect vs the threshold the
+  // pick must beat. For a home -3.5 favorite (marketSpread = -3.5), the pick covers
+  // when actual_margin > 3.5, i.e., actual_margin > -marketSpread. So the centered
+  // distance is projectedMargin - (-marketSpread) = projectedMargin + marketSpread.
+  //
+  // 2026-05-31: previous formula used `projectedMargin - marketSpread` which had a
+  // sign error: it asked "is margin > marketSpread (signed)" instead of "is margin
+  // > -marketSpread". For a fair line (margin == -marketSpread), the buggy formula
+  // returned ~75% cover instead of 50%, systematically inflating the favorite's
+  // edge by 25-30 percentage points and producing near-100% favorite spread picks
+  // on MLB and 64-74% on NBA/NFL/NHL.
+  const advantage = projectedMargin + marketSpread;
 
   // Logistic CDF approximation: P(cover) = 1 / (1 + exp(-k * advantage))
   // k â 1.7 / stdev gives a good approximation to the normal CDF
