@@ -28,7 +28,7 @@ const db = require('./db');
 // ── Modifier guardrails ─────────────────────────────────────────
 const MIN_MOD = 0.2;
 const MAX_MOD = 1.5;
-const MIN_SAMPLE = 50;  // need 50+ graded bets before adjusting (prevent noise chasing)
+const MIN_SAMPLE = 25;  // 2026-06-01: dropped 50→25. Old threshold meant modifiers updated on ~1 segment/month at current approved volume.
 
 // Modifier rules based on ROI + win rate:
 //   ROI > 8% AND win% > 52% → boost to min(current * 1.15, MAX)

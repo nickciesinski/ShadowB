@@ -1,0 +1,43 @@
+name: Admin Reset (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      verify_only:
+        description: 'Only verify Supabase recency (no writes)'
+        required: false
+        default: 'false'
+      skip_modifiers:
+        description: 'Skip performance_modifiers reset'
+        required: false
+        default: 'false'
+      skip_calibration:
+        description: 'Skip Calibration_Data reset'
+        required: false
+        default: 'false'
+      dry_run:
+        description: 'Dry run (report, no writes)'
+        required: false
+        default: 'false'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install
+      - name: Run admin reset
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.verify_only }}" = "true" ]; then ARGS="$ARGS --verify-only"; fi
+          if [ "${{ github.event.inputs.skip_modifiers }}" = "true" ]; then ARGS="$ARGS --skip-modifiers"; fi
+          if [ "${{ github.event.inputs.skip_calibration }}" = "true" ]; then ARGS="$ARGS --skip-calibration"; fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          node scripts/admin-reset.js $ARGS

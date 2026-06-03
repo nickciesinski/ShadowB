@@ -260,8 +260,19 @@ function scoreUncertainty(flags) {
  * @returns {number} Capped units
  */
 function applyHeavyFavCap(odds, units) {
-  if (odds < -200) return 0.01;
-  return units;
+  // 2026-06-01: replaced flat 0.01 reset with a soft scaling.
+  // Old behavior killed every ML pick at -200 or worse → MLB chalk, NBA playoff
+  // chalk, NFL big chalk all logged at 0.01 units = effectively no bet. The log
+  // accumulated useless rows the optimizer couldn't learn from.
+  // New behavior: smoothly shrink units as odds get heavier, floor at 0.05.
+  //   -200 → ×1.00 (no penalty kicks in until past -200)
+  //   -250 → ×0.80
+  //   -300 → ×0.67
+  //   -400 → ×0.50
+  //   -800 → ×0.25 (plus floor)
+  if (odds >= -200) return units;
+  const scale = 200 / Math.abs(odds);
+  return Math.max(0.05, units * scale);
 }
 
 module.exports = {

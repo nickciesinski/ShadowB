@@ -312,8 +312,12 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
 
   // Uncertainty: inverse of data completeness (more data = less uncertainty)
   const baseUncertainty = scoreUncertainty(completenessFlags);
-  // Blend prediction variance into uncertainty (30% weight)
-  const uncertainty = baseUncertainty * 0.7 + varianceScore * 0.3;
+  // Blend prediction variance into uncertainty (15% weight).
+  // 2026-06-01: dropped 30%→15%. The variance signal was being corrupted by the
+  // CSV sp_edge_total bias (since-fixed) so it was telling us "high variance"
+  // when the issue was just the bug. Lighter blend until we've seen 2 weeks of
+  // clean variance data.
+  const uncertainty = baseUncertainty * 0.85 + varianceScore * 0.15;
 
   // Parse market odds for this game
   const h2hMarket = game.markets.h2h || [];

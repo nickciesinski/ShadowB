@@ -39,7 +39,7 @@ const FORCE = args.includes('--force');
 
 // ── Thresholds ──────────────────────────────────────────────────
 const MIN_PICKS = 50;
-const MIN_WIN_RATE_LIFT = 2.0;   // percentage points
+const MIN_WIN_RATE_LIFT = 1.0;   // percentage points (2026-06-01: 2.0→1.0; with small samples, accept smaller verified lifts)
 const MIN_ROI_LIFT = 5.0;       // percentage points
 const MAX_WEIGHT_DELTA_PCT = 30; // max % change per individual weight
 const WEIGHT_CLAMP = 5.0;       // absolute max weight magnitude

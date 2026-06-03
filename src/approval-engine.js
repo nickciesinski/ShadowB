@@ -28,11 +28,16 @@
  * maxUncertainty    — maximum model uncertainty (0-1). High uncertainty
  *                     means wide projection spread → tracking only.
  */
-// 2026-05-10 backtest sweep (1000 picks, 60 days): minEdge filter was #1 lever.
-// Raising default 1.5→3.5 improves ROI 3.9%→4.5% by dropping ~290 low-edge bets.
-// All picks still log as tracking_only — only approval threshold changes.
+// 2026-05-10 backtest sweep raised defaults 1.5→3.5 — but that sweep was
+// computed against a buggy model (spread sign error + total Over bias, fixed
+// 2026-05-31). The old "+ROI" signal was actually penalty-stack-shrunk units
+// masking a deeper formula bug. Now that the formulas are fixed:
+// 2026-06-01: default 3.5→2.5, MLB 4.0→2.5 / conf 7→4 / mktQuality 0.35→0.30,
+// NBA 3.5→2.5. NHL untouched (only profitable league pre-fix, don't disturb).
+// Expected: approved volume rises, more samples per segment for the optimizer,
+// modifiers and calibration finally have data to learn from.
 const DEFAULT_THRESHOLDS = {
-  minEdgePct:          3.5,
+  minEdgePct:          2.5,
   minMarketQuality:    0.3,
   minDataCompleteness: 0.3,
   minConfidence:       4,
@@ -41,27 +46,25 @@ const DEFAULT_THRESHOLDS = {
 
 const LEAGUE_OVERRIDES = {
   NHL: {
-    // NHL has been our strongest league — loosen slightly
+    // NHL has been our strongest league — loosen slightly. Untouched 2026-06-01.
     minEdgePct:       2.5,
     minConfidence:    3,
   },
   NBA: {
-    // NBA moneyline is contaminated (stake=0 bug) — tighten ML via
-    // per-market logic in shouldApprove, but keep defaults here
-    // 2026-04-26: total ROI -11.6% on 167 bets (45.5% win rate)
-    // Raised minEdgePct 1.5→2.0, lowered maxUncertainty 0.75→0.65
-    minEdgePct:       3.5,
+    // 2026-06-01: dropped minEdgePct 3.5→2.5 (matches new default). Keep the
+    // tighter maxUncertainty 0.65 since playoff variance is real.
+    // NBA moneyline still routed through per-market block in shouldApprove.
+    minEdgePct:       2.5,
     maxUncertainty:   0.65,
   },
   MLB: {
-    // 2026-05-10: still bleeding at 46.6% win rate all-time, -18.67 units
-    // Raised minEdgePct 2.5→3.0 (weekly auto-tune)
-    // MLB has been bleeding — tighten
-    // 2026-04-26: spread ROI -17.3% on 138 bets, overall ROI -3.6 to -17.3%
-    // Raised minEdgePct 2.0→2.5, minConfidence 6→7
-    minEdgePct:       4.0,
-    minConfidence:    7,
-    minMarketQuality: 0.35,
+    // 2026-06-01: hard reset. The 4.0/7/0.35 stack was set when the model was
+    // structurally picking favorites + Overs (now fixed). With formula bugs
+    // resolved, no justification for tighter-than-default MLB thresholds.
+    // Will reevaluate after 14d of clean grading.
+    minEdgePct:       2.5,
+    minConfidence:    4,
+    minMarketQuality: 0.30,
   },
   NFL: {
     // Limited recent data — use defaults
