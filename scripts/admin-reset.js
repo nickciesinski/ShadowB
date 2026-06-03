@@ -143,9 +143,16 @@ async function resetCalibration() {
     console.log('\nverify-only flag set — exiting');
     process.exit(verify.ok ? 0 : 1);
   }
+  if (!verify.ok) {
+    console.warn('\n[warn] Supabase verify did not pass — proceeding with resets anyway.');
+    console.warn('[warn] The resets are still safe (they don\'t touch performance_log).');
+    console.warn('[warn] But once dual-write is restored, you may want to re-run this.');
+  }
   if (!SKIP_MODIFIERS) await resetModifiers();
   if (!SKIP_CALIBRATION) await resetCalibration();
   console.log('\n=== admin-reset complete ===');
+  // Exit 0 on successful resets even if verify failed (verify is informational)
+  process.exit(0);
 })().catch(e => {
   console.error('FATAL:', e.message);
   process.exit(1);
