@@ -1049,10 +1049,14 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           pick_purpose: meta.pick_purpose || 'tracking',
         });
         });
-        await db.insertPerformanceRows(dbRows);
-        console.log(`[predictions] Dual-wrote ${dbRows.length} ${sport} picks to Supabase`);
+        const dwResult = await db.insertPerformanceRows(dbRows);
+        if (dwResult && dwResult.ok) {
+          console.log(`[predictions] Dual-wrote ${dwResult.inserted} ${sport} picks to Supabase`);
+        } else {
+          console.error(`[predictions] Supabase dual-write returned failure for ${sport}: ${dwResult && dwResult.reason}`);
+        }
       } catch (err) {
-        console.warn(`[predictions] Supabase dual-write failed for ${sport}:`, err.message);
+        console.warn(`[predictions] Supabase dual-write threw for ${sport}:`, err.message);
       }
     }
 

@@ -30,9 +30,18 @@ function isEnabled() {
 
 async function insertPerformanceRows(rows) {
   const sb = getClient();
-  if (!sb) return;
+  if (!sb) return { ok: false, inserted: 0, reason: 'supabase_not_configured' };
   const { error } = await sb.from('performance_log').insert(rows);
-  if (error) console.warn('[db] insertPerformanceRows:', error.message);
+  if (error) {
+    // 2026-06-03: previously this only logged a warning and returned undefined,
+    // which let callers print "Dual-wrote N picks" while inserts silently failed
+    // for 41 days (missing approval_status column). Now we return an explicit
+    // failure object the caller can check, and log an alarming message so the
+    // failure is visible at glance.
+    console.error(`[db] insertPerformanceRows FAILED for ${rows.length} rows:`, error.message);
+    return { ok: false, inserted: 0, reason: error.message };
+  }
+  return { ok: true, inserted: rows.length };
 }
 
 async function getPerformanceStats({ days = 30, league, market } = {}) {
