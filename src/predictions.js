@@ -353,10 +353,16 @@ async function generateMLBPredictions() {
   console.log('[predictions] Generating MLB predictions (deterministic)...');
   await loadDbModifiers();
 
+  // 2026-06-04: was SHEETS.TEAM_STATS (resolves to 'NBA Team Stats')! Every MLB
+  // team name lookup against the NBA roster failed, defaulting all teams to
+  // strength 0.5 and projecting margin = home advantage only (0.35) for every
+  // game. This made the spread formula correctly conclude that no MLB favorite
+  // ever covers -1.5, producing 100% dog picks. NBA/NHL/NFL use their
+  // per-league constants; only MLB was wired to the generic default.
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
     getValues(SPREADSHEET_ID, SHEETS.WEIGHTS),
-    getValues(SPREADSHEET_ID, SHEETS.TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.MLB_TEAM_STATS),
     getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
 
