@@ -93,16 +93,39 @@ async function computeFromSheets() {
   if (!rows || rows.length < 2) return map;
 
   const headers = rows[0].map(h => String(h).trim().toLowerCase());
-  const resultIdx = headers.indexOf('result');
-  const oddsIdx = headers.indexOf('odds');
 
+  // 2026-06-04: Layered column detection. Previous version only did
+  // exact-match on 'result' / 'odds' and printed "Missing result or odds
+  // columns" then returned default 1.0 multipliers. The actual Sheets
+  // header row uses different strings (varies by Sheet edit history), so
+  // calibration was permanently a no-op.
+  //
+  // Strategy:
+  //  1. Try exact header match
+  //  2. Try fuzzy header match (.includes), excluding CLV-related cols
+  //  3. Fall back to known positional indices from the dual-write writer:
+  //     col 9 = odds, col 11 = confidence, col 16 = result, col 0 = date.
+  function findCol(predicate, fallbackIdx) {
+    const idx = headers.findIndex(predicate);
+    return idx >= 0 ? idx : fallbackIdx;
+  }
+  const exactResult = headers.indexOf('result');
+  const exactOdds   = headers.indexOf('odds');
+  const resultIdx = exactResult >= 0
+    ? exactResult
+    : findCol(h => h === 'result' || h.startsWith('result ') || /^w\/l/.test(h), 16);
+  const oddsIdx = exactOdds >= 0
+    ? exactOdds
+    : findCol(h => /\bodds\b/.test(h) && !h.includes('closing') && !h.includes('opening') && !h.includes('clv'), 9);
+
+  console.log(`[calibration] Column detection: resultIdx=${resultIdx} (exact=${exactResult}), oddsIdx=${oddsIdx} (exact=${exactOdds})`);
   if (resultIdx < 0 || oddsIdx < 0) {
-    console.warn('[calibration] Missing result or odds columns');
+    console.warn('[calibration] Still missing result or odds columns even after positional fallback — header row may be malformed');
     return map;
   }
 
-  // We need the edge column — check for it
-  const edgeIdx = headers.findIndex(h => h === 'edge' || h === 'edge_pct');
+  // We need the edge column — check for it (fuzzy)
+  const edgeIdx = headers.findIndex(h => h === 'edge' || h === 'edge_pct' || h.includes('edge%') || /^edge\s/.test(h));
 
   // Accumulate wins/total per bucket
   const buckets = {};
@@ -115,7 +138,9 @@ async function computeFromSheets() {
   // Use last 60 days of data for calibration
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 60);
-  const dateIdx = headers.indexOf('date');
+  // 2026-06-04: also fall back to col 0 if 'date' header doesn't match
+  let dateIdx = headers.indexOf('date');
+  if (dateIdx < 0) dateIdx = headers.findIndex(h => h.includes('date')) >= 0 ? headers.findIndex(h => h.includes('date')) : 0;
 
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -142,10 +167,15 @@ async function computeFromSheets() {
       edgePct = Math.abs(parseFloat(r[edgeIdx])) || 0;
     } else {
       // Estimate: edge ≈ (confidence/10 - implied) * 100
-      // Without edge data, use a rough proxy based on confidence
-      const confIdx = headers.findIndex(h => h.includes('confidence') || h.includes('conf'));
+      // Without edge data, use a rough proxy based on confidence.
+      // 2026-06-04: also fall back to col 11 (the known confidence column).
+      const confIdx = (function() {
+        const ci = headers.findIndex(h => h.includes('confidence') || h.includes('conf'));
+        return ci >= 0 ? ci : 11;
+      })();
       if (confIdx >= 0) {
-        const conf = parseInt(r[confIdx]) || 5;
+        // Handle "X%" strings as well as plain ints
+        const conf = parseInt(String(r[confIdx]).replace('%', '')) || 5;
         edgePct = Math.max(0, (conf - 3) * 0.8); // rough mapping
       }
     }
