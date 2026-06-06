@@ -69,21 +69,31 @@ function resolveColumns(headers) {
   const exactOdds    = headers.indexOf('odds');
   const exactResult  = headers.indexOf('result');
 
+  // Strict-match-or-positional resolver: try exact / starts-with first;
+  // fall back to the known hardcoded writer position if no clean match.
+  // The previous version used loose .includes which matched cells like
+  // weights_snapshot (col 18) when its header text happened to contain
+  // substrings like "home" or "conf", corrupting away/home/units/conf
+  // resolution and breaking dedup.
+  function strictOrPos(predicate, pos) {
+    const i = headers.findIndex(predicate);
+    return i >= 0 ? i : pos;
+  }
   return {
-    date:    exactDate   >= 0 ? exactDate   : findCol(h => h.includes('date'), 0),
-    league:  exactLeague >= 0 ? exactLeague : findCol(h => h.includes('league') || h.includes('sport'), 1),
-    market:  exactMarket >= 0 ? exactMarket : findCol(h => h.includes('market') || h.includes('bet_type') || h.includes('bettype'), 6),
-    away:    findCol(h => h.includes('away'), 3),
-    home:    findCol(h => h.includes('home'), 4),
-    pick:    exactPick   >= 0 ? exactPick   : findCol(h => h === 'pick' || h.startsWith('pick '), 7),
-    line:    exactLine   >= 0 ? exactLine   : findCol(h => h === 'line' || h.includes('line ('), 8),
+    date:    exactDate   >= 0 ? exactDate   : strictOrPos(h => h === 'date' || h.startsWith('date '), 0),
+    league:  exactLeague >= 0 ? exactLeague : strictOrPos(h => h === 'league' || h === 'sport', 1),
+    market:  exactMarket >= 0 ? exactMarket : strictOrPos(h => h === 'market' || h === 'bet_type' || h === 'bettype', 6),
+    away:    strictOrPos(h => h === 'away' || h === 'awayteam' || h === 'away_team' || h === 'away team', 3),
+    home:    strictOrPos(h => h === 'home' || h === 'hometeam' || h === 'home_team' || h === 'home team', 4),
+    pick:    exactPick   >= 0 ? exactPick   : strictOrPos(h => h === 'pick' || h.startsWith('pick '), 7),
+    line:    exactLine   >= 0 ? exactLine   : strictOrPos(h => h === 'line' || h.startsWith('line '), 8),
     odds:    exactOdds   >= 0 ? exactOdds
-            : findCol(h => /\bodds\b/.test(h) && !h.includes('closing') && !h.includes('opening') && !h.includes('clv'), 9),
-    units:   findCol(h => h === 'units' || h === 'final_units' || (h.includes('unit') && !h.includes('return')), 10),
-    conf:    findCol(h => h.includes('confidence') || h === 'conf', 11),
-    result:  exactResult >= 0 ? exactResult : findCol(h => h === 'result' || h.startsWith('result ') || /^w\/l/.test(h), 16),
-    ret:     findCol(h => h.includes('return') || h === 'unit_return', 17),
-    approval: findCol(h => h.includes('approval_status') || h === 'approval', 21),
+            : strictOrPos(h => h === 'odds' || h === 'american_odds' || h === 'american odds', 9),
+    units:   strictOrPos(h => h === 'units' || h === 'final_units' || h === 'final units' || h === 'stake', 10),
+    conf:    strictOrPos(h => h === 'confidence' || h === 'conf', 11),
+    result:  exactResult >= 0 ? exactResult : strictOrPos(h => h === 'result' || h === 'w/l' || h === 'w/l/p', 16),
+    ret:     strictOrPos(h => h === 'unit_return' || h === 'unit return' || h === 'return' || h === 'units_returned', 17),
+    approval: strictOrPos(h => h === 'approval_status' || h === 'approval status' || h === 'approval', 21),
   };
 }
 
