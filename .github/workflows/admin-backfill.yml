@@ -1,0 +1,46 @@
+name: Admin Backfill (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'Start date (inclusive), YYYY-MM-DD'
+        required: true
+        default: '2026-04-24'
+      to:
+        description: 'End date (inclusive), YYYY-MM-DD'
+        required: true
+        default: '2026-06-04'
+      dry_run:
+        description: 'Dry run (report, no writes)'
+        required: false
+        default: 'true'
+      limit:
+        description: 'Cap on rows to insert (0 = no cap)'
+        required: false
+        default: '0'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install
+      - name: Run admin backfill
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS="--from ${{ github.event.inputs.from }} --to ${{ github.event.inputs.to }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          LIMIT="${{ github.event.inputs.limit }}"
+          if [ -n "$LIMIT" ] && [ "$LIMIT" != "0" ]; then
+            ARGS="$ARGS --limit $LIMIT"
+          fi
+          node scripts/admin-backfill.js $ARGS
