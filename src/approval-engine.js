@@ -36,7 +36,7 @@
 // NBA 3.5→2.5. NHL untouched (only profitable league pre-fix, don't disturb).
 // Expected: approved volume rises, more samples per segment for the optimizer,
 // modifiers and calibration finally have data to learn from.
-const DEFAULT_THRESHOLDS = {
+const DEFAULT_THRESHOLDS_FALLBACK = {
   minEdgePct:          2.5,
   minMarketQuality:    0.3,
   minDataCompleteness: 0.3,
@@ -44,7 +44,7 @@ const DEFAULT_THRESHOLDS = {
   maxUncertainty:      0.75,
 };
 
-const LEAGUE_OVERRIDES = {
+const LEAGUE_OVERRIDES_FALLBACK = {
   NHL: {
     // NHL has been our strongest league — loosen slightly. Untouched 2026-06-01.
     minEdgePct:       2.5,
@@ -70,6 +70,36 @@ const LEAGUE_OVERRIDES = {
     // Limited recent data — use defaults
   },
 };
+
+
+// ── Threshold source-of-truth loader ────────────────────────────
+// Thresholds live in config/approval-thresholds.json so the weekly
+// auto-tuner (scripts/weekly-threshold-tune.js) can edit + commit them
+// without rewriting this source file. If the JSON is missing or invalid,
+// we fall back to the hardcoded *_FALLBACK values above so the model never
+// breaks on a bad/absent config.
+const fs = require('fs');
+const path = require('path');
+
+function loadThresholdConfig() {
+  try {
+    const cfgPath = path.join(__dirname, '..', 'config', 'approval-thresholds.json');
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    if (cfg && cfg.default && typeof cfg.default === 'object') {
+      const defaults = { ...DEFAULT_THRESHOLDS_FALLBACK, ...cfg.default };
+      const overrides = (cfg.leagues && typeof cfg.leagues === 'object') ? cfg.leagues : LEAGUE_OVERRIDES_FALLBACK;
+      console.log(`[approval] Loaded thresholds from config (updated ${cfg.updated || 'n/a'})`);
+      return { defaults, overrides };
+    }
+  } catch (e) {
+    console.warn(`[approval] Could not load approval-thresholds.json (${e.message}); using hardcoded fallbacks`);
+  }
+  return { defaults: DEFAULT_THRESHOLDS_FALLBACK, overrides: LEAGUE_OVERRIDES_FALLBACK };
+}
+
+const _loaded = loadThresholdConfig();
+const DEFAULT_THRESHOLDS = _loaded.defaults;
+const LEAGUE_OVERRIDES = _loaded.overrides;
 
 /**
  * Merge default thresholds with league-specific overrides.

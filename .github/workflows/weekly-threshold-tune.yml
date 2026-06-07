@@ -1,0 +1,66 @@
+name: Weekly Threshold Auto-Tune
+
+on:
+  schedule:
+    # Sunday 13:00 UTC (9:00 AM ET) — after trigger14 has graded Saturday's games,
+    # before the 14:00 UTC weight optimizer. Independent file targets, so order is moot.
+    - cron: '0 13 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Analyze + print only, do not write/commit'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Run threshold tuner
+        env:
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          node scripts/weekly-threshold-tune.js $ARGS
+
+      - name: Commit threshold changes + review
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config user.name "shadow-bets-bot"
+          git config user.email "shadow-bets-bot@users.noreply.github.com"
+          git add config/approval-thresholds.json threshold-reviews/
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Weekly threshold auto-tune — $(date +%Y-%m-%d) [skip ci]
+
+          Applied by the weekly threshold tuner based on 7-day performance analysis.
+          See threshold-reviews/ for the segment breakdown and rationale."
+          git push
+
+      - name: Upload review artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: threshold-review
+          path: threshold-reviews/*.md
+          if-no-files-found: ignore
