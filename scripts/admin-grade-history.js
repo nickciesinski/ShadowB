@@ -178,10 +178,28 @@ async function gradeWindow(rows, byDateLeague) {
 
     const picksToday = rows.filter(r => r.date === date && r.league === league);
     let matched = 0, unmatched = 0, nonFinal = 0;
+    // Debug: log a few unmatched examples per (date,league) so we can see what
+    // names we're comparing against ESPN.
+    let dbgUnmatched = 0;
     for (const pick of picksToday) {
-      const [awayTeam, homeTeam] = pick.game.split(' @ ').map(s => s.trim());
-      const game = games.find(g => teamsMatch(g.home.name, homeTeam) && teamsMatch(g.away.name, awayTeam));
-      if (!game) { unmatched++; continue; }
+      const [teamA, teamB] = pick.game.split(' @ ').map(s => s.trim());
+      // Try both orientations: (away=teamA, home=teamB) AND (home=teamA, away=teamB).
+      // The 2026-04-23 column shift commit moved things around in Sheets and the
+      // game string stored in Supabase may not always follow the documented order.
+      let game = games.find(g => teamsMatch(g.home.name, teamB) && teamsMatch(g.away.name, teamA));
+      let homeTeam = teamB, awayTeam = teamA, flipped = false;
+      if (!game) {
+        game = games.find(g => teamsMatch(g.home.name, teamA) && teamsMatch(g.away.name, teamB));
+        if (game) { homeTeam = teamA; awayTeam = teamB; flipped = true; }
+      }
+      if (!game) {
+        if (dbgUnmatched < 2) {
+          const espnNames = games.map(g => `${g.away.name}@${g.home.name}`).slice(0, 5);
+          console.log(`[grade-history]   unmatched pick game="${pick.game}" ESPN=${JSON.stringify(espnNames)}`);
+        }
+        dbgUnmatched++;
+        unmatched++; continue;
+      }
       if (!game.completed || game.home.score == null || game.away.score == null) { nonFinal++; continue; }
 
       const betResult = determineBetResult(
