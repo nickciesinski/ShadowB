@@ -1,0 +1,46 @@
+name: Admin Grade History (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: 'Start date (inclusive), YYYY-MM-DD'
+        required: true
+        default: '2026-04-24'
+      to:
+        description: 'End date (inclusive), YYYY-MM-DD'
+        required: true
+        default: '2026-06-04'
+      dry_run:
+        description: 'Dry run (grade but no writes)'
+        required: false
+        default: 'true'
+      report_only:
+        description: 'Only print distribution of ungraded rows, no API calls'
+        required: false
+        default: 'false'
+      skip_sheets:
+        description: 'Only update Supabase, not Sheets'
+        required: false
+        default: 'false'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install
+      - name: Run admin grade history
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS="--from ${{ github.event.inputs.from }} --to ${{ github.event.inputs.to }}"
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          if [ "${{ github.event.inputs.report_only }}" = "true" ]; then ARGS="$ARGS --report-only"; fi
+          if [ "${{ github.event.inputs.skip_sheets }}" = "true" ]; then ARGS="$ARGS --skip-sheets"; fi
+          node scripts/admin-grade-history.js $ARGS
