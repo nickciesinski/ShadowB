@@ -58,6 +58,11 @@ const ESPN = {
 };
 
 function dateToYYYYMMDD(iso) { return iso.replace(/-/g, ''); }
+function shiftIsoDate(iso, deltaDays) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + deltaDays);
+  return d.toISOString().slice(0, 10);
+}
 
 // Team-name normalization for fuzzy matching across APIs.
 function normalizeTeam(name) {
@@ -171,9 +176,19 @@ async function gradeWindow(rows, byDateLeague) {
       console.warn(`[grade-history] No ESPN endpoint for league ${league}, skipping`);
       continue;
     }
-    const yyyymmdd = dateToYYYYMMDD(date);
-    const games = await fetchEspnScoreboard(league, yyyymmdd);
-    // Small politeness delay between API calls
+    // 2026-06-06: fetch a ±1 day window. The pick's stored 'date' is the
+    // US-local game date but ESPN groups events by UTC day, so a west-coast
+    // game that starts at 10 PM PT plays at 5 AM UTC the next day. Without
+    // the ±1 window, those games come back as empty / wrong-game.
+    const prev = shiftIsoDate(date, -1);
+    const next = shiftIsoDate(date, +1);
+    const [g0, g1, g2] = await Promise.all([
+      fetchEspnScoreboard(league, dateToYYYYMMDD(prev)),
+      fetchEspnScoreboard(league, dateToYYYYMMDD(date)),
+      fetchEspnScoreboard(league, dateToYYYYMMDD(next)),
+    ]);
+    const games = [...g0, ...g1, ...g2];
+    // Small politeness delay between (date,league) pairs
     await new Promise(r => setTimeout(r, 200));
 
     const picksToday = rows.filter(r => r.date === date && r.league === league);
