@@ -501,226 +501,277 @@ function flipPick(p) {
 
 function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
   const [expanded, setExpanded] = useState({});
+  const [expandAll, setExpandAll] = useState(false);
   const sportFiltered = liveGames.filter(g => {
     if (sf === 'My Bets') {
-      // Show only games with at least one selected bet
       return picks.some(p => p.league === g.league && p.away === g.away && p.home === g.home && isBet(p));
     }
     return sf === 'All' ? true : sf === 'Live' ? g.status === 'in' : g.league === sf;
   });
   const sorted = sortGames(sportFiltered);
 
-  return sorted.length === 0
-    ? <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>{sf === 'Live' ? 'No live games right now' : 'No games today'}</div>
-    : sorted.map((game, i) => {
-      const gamePicks = picks.filter(p =>
-        p.league === game.league && p.away === game.away && p.home === game.home &&
-        (bf === 'All' || (p.betType || p.market || '').toLowerCase() === bf.toLowerCase())
-      );
-      // For trend, use flipped picks for fades so the border color reflects YOUR position
-      const displayPicks = gamePicks.map(p => isFade(p) ? flipPick(p) : p);
-      const trend = getTrend(displayPicks, game);
-      const isPre = game.status === 'pre';
-      const isLive = game.status === 'in';
-      const isPost = game.status === 'post' || game.status === 'postponed';
-      const diff = Math.abs(game.awayScore - game.homeScore);
-      const isClose = isLive && game.isLate && diff <= 5;
+  // Abbreviate team names: use last word (e.g. "Golden State Warriors" → "Warriors")
+  const abbr = (name) => (name || '').split(' ').pop();
 
-      const hasBets = gamePicks.some(p => isBet(p));
-      const hasFades = gamePicks.some(p => isFade(p));
-      let tBorder = hasFades ? '#FB923C' : hasBets ? '#8B5CF6' : 'rgba(255,255,255,0.08)';
-      let tBg = 'transparent';
-      if (isClose) { tBorder = '#F59E0B'; tBg = 'rgba(245,158,11,0.08)'; }
-      else if (trend !== null && trend > 0.3) { tBorder = '#10B981'; tBg = 'rgba(16,185,129,0.08)'; }
-      else if (trend !== null && trend < -0.3) { tBorder = '#EF4444'; tBg = 'rgba(220,38,38,0.08)'; }
+  // Compute game data once for both compact and expanded views
+  const gameData = sorted.map((game, i) => {
+    const gamePicks = picks.filter(p =>
+      p.league === game.league && p.away === game.away && p.home === game.home &&
+      (bf === 'All' || (p.betType || p.market || '').toLowerCase() === bf.toLowerCase())
+    );
+    const displayPicks = gamePicks.map(p => isFade(p) ? flipPick(p) : p);
+    const trend = getTrend(displayPicks, game);
+    const isPre = game.status === 'pre';
+    const isLive = game.status === 'in';
+    const isPost = game.status === 'post' || game.status === 'postponed';
+    const diff = Math.abs(game.awayScore - game.homeScore);
+    const isClose = isLive && game.isLate && diff <= 5;
+    const hasBets = gamePicks.some(p => isBet(p));
+    const hasFades = gamePicks.some(p => isFade(p));
+    const isPostponed = game.status === 'postponed';
+    const gameNumLabel = game.gameNum ? ` G${game.gameNum}` : '';
+    const gameKey = `${game.league}|${game.away}@${game.home}`;
 
-      const isExp = expanded[i] !== undefined ? expanded[i] : hasBets;
-      const gameKey = `${game.league}|${game.away}@${game.home}`;
+    let tBorder = hasFades ? '#FB923C' : hasBets ? '#8B5CF6' : 'rgba(255,255,255,0.08)';
+    let tBg = 'transparent';
+    if (isClose) { tBorder = '#F59E0B'; tBg = 'rgba(245,158,11,0.08)'; }
+    else if (trend !== null && trend > 0.3) { tBorder = '#10B981'; tBg = 'rgba(16,185,129,0.08)'; }
+    else if (trend !== null && trend < -0.3) { tBorder = '#EF4444'; tBg = 'rgba(220,38,38,0.08)'; }
 
-      const isPostponed = game.status === 'postponed';
-      const gameNumLabel = game.gameNum ? ` (Game ${game.gameNum})` : '';
+    let statusText = '';
+    let statusColor = '#64748B';
+    if (isPostponed) { statusText = 'PPD'; statusColor = '#F59E0B'; }
+    else if (isPre) { statusText = cleanTime(game.period) || 'Pre'; statusColor = '#64748B'; }
+    else if (isLive) { statusText = cleanTime(game.period) || 'Live'; statusColor = '#34D399'; }
+    else if (isPost) { statusText = 'Final'; statusColor = '#64748B'; }
+    if (gameNumLabel) statusText = statusText + gameNumLabel;
 
-      let statusText = '';
-      let statusColor = '#64748B';
-      if (isPostponed) { statusText = game.statusDetail || 'Postponed'; statusColor = '#F59E0B'; }
-      else if (isPre) { statusText = cleanTime(game.period) || 'Pregame'; statusColor = '#64748B'; }
-      else if (isClose) { statusText = '🔥 Close game!'; statusColor = '#FCD34D'; }
-      else if (isLive && trend !== null) {
-        if (trend > 0.3) { statusText = 'Picks trending well'; statusColor = '#34D399'; }
-        else if (trend < -0.3) { statusText = 'Picks struggling'; statusColor = '#F87171'; }
-        else { statusText = 'Even'; statusColor = '#64748B'; }
-      }
-      else if (isPost) { statusText = 'Final'; statusColor = '#64748B'; }
-      // Append game number for doubleheaders
-      if (gameNumLabel) statusText = statusText + gameNumLabel;
+    const cardOpacity = isPostponed ? 0.5 : isPost ? 0.7 : 1;
+    const isExp = expandAll || (expanded[i] !== undefined ? expanded[i] : false);
 
-      // Visual distinction: live games get full border + glow, finished games get left bar only
-      const cardBorder = isLive
-        ? `${hasBets ? '3px' : '2px'} solid ${tBorder}`
-        : isPost
-        ? '1px solid rgba(255,255,255,0.06)'
-        : `${hasBets ? '3px' : '2px'} solid ${tBorder}`;
-      const cardLeftBar = isPost && !isLive ? `4px solid ${tBorder}` : undefined;
-      const cardShadow = isLive
-        ? (hasFades ? '0 2px 16px rgba(249,115,22,0.25)' : hasBets ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)')
-        : '0 1px 6px rgba(0,0,0,0.2)';
-      const cardOpacity = game.status === 'postponed' ? 0.5 : isPost ? 0.7 : 1;
+    return { game, gamePicks, displayPicks, trend, isPre, isLive, isPost, isClose, hasBets, hasFades, isPostponed, tBorder, tBg, statusText, statusColor, cardOpacity, isExp, gameKey, i };
+  });
 
-      return (
-        <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: cardBorder, borderLeft: cardLeftBar || undefined, boxShadow: cardShadow, opacity: cardOpacity, transition: 'opacity 0.3s' }}>
-          {isClose && <div style={{ background: 'rgba(245,158,11,0.15)', color: '#FCD34D', fontSize: 11, fontWeight: 700, padding: '4px 12px', textAlign: 'center' }}>CLOSE GAME — Tune in!</div>}
-          <div onClick={() => setExpanded(prev => ({ ...prev, [i]: !prev[i] }))} style={{ padding: '10px 12px', cursor: 'pointer', background: tBg }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+  if (sorted.length === 0) {
+    return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>{sf === 'Live' ? 'No live games right now' : 'No games today'}</div>;
+  }
+
+  // Expanded detail renderer (shared between compact-expand and expand-all)
+  const renderExpanded = (d) => {
+    const { game, gamePicks, displayPicks, isClose, tBorder, tBg, hasBets, hasFades, isLive, isPost, isPre, statusText, statusColor, cardOpacity, gameKey, i } = d;
+    const cardBorder = isLive
+      ? `${hasBets ? '3px' : '2px'} solid ${tBorder}`
+      : isPost ? '1px solid rgba(255,255,255,0.06)' : `${hasBets ? '3px' : '2px'} solid ${tBorder}`;
+    const cardLeftBar = isPost && !isLive ? `4px solid ${tBorder}` : undefined;
+    const cardShadow = isLive
+      ? (hasFades ? '0 2px 16px rgba(249,115,22,0.25)' : hasBets ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)')
+      : '0 1px 6px rgba(0,0,0,0.2)';
+
+    return (
+      <div key={gameKey + i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: cardBorder, borderLeft: cardLeftBar || undefined, boxShadow: cardShadow, opacity: cardOpacity, transition: 'all 0.3s ease', gridColumn: '1 / -1' }}>
+        {isClose && <div style={{ background: 'rgba(245,158,11,0.15)', color: '#FCD34D', fontSize: 11, fontWeight: 700, padding: '4px 12px', textAlign: 'center' }}>CLOSE GAME — Tune in!</div>}
+        <div onClick={() => { if (!expandAll) setExpanded(prev => ({ ...prev, [i]: false })); }} style={{ padding: '10px 12px', cursor: expandAll ? 'default' : 'pointer', background: tBg }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ background: LEAGUE_COLORS[game.league], color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{game.league}</span>
+              {isLive && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#34D399', display: 'inline-block', boxShadow: '0 0 6px rgba(52,211,153,0.6)', animation: 'pulse 2s infinite' }} />}
+              <span style={{ fontSize: 10, fontWeight: 600, color: statusColor }}>{d.isClose ? '🔥 Close game!' : d.trend !== null && isLive ? (d.trend > 0.3 ? 'Trending well' : d.trend < -0.3 ? 'Struggling' : statusText) : statusText}</span>
+            </div>
+            {isLive && <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>{cleanTime(game.period)}</span>}
+            {isPre && game.period && <span style={{ fontSize: 11, color: '#64748B' }}>{cleanTime(game.period)}</span>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+            <div style={{ textAlign: 'right', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{game.away}</div>
+                <TeamLogo team={game.away} league={game.league} size={20} />
+              </div>
+            </div>
+            {isPre ? (
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#475569', padding: '0 8px' }}>vs</span>
+            ) : (
+              <>
+                <span style={{ fontSize: 26, fontWeight: 800, color: game.awayScore >= game.homeScore ? '#F1F5F9' : '#475569', fontVariantNumeric: 'tabular-nums' }}>{game.awayScore}</span>
+                <span style={{ fontSize: 14, color: '#475569' }}>-</span>
+                <span style={{ fontSize: 26, fontWeight: 800, color: game.homeScore >= game.awayScore ? '#F1F5F9' : '#475569', fontVariantNumeric: 'tabular-nums' }}>{game.homeScore}</span>
+              </>
+            )}
+            <div style={{ textAlign: 'left', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ background: LEAGUE_COLORS[game.league], color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{game.league}</span>
-                {isLive && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#34D399', display: 'inline-block', boxShadow: '0 0 6px rgba(52,211,153,0.6)', animation: 'pulse 2s infinite' }} />}
-                <span style={{ fontSize: 10, fontWeight: 600, color: statusColor }}>{statusText}</span>
+                <TeamLogo team={game.home} league={game.league} size={20} />
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{game.home}</div>
               </div>
-              {isLive && <span style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>{cleanTime(game.period)}</span>}
-              {isPre && game.period && <span style={{ fontSize: 11, color: '#64748B' }}>{cleanTime(game.period)}</span>}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <div style={{ textAlign: 'right', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{game.away}</div>
-                  <TeamLogo team={game.away} league={game.league} size={20} />
-                </div>
-              </div>
-              {isPre ? (
-                <span style={{ fontSize: 16, fontWeight: 700, color: '#475569', padding: '0 8px' }}>vs</span>
-              ) : (
-                <>
-                  <span style={{ fontSize: 26, fontWeight: 800, color: game.awayScore >= game.homeScore ? '#F1F5F9' : '#475569', fontVariantNumeric: 'tabular-nums' }}>{game.awayScore}</span>
-                  <span style={{ fontSize: 14, color: '#475569' }}>-</span>
-                  <span style={{ fontSize: 26, fontWeight: 800, color: game.homeScore >= game.awayScore ? '#F1F5F9' : '#475569', fontVariantNumeric: 'tabular-nums' }}>{game.homeScore}</span>
-                </>
-              )}
-              <div style={{ textAlign: 'left', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <TeamLogo team={game.home} league={game.league} size={20} />
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{game.home}</div>
-                </div>
-              </div>
-            </div>
-            <div style={{ textAlign: 'center', fontSize: 10, color: '#64748B', marginTop: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 4 }}>
-              {isExp ? '▲ Collapse' : (
-                <>
-                  {displayPicks.map((dp, di) => {
-                    const st = getPickStatus(dp, game);
-                    const isInProgress = game.status === 'in';
-                    let dotColor = '#475569';
-                    let anim = 'none';
-                    if (st === 'winning') { dotColor = '#10B981'; if (isInProgress) anim = 'flashGreen 1.5s ease-in-out infinite'; }
-                    else if (st === 'losing') { dotColor = '#EF4444'; if (isInProgress) anim = 'flashRed 1.5s ease-in-out infinite'; }
-                    else if (st === 'even') { dotColor = '#6B7280'; }
-                    else if (st === 'pending') { dotColor = '#475569'; }
-                    return <span key={di} style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor, display: 'inline-block', animation: anim }} />;
-                  })}
-                  <span style={{ marginLeft: 2 }}>{gamePicks.length > 0 ? '▼' : '▼ Details'}</span>
-                </>
-              )}
             </div>
           </div>
-          {isExp && (
-            <>
-              {gamePicks.map((p, j) => {
-                const faded = isFade(p);
-                const displayPick = faded ? flipPick(p) : p;
-                const status = getPickStatus(displayPick, game);
-                const icon = status === 'winning' ? '✅' : status === 'losing' ? '❌' : '➖';
-                const selected = isBet(p);
-                let rowBg = 'transparent';
-                if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : (faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)');
-                else if (status === 'winning') rowBg = 'rgba(16,185,129,0.08)';
-                else if (status === 'losing') rowBg = 'rgba(220,38,38,0.08)';
-                return (
-                  <div key={j} style={{
-                    display: 'flex', justifyContent: 'space-between', padding: '7px 12px',
-                    background: rowBg,
-                    borderTop: '1px solid rgba(255,255,255,0.06)',
-                    borderLeft: selected ? (faded ? '5px solid #FB923C' : '5px solid #A78BFA') : '3px solid transparent',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ fontSize: 13 }}>{icon}</span>
-                      {faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 4px', borderRadius: 3 }}>FADE</span>}
-                      {selected && !faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
-                      <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{displayPick.betType || displayPick.market}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{displayPick.pick}</span>
-                      {displayPick.line && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{displayPick.line}</span>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(p.odds)}</span>
-                      <span style={{ fontSize: 11, color: '#64748B' }}>{p.units}u</span>
-                    </div>
-                  </div>
-                );
-              })}
-              {/* Expanded game detail */}
-              <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '8px 12px', background: 'rgba(255,255,255,0.02)' }}>
-                {/* Period-by-period linescore */}
-                {(game.awayLinescores?.length > 0 || game.homeLinescores?.length > 0) && (
-                  <div style={{ marginBottom: 8, overflowX: 'auto' }}>
-                    <div style={{ display: 'flex', gap: 0, fontSize: 10, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      <div style={{ width: 70, color: '#64748B', padding: '2px 4px', flexShrink: 0 }}></div>
-                      {(game.awayLinescores || game.homeLinescores || []).map((_, pi) => (
-                        <div key={pi} style={{ width: 24, textAlign: 'center', color: '#475569', padding: '2px 0', flexShrink: 0 }}>
-                          {game.league === 'MLB' ? pi + 1 : `${game.league === 'NHL' ? 'P' : 'Q'}${pi + 1}`}
-                        </div>
-                      ))}
-                      <div style={{ width: 30, textAlign: 'center', color: '#94A3B8', fontWeight: 700, padding: '2px 0', flexShrink: 0 }}>T</div>
-                    </div>
-                    {[{ team: game.away, scores: game.awayLinescores, total: game.awayScore },
-                      { team: game.home, scores: game.homeLinescores, total: game.homeScore }].map(row => (
-                      <div key={row.team} style={{ display: 'flex', gap: 0, fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
-                        <div style={{ width: 70, color: '#94A3B8', fontWeight: 600, padding: '2px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.team.split(' ').pop()}</div>
-                        {(row.scores || []).map((s, si) => (
-                          <div key={si} style={{ width: 24, textAlign: 'center', color: '#F1F5F9', padding: '2px 0', flexShrink: 0 }}>{s}</div>
-                        ))}
-                        <div style={{ width: 30, textAlign: 'center', color: '#F1F5F9', fontWeight: 800, padding: '2px 0', flexShrink: 0 }}>{row.total}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* Game leaders */}
-                {game.leaders?.length > 0 && (
-                  <div style={{ marginBottom: 6 }}>
-                    {game.leaders.filter((l, li, arr) => arr.findIndex(x => x.category === l.category) === li).slice(0, 4).map((l, li) => (
-                      <div key={li} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, color: '#475569', width: 50, textTransform: 'uppercase' }}>{l.shortCategory || l.category}</span>
-                        <span style={{ fontSize: 10, color: '#F1F5F9', fontWeight: 600 }}>{l.athlete}</span>
-                        <span style={{ fontSize: 10, color: '#64748B' }}>({l.team})</span>
-                        <span style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700 }}>{l.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* Game info row */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 9, color: '#475569' }}>
-                  {game.awayRecord && <span>{game.away.split(' ').pop()} {game.awayRecord}</span>}
-                  {game.homeRecord && <span>{game.home.split(' ').pop()} {game.homeRecord}</span>}
-                  {game.venue && <span>{game.venue}</span>}
-                  {game.broadcast && <span>📺 {game.broadcast}</span>}
-                  {game.odds && <span>{game.odds}</span>}
-                </div>
+          {!expandAll && <div style={{ textAlign: 'center', fontSize: 10, color: '#64748B', marginTop: 4 }}>▲ Collapse</div>}
+        </div>
+        {gamePicks.map((p, j) => {
+          const faded = isFade(p);
+          const displayPick = faded ? flipPick(p) : p;
+          const status = getPickStatus(displayPick, game);
+          const icon = status === 'winning' ? '✅' : status === 'losing' ? '❌' : '➖';
+          const selected = isBet(p);
+          let rowBg = 'transparent';
+          if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : (faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)');
+          else if (status === 'winning') rowBg = 'rgba(16,185,129,0.08)';
+          else if (status === 'losing') rowBg = 'rgba(220,38,38,0.08)';
+          return (
+            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', background: rowBg, borderTop: '1px solid rgba(255,255,255,0.06)', borderLeft: selected ? (faded ? '5px solid #FB923C' : '5px solid #A78BFA') : '3px solid transparent' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: 13 }}>{icon}</span>
+                {faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 4px', borderRadius: 3 }}>FADE</span>}
+                {selected && !faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{displayPick.betType || displayPick.market}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{displayPick.pick}</span>
+                {displayPick.line && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{displayPick.line}</span>}
               </div>
-            </>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#94A3B8' }}>{fmt(p.odds)}</span>
+                <span style={{ fontSize: 11, color: '#64748B' }}>{p.units}u</span>
+              </div>
+            </div>
+          );
+        })}
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', padding: '8px 12px', background: 'rgba(255,255,255,0.02)' }}>
+          {(game.awayLinescores?.length > 0 || game.homeLinescores?.length > 0) && (
+            <div style={{ marginBottom: 8, overflowX: 'auto' }}>
+              <div style={{ display: 'flex', gap: 0, fontSize: 10, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ width: 70, color: '#64748B', padding: '2px 4px', flexShrink: 0 }}></div>
+                {(game.awayLinescores || game.homeLinescores || []).map((_, pi) => (
+                  <div key={pi} style={{ width: 24, textAlign: 'center', color: '#475569', padding: '2px 0', flexShrink: 0 }}>
+                    {game.league === 'MLB' ? pi + 1 : `${game.league === 'NHL' ? 'P' : 'Q'}${pi + 1}`}
+                  </div>
+                ))}
+                <div style={{ width: 30, textAlign: 'center', color: '#94A3B8', fontWeight: 700, padding: '2px 0', flexShrink: 0 }}>T</div>
+              </div>
+              {[{ team: game.away, scores: game.awayLinescores, total: game.awayScore },
+                { team: game.home, scores: game.homeLinescores, total: game.homeScore }].map(row => (
+                <div key={row.team} style={{ display: 'flex', gap: 0, fontSize: 10, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ width: 70, color: '#94A3B8', fontWeight: 600, padding: '2px 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}>{row.team.split(' ').pop()}</div>
+                  {(row.scores || []).map((s, si) => (
+                    <div key={si} style={{ width: 24, textAlign: 'center', color: '#F1F5F9', padding: '2px 0', flexShrink: 0 }}>{s}</div>
+                  ))}
+                  <div style={{ width: 30, textAlign: 'center', color: '#F1F5F9', fontWeight: 800, padding: '2px 0', flexShrink: 0 }}>{row.total}</div>
+                </div>
+              ))}
+            </div>
           )}
-          {/* Progress bar */}
-          {(game.status === 'in' || game.status === 'post') && (
-            <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${getGameProgress(game) * 100}%`,
-                background: 'linear-gradient(90deg, rgba(255,255,255,0.25), rgba(255,255,255,0.45))',
-                borderRadius: '0 0 12px 12px',
-                transition: 'width 1s ease-in-out',
-                animation: game.status === 'in' ? 'progressPulse 3s ease-in-out infinite' : 'none',
-              }} />
+          {game.leaders?.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              {game.leaders.filter((l, li, arr) => arr.findIndex(x => x.category === l.category) === li).slice(0, 4).map((l, li) => (
+                <div key={li} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#475569', width: 50, textTransform: 'uppercase' }}>{l.shortCategory || l.category}</span>
+                  <span style={{ fontSize: 10, color: '#F1F5F9', fontWeight: 600 }}>{l.athlete}</span>
+                  <span style={{ fontSize: 10, color: '#64748B' }}>({l.team})</span>
+                  <span style={{ fontSize: 10, color: '#94A3B8', fontWeight: 700 }}>{l.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, fontSize: 9, color: '#475569' }}>
+            {game.awayRecord && <span>{game.away.split(' ').pop()} {game.awayRecord}</span>}
+            {game.homeRecord && <span>{game.home.split(' ').pop()} {game.homeRecord}</span>}
+            {game.venue && <span>{game.venue}</span>}
+            {game.broadcast && <span>📺 {game.broadcast}</span>}
+            {game.odds && <span>{game.odds}</span>}
+          </div>
+        </div>
+        {(game.status === 'in' || game.status === 'post') && (
+          <div style={{ height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${getGameProgress(game) * 100}%`, background: 'linear-gradient(90deg, rgba(255,255,255,0.25), rgba(255,255,255,0.45))', borderRadius: '0 0 12px 12px', transition: 'width 1s ease-in-out', animation: game.status === 'in' ? 'progressPulse 3s ease-in-out infinite' : 'none' }} />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Compact card renderer (for grid view)
+  const renderCompact = (d) => {
+    const { game, gamePicks, displayPicks, isLive, isPre, isPost, isClose, hasBets, hasFades, tBorder, tBg, statusText, statusColor, cardOpacity, gameKey, i } = d;
+    const borderColor = isLive ? tBorder : isPost ? 'rgba(255,255,255,0.06)' : tBorder;
+    const borderWidth = (isLive && hasBets) ? '2px' : isPost ? '1px' : (hasBets ? '2px' : '1px');
+
+    return (
+      <div key={gameKey + i} onClick={() => setExpanded(prev => ({ ...prev, [i]: true }))} style={{
+        background: 'rgba(255,255,255,0.04)', borderRadius: 10, overflow: 'hidden',
+        border: `${borderWidth} solid ${borderColor}`, cursor: 'pointer', opacity: cardOpacity,
+        transition: 'all 0.2s ease', position: 'relative',
+        boxShadow: isLive ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 4px rgba(0,0,0,0.2)',
+      }}>
+        {isClose && <div style={{ background: 'rgba(245,158,11,0.2)', color: '#FCD34D', fontSize: 8, fontWeight: 800, padding: '2px 0', textAlign: 'center', letterSpacing: 0.5 }}>🔥 CLOSE</div>}
+        <div style={{ padding: '8px 8px 6px', background: tBg }}>
+          {/* Top row: league badge + status */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ background: LEAGUE_COLORS[game.league], color: 'white', fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3 }}>{game.league}</span>
+              {isLive && <span style={{ width: 6, height: 6, borderRadius: 3, background: '#34D399', display: 'inline-block', boxShadow: '0 0 4px rgba(52,211,153,0.6)', animation: 'pulse 2s infinite' }} />}
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 600, color: statusColor }}>{statusText}</span>
+          </div>
+          {/* Teams + scores — stacked layout */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
+                <TeamLogo team={game.away} league={game.league} size={14} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: (!isPre && game.awayScore >= game.homeScore) ? '#F1F5F9' : '#94A3B8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{abbr(game.away)}</span>
+              </div>
+              {!isPre && <span style={{ fontSize: 16, fontWeight: 800, color: game.awayScore >= game.homeScore ? '#F1F5F9' : '#475569', fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right' }}>{game.awayScore}</span>}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
+                <TeamLogo team={game.home} league={game.league} size={14} />
+                <span style={{ fontSize: 11, fontWeight: 600, color: (!isPre && game.homeScore >= game.awayScore) ? '#F1F5F9' : '#94A3B8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{abbr(game.home)}</span>
+              </div>
+              {!isPre && <span style={{ fontSize: 16, fontWeight: 800, color: game.homeScore >= game.awayScore ? '#F1F5F9' : '#475569', fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'right' }}>{game.homeScore}</span>}
+              {isPre && <span style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>vs</span>}
+            </div>
+          </div>
+          {/* Bottom: pick status dots */}
+          {displayPicks.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              {displayPicks.map((dp, di) => {
+                const st = getPickStatus(dp, game);
+                const isInProgress = game.status === 'in';
+                let dotColor = '#475569';
+                let anim = 'none';
+                if (st === 'winning') { dotColor = '#10B981'; if (isInProgress) anim = 'flashGreen 1.5s ease-in-out infinite'; }
+                else if (st === 'losing') { dotColor = '#EF4444'; if (isInProgress) anim = 'flashRed 1.5s ease-in-out infinite'; }
+                else if (st === 'even') { dotColor = '#6B7280'; }
+                else if (st === 'pending') { dotColor = '#475569'; }
+                return <span key={di} style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, display: 'inline-block', animation: anim }} />;
+              })}
             </div>
           )}
         </div>
-      );
-    });
+        {/* Mini progress bar */}
+        {(game.status === 'in' || game.status === 'post') && (
+          <div style={{ height: 2, background: 'rgba(255,255,255,0.06)' }}>
+            <div style={{ height: '100%', width: `${getGameProgress(game) * 100}%`, background: 'linear-gradient(90deg, rgba(255,255,255,0.25), rgba(255,255,255,0.45))', transition: 'width 1s ease-in-out', animation: game.status === 'in' ? 'progressPulse 3s ease-in-out infinite' : 'none' }} />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {/* Expand All toggle */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button onClick={() => { setExpandAll(!expandAll); if (!expandAll) setExpanded({}); }} style={{
+          background: expandAll ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.06)',
+          border: expandAll ? '1px solid rgba(59,130,246,0.3)' : '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 6, padding: '4px 10px', cursor: 'pointer',
+          fontSize: 10, fontWeight: 600, color: expandAll ? '#60A5FA' : '#64748B',
+        }}>
+          {expandAll ? '▫ Grid View' : '▦ Expand All'}
+        </button>
+      </div>
+      {/* Grid of cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: expandAll ? '1fr' : 'repeat(2, 1fr)', gap: 8 }}>
+        {gameData.map(d => d.isExp && !expandAll ? renderExpanded(d) : expandAll ? renderExpanded(d) : renderCompact(d))}
+      </div>
+    </div>
+  );
 }
 
 // ── Props Tab ───────────────────────────────────────────────────────
