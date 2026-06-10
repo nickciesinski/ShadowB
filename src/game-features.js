@@ -197,8 +197,13 @@ function extractFeatures(home, away, scheduleInfo, league) {
 
   // ── SP (sharp/power) features — computed from market odds ──
   // These get filled in by the game model after market parsing
-  f.sp_prob_home = 0.5;
-  f.sp_prob_away = 0.5;
+  // 2026-06-10: init to 0, not 0.5. These are never populated before scoreMarket
+  // runs, and the moneyline weights put 3.0 on each — so 0.5*3.0 + 0.5*3.0 injected
+  // a constant +3.0 into every ML score (= +1.35 run MLB home tilt) on top of the
+  // legitimate home-field term in projectMargin. 0 neutralizes the dead constant.
+  // (If a real sharp-money prob signal is ever wired in, populate these directly.)
+  f.sp_prob_home = 0;
+  f.sp_prob_away = 0;
   f.sp_edge_ml_home = 0;
   f.sp_edge_ml_away = 0;
   f.sp_edge_spread_home = 0;
