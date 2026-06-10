@@ -287,6 +287,39 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   const spreadWeights = (weights && weights.spread) || {};
   const totalWeights = (weights && weights.total) || {};
 
+  // ── Revive sp_*_total signals (2026-06-10) ──────────────────────────────
+  // sp_edge_total (wt 1.6) and sp_pred_total (wt 0.55) were initialized to 0 in
+  // game-features.js and never populated before totalScore was computed, so the
+  // two highest-weighted total features were inert. The totals model ran almost
+  // entirely on small _diff weights, letting the market-anchor blend dominate
+  // direction (Over on sub-8.8 lines, Under on inflated lines). Wire them to a
+  // genuine, market-relative MLB total estimate from team run rates. This is
+  // zero-mean across the league (it only leans Over when the two teams' actual
+  // scoring rates exceed the posted line) and contributes 0 when rate data is
+  // missing — so non-MLB and thin-data games are unchanged. Bounded to keep the
+  // signal from overpowering the market line.
+  if (league === 'MLB') {
+    const hRS = parseFloat(homeStats.runsPerGame);
+    const hRA = parseFloat(homeStats.runsAllowedPerGame);
+    const aRS = parseFloat(awayStats.runsPerGame);
+    const aRA = parseFloat(awayStats.runsAllowedPerGame);
+    const tMkt = (game.markets.totals || []).find(o => o.outcome === 'Over')
+              || (game.markets.totals || []).find(o => o.outcome === 'Under');
+    const tLine = tMkt ? parseFloat(tMkt.point) : NaN;
+    if (isFinite(hRS) && isFinite(hRA) && isFinite(aRS) && isFinite(aRA) && isFinite(tLine)) {
+      // Symmetric expected runs: each team's offense blended with the opponent's
+      // run-prevention. expTotal = (hRS+aRS+hRA+aRA)/2.
+      const expTotal = (hRS + aRS + hRA + aRA) / 2;
+      // Measure THIS matchup against a league-average matchup (AVG_TOTAL), not
+      // against the line's absolute level. This keeps the signal zero-mean: an
+      // average matchup contributes 0 regardless of where the line sits, so it
+      // adds matchup-specific lean without reintroducing a structural Over push.
+      const matchupDev = expTotal - (AVG_TOTAL.MLB || 8.8);
+      features.sp_pred_total = Math.max(-2.5, Math.min(2.5, matchupDev));
+      features.sp_edge_total = Math.max(-0.4, Math.min(0.4, totalToOverProb(tLine + matchupDev, tLine, 'MLB') - 0.5));
+    }
+  }
+
   const mlScore = scoreMarket(features, mlWeights);
   const spreadScore = scoreMarket(features, spreadWeights);
   const totalScore = scoreMarket(features, totalWeights);

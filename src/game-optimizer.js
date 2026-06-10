@@ -35,7 +35,7 @@ const TUNABLE_FACTORS = {
   margin_home_advantage:   { default: 1.00, min: 0.50, max: 1.50 },  // multiplier on base HA
   margin_form_influence:   { default: 0.50, min: 0.10, max: 1.00 },
   margin_rest_impact:      { default: 1.00, min: 0.30, max: 2.00 },
-  total_market_anchor:     { default: 0.80, min: 0.60, max: 0.95 },
+  total_market_anchor:     { default: 0.95, min: 0.90, max: 0.98 },  // 2026-06-10: was 0.80/0.60/0.95 — optimizer was silently overriding the 5/31 game-model anchor fix (0.95) and reintroducing the MLB Over lean on sub-8.8 lines. Pin high; CSV/stat signal still moves the projection.
   total_pace_dampening:    { default: 0.30, min: 0.05, max: 0.80 },
   confidence_power:        { default: 1.40, min: 0.80, max: 2.50 },
   csv_dampen:              { default: 0.30, min: 0.10, max: 0.60 },
