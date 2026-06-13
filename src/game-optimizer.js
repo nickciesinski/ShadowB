@@ -26,6 +26,9 @@ const { getValues, setValues } = require('./sheets');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const { readWeights, writeWeights, sheetForLeague } = require('./weights');
 const { getHistoricalTeamStats } = require('./snapshots');
+const paramStore = require('./param-store');
+const { isLockedKey, clampFactor } = require('../config/rules');
+const { computeSplits } = require('./split-metrics');
 
 // Factors we'll optimize and their defaults
 const TUNABLE_FACTORS = {
@@ -125,7 +128,7 @@ async function analyzeGamePerformance(league, days = 14) {
  *            if win rate is low → reduce confidence_power to flatten bets
  * - Per-market ROI → adjust the relevant factors
  */
-function computeNudges(analysis, currentFactors) {
+function computeNudges(analysis, currentFactors, splits) {
   if (!analysis || analysis.total < 50) return null;
 
   const nudges = {};
@@ -205,6 +208,25 @@ function computeNudges(analysis, currentFactors) {
     }
   }
 
+  // ── Objective penalty: degenerate splits (unless realized ROI backs them) ──
+  // Overrides the win-rate heuristic above for the offending factors so the
+  // optimizer self-corrects an Over-heavy or Home-heavy lean instead of
+  // entrenching it. ROI must clear +2% on a >=15 graded sample to be spared.
+  const roiBacks = (m) => m && m.graded >= 15 && m.roi != null && m.roi > 0.02;
+  if (splits) {
+    const t = splits.total;
+    if (t && t.overPct != null && (t.overPct > 0.62 || t.overPct < 0.38) && !roiBacks(t)) {
+      nudges.total_market_anchor = 1.01;   // trust the market more -> kills the lean
+      nudges.total_pace_dampening = 0.98;
+    }
+    for (const mk of ['moneyline', 'spread']) {
+      const g = splits[mk];
+      if (g && g.homePct != null && (g.homePct > 0.68 || g.homePct < 0.32) && !roiBacks(g)) {
+        nudges.margin_home_advantage = g.homePct > 0.68 ? 0.98 : 1.02;
+      }
+    }
+  }
+
   return nudges;
 }
 
@@ -235,32 +257,31 @@ function applyNudges(currentFactors, nudges) {
  * Stored as param_auto_* rows alongside existing weight data.
  */
 async function writeTunableFactors(league, factors) {
+  // 2026-06-13: writes to config/model-params.<LEAGUE>.json (not the Sheet).
+  // Locked rule-keys are never touched; tunable factors are clamped to their
+  // safe bounds before persisting.
   const sheetName = sheetForLeague(league);
-  const rows = await getValues(SPREADSHEET_ID, sheetName);
-  if (!rows || rows.length < 1) return;
+  const rows = paramStore.getRows(sheetName); // [['market','key','weight'], ...]
 
-  // Build set of existing param_auto keys for in-place update
-  const autoKeys = new Set();
+  const seen = new Set();
   for (let i = 0; i < rows.length; i++) {
     const key = (rows[i][1] || '').trim();
-    if (key.startsWith('param_auto_')) {
-      autoKeys.add(key);
-      const factorName = key.replace('param_auto_', '');
-      if (factorName in factors) {
-        rows[i][2] = factors[factorName];
-      }
+    if (!key.startsWith('param_auto_')) continue;
+    const factorName = key.replace('param_auto_', '');
+    seen.add(factorName);
+    if (isLockedKey(key)) continue;                 // never modify a locked rule key
+    if (factorName in factors) {
+      rows[i][2] = clampFactor(factorName, factors[factorName]);
     }
   }
-
-  // Append any new auto params that don't exist yet
+  // Append any new tunable factors that don't exist yet.
   for (const [name, value] of Object.entries(factors)) {
     const key = `param_auto_${name}`;
-    if (!autoKeys.has(key)) {
-      rows.push(['', key, value]);
-    }
+    if (seen.has(name) || isLockedKey(key)) continue;
+    rows.push(['', key, clampFactor(name, value)]);
   }
 
-  await setValues(SPREADSHEET_ID, sheetName, 'A1', rows);
+  paramStore.setRows(sheetName, rows);
 }
 
 /**
@@ -282,7 +303,12 @@ async function optimizeGameWeights() {
       console.log(`[game-optimizer] ${league}: ${analysis.totalW}W/${analysis.totalL}L (${(analysis.totalW / analysis.total * 100).toFixed(1)}% win rate)`);
 
       const currentFactors = await readTunableFactors(league);
-      const nudges = computeNudges(analysis, currentFactors);
+      let splits = null;
+      try {
+        const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+        splits = computeSplits(perfRows, league, 7);
+      } catch (e) { /* splits optional; nudges still bounded */ }
+      const nudges = computeNudges(analysis, currentFactors, splits);
 
       if (!nudges) {
         console.log(`[game-optimizer] ${league}: insufficient data for nudges`);
@@ -322,6 +348,7 @@ module.exports = {
   optimizeGameWeights,
   optimizeCSVWeights,
   readTunableFactors,
+  writeTunableFactors,
   analyzeGamePerformance,
   computeNudges,
   applyNudges,
@@ -548,7 +575,7 @@ async function optimizeCSVWeights() {
           allRows.push([market, key, val]);
         }
       }
-      await setValues(SPREADSHEET_ID, sheetName, 'A1', allRows);
+      paramStore.setRows(sheetName, allRows);
       console.log(`[game-optimizer] ${league}: updated weight sheet`);
       results[league] = true;
     }

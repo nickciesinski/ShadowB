@@ -656,8 +656,16 @@ async function runAllOptimizations() {
     console.log('[optimize] Skipping monthly CSV weight optimization (not 1st of month)');
   }
 
+  // ── Circuit-breaker: revert any market that drifted past a band ──
+  let driftGuard = null;
+  try {
+    driftGuard = await runDriftGuard(7);
+  } catch (err) {
+    console.warn('[optimize] drift-guard failed:', err.message);
+  }
+
   console.log('[optimize] ═══ Optimization cycle complete ═══');
-  return { mods, clvPenalties, edgeDecay, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates, calibration };
+  return { mods, clvPenalties, edgeDecay, propUpdates, scoringUpdates, gameWeightUpdates, csvWeightUpdates, calibration, driftGuard };
 }
 
 module.exports = {
@@ -690,6 +698,7 @@ const {
 } = require('./prop-scoring');
 const { getAllPropModifiers } = require('./prop-weights');
 const { optimizeGameWeights, optimizeCSVWeights } = require('./game-optimizer');
+const { runDriftGuard } = require('./drift-guard');
 const { loadCalibration, syncCalibrationToSheets, resetCalibration } = require('./calibration');
 
 /**

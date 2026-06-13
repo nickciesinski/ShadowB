@@ -31,6 +31,7 @@ const db = require('../src/db');
 const { scoreMarket } = require('../src/game-features');
 const { calcUnits, americanToImpliedProb, calcEdge } = require('../src/market-pricing');
 const { readWeights, sheetForLeague, writeWeights } = require('../src/weights');
+const paramStore = require('../src/param-store');
 
 const args = process.argv.slice(2);
 const DAYS = parseInt(args.find((_, i, a) => a[i - 1] === '--days') || '60');
@@ -521,6 +522,8 @@ function updateCsvFile(league, currentWeights, proposedWeights) {
 
   const csv = rows.map(r => r.join(',')).join('\n') + '\n';
   fs.writeFileSync(csvPath, csv);
+  // Source of truth is the JSON param store; keep it in sync (runtime reads this).
+  paramStore.setRows(league, rows);
   return true;
 }
 

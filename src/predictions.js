@@ -15,7 +15,7 @@
 
 const { SPREADSHEET_ID, SHEETS, IS_TEST } = require('./config');
 const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
-const { parseWeightRows, sheetForLeague } = require('./weights');
+const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb } = require('./market-pricing');
 const { applyApprovalFilters } = require('./approval-engine');
@@ -361,7 +361,7 @@ async function generateMLBPredictions() {
   // per-league constants; only MLB was wired to the generic default.
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
-    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS),
+    Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.MLB_TEAM_STATS),
     getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
@@ -374,7 +374,7 @@ async function generateMLBPredictions() {
     return;
   }
 
-  const parsedWeights = parseWeightRows(weightRows);
+  const parsedWeights = await readWeights(sheetForLeague('MLB'));
   const scheduleMap = buildScheduleMap(scheduleRows, 'MLB');
 
   const teamsMap = {};
@@ -441,7 +441,7 @@ async function generateNBAPredictions() {
 
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
-    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NBA),
+    Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
     getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
@@ -454,7 +454,7 @@ async function generateNBAPredictions() {
     return;
   }
 
-  const parsedWeights = parseWeightRows(weightRows);
+  const parsedWeights = await readWeights(sheetForLeague('NBA'));
   const scheduleMap = buildScheduleMap(scheduleRows, 'NBA');
 
   const teamsMap = {};
@@ -502,7 +502,7 @@ async function generateNHLPredictions() {
 
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
-    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NHL),
+    Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.NHL_TEAM_STATS),
     getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
@@ -515,7 +515,7 @@ async function generateNHLPredictions() {
     return;
   }
 
-  const parsedWeights = parseWeightRows(weightRows);
+  const parsedWeights = await readWeights(sheetForLeague('NHL'));
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
@@ -553,7 +553,7 @@ async function generateNFLPredictions() {
 
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
-    getValues(SPREADSHEET_ID, SHEETS.WEIGHTS_NFL),
+    Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.NFL_TEAM_STATS),
     getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
   ]);
@@ -566,7 +566,7 @@ async function generateNFLPredictions() {
     return;
   }
 
-  const parsedWeights = parseWeightRows(weightRows);
+  const parsedWeights = await readWeights(sheetForLeague('NFL'));
 
   const teamsMap = {};
   for (const row of teamRows.slice(1)) {
