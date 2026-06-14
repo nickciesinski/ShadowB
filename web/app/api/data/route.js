@@ -105,7 +105,33 @@ export async function GET() {
     const todayStr = `${mm}/${dd}/${yyyy}`;
 
     const allPicks = perfRows.slice(1).map(parsePerfRow);
-    const todayPicks = allPicks.filter(p => p.date === todayStr);
+    let todayPicks = allPicks.filter(p => p.date === todayStr);
+    // Prefer Supabase performance_log for today's slate (Sheets exit).
+    {
+      const sbToday = getSupabase();
+      if (sbToday) {
+        try {
+          const isoToday = `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+          const { data: tRows, error: tErr } = await sbToday.from('performance_log')
+            .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
+            .eq('date', isoToday);
+          if (!tErr && tRows && tRows.length > 0) {
+            todayPicks = tRows.map(r => {
+              const gp = (r.game || '').split(' @ ');
+              return {
+                date: todayStr, league: r.league || '', market: r.market || '',
+                away: gp[0] || '', home: gp[1] || '', startTime: '', betType: r.market || '',
+                pick: r.pick || '', line: r.line != null ? String(r.line) : '',
+                odds: r.odds || -110, units: r.final_units || 0,
+                confidence: r.confidence != null ? String(r.confidence) : '', result: r.result || '',
+                unitReturn: 0,
+              };
+            });
+            console.log(`[api] todayPicks from Supabase: ${todayPicks.length}`);
+          }
+        } catch (err) { console.warn('[api] Supabase todayPicks failed, using Sheet:', err.message); }
+      }
+    }
 
     // Graded picks: prefer Supabase (complete history), fall back to Sheets
     let gradedPicks = [];
@@ -195,9 +221,22 @@ export async function GET() {
     // Parse props
     const props = propRows.slice(1).map(parsePropRow).filter(p => p.player);
 
-    // Build unique games from today's odds
+    // Build unique games from today's odds.
+    // Prefer the gameOdds snapshot in Supabase (Sheets exit); fall back to Today_Odds.
+    let oddsSource = oddsRows;
+    if (sb) {
+      try {
+        const { data: snap } = await sb.from('sheet_snapshots')
+          .select('rows').eq('entity', 'gameOdds')
+          .order('captured_at', { ascending: false }).limit(1);
+        if (snap && snap[0] && Array.isArray(snap[0].rows) && snap[0].rows.length > 1) {
+          oddsSource = snap[0].rows;
+          console.log('[api] todayGames from gameOdds snapshot');
+        }
+      } catch (err) { console.warn('[api] gameOdds snapshot failed, using Sheet:', err.message); }
+    }
     const gameMap = {};
-    for (const row of oddsRows.slice(1)) {
+    for (const row of oddsSource.slice(1)) {
       const o = parseOddsRow(row);
       const key = `${o.away}@${o.home}`;
       if (!gameMap[key]) {

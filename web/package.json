@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "copy-params": "node scripts/copy-params.mjs",
+    "prebuild": "node scripts/copy-params.mjs",
+    "predev": "node scripts/copy-params.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.0",
