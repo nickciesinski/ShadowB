@@ -127,6 +127,34 @@ const MARKETS = ['h2h', 'spreads', 'totals'];
 // ── Environment ──────────────────────────────────────────────────
 const IS_TEST = process.env.NODE_ENV !== 'production';
 
+// ── Data source routing (Google Sheets exit) ──────────────────
+// Each data 'entity' resolves to a mode: 'sheet' | 'supabase' | 'dual'.
+// 'dual' reads BOTH, logs any divergence, and returns the Sheet value
+// (Sheet stays authoritative until an entity is proven and flipped).
+// A single env override DATA_SOURCE forces every entity to one mode.
+// Per-entity defaults below let us migrate one entity at a time.
+const DATA_SOURCE = (process.env.DATA_SOURCE || '').trim().toLowerCase(); // '', 'sheet', 'supabase', 'dual'
+const DATA_SOURCE_MODES = {
+  // Category A — already mirrored to Supabase: shadow-read in dual by default.
+  performanceRows: 'dual',
+  propPerformanceRows: 'dual',
+  propStatusRows: 'dual',
+  modifierRows: 'dual',
+  clvSnapshotRows: 'dual',
+  triggerRuns: 'dual',
+  // Category B — external data not yet in Supabase: stay on Sheet until Phase 2 tables exist.
+  gameOdds: 'sheet',
+  teamStats: 'sheet',
+  injuries: 'sheet',
+  scheduleContext: 'sheet',
+  playerProps: 'sheet',
+  playerTiers: 'sheet',
+};
+function dataModeFor(entity) {
+  if (DATA_SOURCE === 'sheet' || DATA_SOURCE === 'supabase' || DATA_SOURCE === 'dual') return DATA_SOURCE;
+  return DATA_SOURCE_MODES[entity] || 'sheet';
+}
+
 // ── Validation ───────────────────────────────────────────────────
 function validateConfig() {
   const required = [
@@ -154,5 +182,8 @@ module.exports = {
   SPORTS,
   MARKETS,
   IS_TEST,
+  DATA_SOURCE,
+  DATA_SOURCE_MODES,
+  dataModeFor,
   validateConfig,
 };

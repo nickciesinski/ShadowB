@@ -15,6 +15,7 @@
 
 const { SPREADSHEET_ID, SHEETS, IS_TEST } = require('./config');
 const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
+const dataStore = require('./data-store');
 const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb } = require('./market-pricing');
@@ -995,7 +996,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
 
   if (dedupedPerfRows.length > 0) {
     // Prepend new picks at the top (after header row) instead of appending at bottom
-    const existing = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const existing = await dataStore.read('performanceRows');
     const header = existing.length > 0 ? [existing[0]] : [];
     const oldRows = existing.slice(1);
 
@@ -1419,7 +1420,7 @@ async function gradePerformanceLog() {
   console.log(`[predictions] Loaded ${Object.keys(resultsMap).length} game results`);
 
   // Read Performance Log
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) {
     console.log('[predictions] Performance Log is empty');
     return { graded: 0 };

@@ -29,6 +29,7 @@
 const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
 const db = require('../src/db');
 const { getValues, setValues } = require('../src/sheets');
+const dataStore = require('../src/data-store');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
 const { determineBetResult, calculateUnitReturn } = require('../src/predictions');
 
@@ -273,7 +274,7 @@ async function writeSupabase(updates) {
 // ── Step 5: write back to Sheets Performance Log ──────────────
 async function writeSheets(updates) {
   console.log(`[grade-history] Reading Performance Log for Sheets sync...`);
-  const sheet = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const sheet = await dataStore.read('performanceRows');
   if (!sheet || sheet.length < 2) return { matched: 0 };
   // Build update index keyed by date+league+away+home+market+pick (with normalized whitespace)
   const idx = new Map();

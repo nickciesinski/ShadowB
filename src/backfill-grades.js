@@ -8,6 +8,7 @@
 // =============================================================
 
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const db = require('./db');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
@@ -22,7 +23,7 @@ async function backfillGrades() {
   }
 
   // Read the full Performance Log from Sheets
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) {
     console.log('[backfill] Performance Log is empty');
     return;

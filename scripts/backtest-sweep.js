@@ -13,6 +13,7 @@
  */
 require('dotenv').config();
 const { getValues } = require('../src/sheets');
+const dataStore = require('../src/data-store');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
 const db = require('../src/db');
 const { extractFeatures } = require('../src/game-features');
@@ -165,7 +166,7 @@ async function main() {
 
   // 1. Load Performance Log
   console.log('Loading Performance Log...');
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) {
     console.error('No performance data');
     process.exit(1);

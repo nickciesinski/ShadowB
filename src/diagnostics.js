@@ -6,6 +6,7 @@
 require('dotenv').config();
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, ODDS_API_BASE } = require('./config');
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 
 /**
  * Comprehensive system health check that validates all subsystems.
@@ -139,7 +140,7 @@ async function generateSystemHealthReport() {
 
   // ── 5. Predictions generated (are picks landing in Performance Log daily?) ──
   try {
-    const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const perfRows = await dataStore.read('performanceRows');
     if (perfRows && perfRows.length > 2) {
       // Count picks from last 7 days
       let recentPicks = 0;
@@ -170,7 +171,7 @@ async function generateSystemHealthReport() {
 
   // ── 6. Grading working (are recent picks getting W/L results?) ──
   try {
-    const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const perfRows = await dataStore.read('performanceRows');
     if (perfRows && perfRows.length > 2) {
       let gradedRecent = 0;
       let ungradedRecent = 0;
@@ -233,7 +234,7 @@ async function generateSystemHealthReport() {
 
   // ── 9. Data completeness (sample recent picks for _dataCompleteness scores) ──
   try {
-    const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const perfRows = await dataStore.read('performanceRows');
     if (perfRows && perfRows.length > 10) {
       // Check column headers for data_completeness (if logged)
       // For now, just verify picks have reasonable unit sizes (proxy for working uncertainty)
@@ -371,7 +372,7 @@ async function generateSystemHealthReport() {
 
   // ── 14. Approval Engine: Are picks getting tagged with purposes? ──
   try {
-    const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const perfRows = await dataStore.read('performanceRows');
     if (perfRows && perfRows.length > 10) {
       // Check recent picks for approval_status column (col 14 or similar)
       let approved = 0, tracking = 0;

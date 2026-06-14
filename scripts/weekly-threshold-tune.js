@@ -209,11 +209,12 @@ function buildReview(dateStr, seg7, seg30, decisions) {
 
 async function main() {
   const { getValues } = require('../src/sheets');
+const dataStore = require('../src/data-store');
   const { SPREADSHEET_ID, SHEETS } = require('../src/config');
   const dryRun = process.argv.includes('--dry-run');
   console.log(`[tune] weekly-threshold-tune starting${dryRun ? ' (dry-run)' : ''}`);
 
-  const raw = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const raw = await dataStore.read('performanceRows');
   if (!raw || raw.length < 2) { console.error('[tune] Performance Log empty or unreadable'); process.exit(1); }
   const rows = raw.slice(1); // drop header
   console.log(`[tune] read ${rows.length} Performance Log rows`);

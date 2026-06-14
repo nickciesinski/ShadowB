@@ -13,6 +13,7 @@
 // =============================================================
 
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const { computeSplits, BANDS, breaches } = require('./split-metrics');
 const { readTunableFactors, writeTunableFactors } = require('./game-optimizer');
@@ -33,7 +34,7 @@ const roiBacks = (m) => m && m.roi != null && m.roi > 0.02;
  * @returns {Object} { LEAGUE: { factor: value, ... }, ... } that were reset
  */
 async function runDriftGuard(days = 7, perfRowsInput = null) {
-  const perfRows = perfRowsInput || await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = perfRowsInput || await dataStore.read('performanceRows');
   const reverted = {};
 
   for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {

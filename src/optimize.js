@@ -22,6 +22,7 @@ const { americanToImpliedProb } = require('./market-pricing');
  *    and bulk-inserts into Supabase performance_log table.
  */
 const { getValues, setValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const db = require('./db');
 
@@ -275,7 +276,7 @@ async function syncPerformanceLog() {
     return;
   }
 
-  const raw = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const raw = await dataStore.read('performanceRows');
   if (!raw || raw.length < 2) {
     console.warn('[optimize] Performance Log empty');
     return;
@@ -460,7 +461,7 @@ async function seedPropWeights() {
 async function updateEdgeDecayRates() {
   console.log('[optimize] Computing edge decay rates...');
 
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) {
     console.log('[optimize] No performance data for edge decay');
     return;

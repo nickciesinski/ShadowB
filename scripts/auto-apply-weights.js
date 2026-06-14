@@ -26,6 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
 const { getValues } = require('../src/sheets');
+const dataStore = require('../src/data-store');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
 const db = require('../src/db');
 const { scoreMarket } = require('../src/game-features');
@@ -364,7 +365,7 @@ function simulate(picks, weightsByLeague, mods, useFeatures) {
 
 // ── Load picks + features (same as weight-sweep.js) ─────────────
 async function loadPicks() {
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) throw new Error('No Performance Log data');
 
   const cutoff = new Date();

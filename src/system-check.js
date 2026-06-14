@@ -12,6 +12,7 @@
 
 const { SPREADSHEET_ID, SHEETS, GMAIL_USER, GMAIL_APP_PASSWORD, EMAIL_RECIPIENTS } = require('./config');
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const db = require('./db');
 const nodemailer = require('nodemailer');
 
@@ -166,7 +167,7 @@ async function runHealthCheck() {
   let ungradedCount = 0;
   let totalPicks = 0;
   try {
-    const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    const perfRows = await dataStore.read('performanceRows');
     if (perfRows && perfRows.length > 1) {
       totalPicks = perfRows.length - 1;
       const cutoff48h = daysAgo(2);
@@ -263,7 +264,7 @@ async function runHealthCheck() {
 async function runPerformanceReport() {
   // Read Performance Log + Prop Performance in parallel
   const [perfRows, propRows] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE),
+    dataStore.read('performanceRows'),
     getValues(SPREADSHEET_ID, SHEETS.PROP_PERFORMANCE),
   ]);
 

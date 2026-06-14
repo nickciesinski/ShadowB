@@ -13,6 +13,7 @@
  */
 const db = require('./db');
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 // ── Edge buckets (percentage) ───────────────────────────────────
@@ -84,7 +85,7 @@ async function computeFromSheets() {
 
   let rows;
   try {
-    rows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+    rows = await dataStore.read('performanceRows');
   } catch (e) {
     console.warn('[calibration] Could not read Performance Log:', e.message);
     return map;

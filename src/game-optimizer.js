@@ -23,6 +23,7 @@
 // =============================================================
 
 const { getValues, setValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const { readWeights, writeWeights, sheetForLeague } = require('./weights');
 const { getHistoricalTeamStats } = require('./snapshots');
@@ -69,7 +70,7 @@ async function readTunableFactors(league) {
  *   9: odds, 10: units, 11: confidence, 16: result (W/L/P), 17: unit_return
  */
 async function analyzeGamePerformance(league, days = 14) {
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) return null;
 
   const cutoff = new Date();
@@ -305,7 +306,7 @@ async function optimizeGameWeights() {
       const currentFactors = await readTunableFactors(league);
       let splits = null;
       try {
-        const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+        const perfRows = await dataStore.read('performanceRows');
         splits = computeSplits(perfRows, league, 7);
       } catch (e) { /* splits optional; nudges still bounded */ }
       const nudges = computeNudges(analysis, currentFactors, splits);
@@ -374,7 +375,7 @@ const { extractFeatures } = require('./game-features');
 async function optimizeCSVWeights() {
   console.log('[game-optimizer] Starting CSV weight optimization...');
 
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) return null;
 
   // ── Historical stats cache: { "YYYY-MM-DD|LEAGUE" → teamMap } ──

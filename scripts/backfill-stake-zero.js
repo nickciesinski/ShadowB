@@ -22,6 +22,7 @@
  *   node scripts/backfill-stake-zero.js --regrade    # also clear result + return
  */
 const { getValues, setValues } = require('../src/sheets');
+const dataStore = require('../src/data-store');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
 
 async function main() {
@@ -30,7 +31,7 @@ async function main() {
   const regrade = args.includes('--regrade');
 
   console.log('[backfill] Reading Performance Log...');
-  const rows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const rows = await dataStore.read('performanceRows');
   if (!rows || rows.length < 2) {
     console.log('[backfill] Performance Log empty — nothing to do.');
     return;

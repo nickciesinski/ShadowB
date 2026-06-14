@@ -34,6 +34,7 @@
 
 const db = require('../src/db');
 const { getValues } = require('../src/sheets');
+const dataStore = require('../src/data-store');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
 
 const args = process.argv.slice(2);
@@ -164,7 +165,7 @@ async function loadExistingKeys(from, to) {
     process.exit(1);
   }
 
-  const raw = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const raw = await dataStore.read('performanceRows');
   if (!raw || raw.length < 2) {
     console.error('[backfill] Performance Log empty in Sheets - nothing to backfill');
     process.exit(1);

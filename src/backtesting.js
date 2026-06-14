@@ -20,6 +20,7 @@
  * a summary object.
  */
 const { getValues, setValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const db = require('./db');
 const { getHistoricalTeamStats, getHistoricalOdds, getHistoricalInjuries } = require('./snapshots');
@@ -89,7 +90,7 @@ async function readGradedPicks(days = 30) {
   }
 
   // Fallback: Sheets
-  const raw = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const raw = await dataStore.read('performanceRows');
   if (!raw || raw.length < 2) return [];
 
   const headers = raw[0].map(h => String(h).trim().toLowerCase());

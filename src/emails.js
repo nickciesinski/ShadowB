@@ -13,6 +13,7 @@
 const nodemailer = require('nodemailer');
 const { SPREADSHEET_ID, SHEETS, GMAIL_USER, GMAIL_APP_PASSWORD, EMAIL_RECIPIENTS } = require('./config');
 const { getValues, appendRows } = require('./sheets');
+const dataStore = require('./data-store');
 let _emailDb = null;
 function getEmailDb() { if (!_emailDb) _emailDb = require('./db'); return _emailDb; }
 
@@ -42,7 +43,7 @@ async function sendDailyPicksEmail() {
 
   // Read Performance Log + player props in parallel
   const [perfRows, propCombos, propsRaw] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE),
+    dataStore.read('performanceRows'),
     getValues(SPREADSHEET_ID, SHEETS.PLATFORM_COMBOS),
     getValues(SPREADSHEET_ID, SHEETS.PLAYER_PROPS),
   ]);
@@ -221,7 +222,7 @@ async function sendDailyPicksEmail() {
 async function sendPerformanceSummary() {
   console.log('[emails] Sending performance summary...');
 
-  const perfRows = await getValues(SPREADSHEET_ID, SHEETS.PERFORMANCE);
+  const perfRows = await dataStore.read('performanceRows');
   if (!perfRows || perfRows.length < 2) {
     console.log('[emails] No performance data for summary');
     return;
