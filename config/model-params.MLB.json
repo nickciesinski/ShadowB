@@ -15,15 +15,15 @@
     "param_min_edge": 0.02,
     "param_max_units": 2,
     "param_auto_csv_dampen": 0.3,
-    "param_auto_strength_blend_winpct": 0.35,
-    "param_auto_strength_blend_scoring": 0.4,
-    "param_auto_strength_blend_form": 0.25,
-    "param_auto_margin_home_advantage": 1,
-    "param_auto_margin_form_influence": 0.5,
-    "param_auto_margin_rest_impact": 1,
+    "param_auto_strength_blend_winpct": 0.3455,
+    "param_auto_strength_blend_scoring": 0.4028,
+    "param_auto_strength_blend_form": 0.2517,
+    "param_auto_margin_home_advantage": 1.01,
+    "param_auto_margin_form_influence": 0.5101,
+    "param_auto_margin_rest_impact": 1.01,
     "param_auto_total_market_anchor": 0.95,
     "param_auto_total_pace_dampening": 0.3,
-    "param_auto_confidence_power": 1.4
+    "param_auto_confidence_power": 1.428
   },
   "moneyline": {
     "mlb_run_diff": 0,
