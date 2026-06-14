@@ -8,6 +8,8 @@
 // =============================================================
 
 const { SPREADSHEET_ID, SHEETS, ODDS_API_KEY, ODDS_API_BASE, SPORTS, MARKETS } = require('./config');
+const db = require('./db');
+const { dataModeFor } = require('./config');
 const { getValues, setValues, appendRows, clearSheet, ensureSheet } = require('./sheets');
 const { logApiCall } = require('./monitoring');
 
@@ -637,6 +639,10 @@ async function updateScheduleContext() {
   if (SHEETS.SCHEDULE_CONTEXT) {
     await clearSheet(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT);
     await setValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT, 'A1', allRows);
+    if (dataModeFor('scheduleContext') !== 'sheet') {
+      try { await db.insertSnapshot('scheduleContext', allRows); }
+      catch (e) { console.warn('[data-collection] scheduleContext snapshot dual-write failed:', e.message); }
+    }
   }
 
   console.log(`[data-collection] Schedule context updated: ${allRows.length - 1} games`);
@@ -701,6 +707,10 @@ async function fetchOddsAndGrade() {
 
   await clearSheet(SPREADSHEET_ID, SHEETS.GAME_ODDS);
   await setValues(SPREADSHEET_ID, SHEETS.GAME_ODDS, 'A1', allOddsRows);
+  if (dataModeFor('gameOdds') !== 'sheet') {
+    try { await db.insertSnapshot('gameOdds', allOddsRows); }
+    catch (e) { console.warn('[data-collection] gameOdds snapshot dual-write failed:', e.message); }
+  }
 
   // Archive to historical (append only)
   if (allOddsRows.length > 1) {
@@ -868,6 +878,10 @@ async function fetchInjuryReports() {
     await ensureSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
     await clearSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
     await setValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY, 'A1', allRows);
+    if (dataModeFor('injuries') !== 'sheet') {
+      try { await db.insertSnapshot('injuries', allRows); }
+      catch (e) { console.warn('[data-collection] injuries snapshot dual-write failed:', e.message); }
+    }
     console.log(`[data-collection] Injury reports updated: ${allRows.length - 1} entries across 4 leagues`);
   } else {
     console.log('[data-collection] No injury data retrieved from ESPN');

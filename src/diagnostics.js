@@ -93,7 +93,7 @@ async function generateSystemHealthReport() {
 
   // ── 3. Injury data (is Injury Summary populated?) ──
   try {
-    const injRows = await getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    const injRows = await dataStore.read('injuries');
     if (injRows && injRows.length > 10) {
       // Check freshness — look at timestamp column
       const latestTs = injRows[1]?.[0] || '';
@@ -222,7 +222,7 @@ async function generateSystemHealthReport() {
 
   // ── 8. Odds API (check Today_Odds has fresh data) ──
   try {
-    const oddsRows = await getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS);
+    const oddsRows = await dataStore.read('gameOdds');
     if (oddsRows && oddsRows.length > 1) {
       check('Odds Data', 'pass', `${oddsRows.length - 1} odds rows in Today_Odds`);
     } else {
@@ -357,7 +357,7 @@ async function generateSystemHealthReport() {
   // We verify this indirectly: if Injury Summary has data AND predictions are running,
   // then the hasInjuryData flag should be true (since we pass league+teams to dataCompleteness)
   try {
-    const injRows = await getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    const injRows = await dataStore.read('injuries');
     const hasInjData = injRows && injRows.length > 5;
     // Check if recent picks show data_completeness > 0.90 (which requires injury flag = true)
     // With injury data: max completeness = 1.0 (all 6 flags). Without: max = 0.95

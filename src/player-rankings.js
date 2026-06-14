@@ -10,6 +10,7 @@
 
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 const { getValues, setValues, clearSheet, ensureSheet } = require('./sheets');
+const dataStore = require('./data-store');
 
 // New spreadsheet for rankings output
 const RANKINGS_SPREADSHEET_ID = process.env.RANKINGS_SPREADSHEET_ID || '';
@@ -562,7 +563,7 @@ function assignTier(score) {
 async function loadInjuryData() {
   const injuryMap = {};
   try {
-    const rows = await getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    const rows = await dataStore.read('injuries');
     if (!rows || rows.length < 2) return injuryMap;
     for (let i = 1; i < rows.length; i++) {
       const name = (rows[i][1] || '').trim();

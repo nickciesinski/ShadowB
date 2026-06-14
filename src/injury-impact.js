@@ -14,6 +14,7 @@
  *   1.0 = devastating (multiple starters or MVP-caliber player out)
  */
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 // ── Module cache (loaded once per trigger run) ─────────────────
@@ -193,7 +194,7 @@ async function loadInjuryImpact() {
   // Source 2: Injury Summary sheet — contains team-level injury reports
   // Expected columns: Timestamp, League, Team, Player, Status, Position, Impact
   try {
-    const injRows = await getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    const injRows = await dataStore.read('injuries');
     if (injRows && injRows.length > 1) {
       const headers = injRows[0].map(h => String(h).trim().toLowerCase());
       const leagueIdx = headers.findIndex(h => h === 'league' || h === 'sport');

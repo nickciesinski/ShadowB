@@ -23,6 +23,7 @@
  */
 const db = require('./db');
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 /**
@@ -141,7 +142,7 @@ async function snapshotOdds() {
     return;
   }
 
-  const oddsData = await getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS);
+  const oddsData = await dataStore.read('gameOdds');
   if (!oddsData || oddsData.length < 2) {
     console.log('[snapshots] No odds data to snapshot');
     return;
@@ -279,7 +280,7 @@ async function snapshotInjuries() {
 
   // Source 2: Injury Summary sheet
   try {
-    const injData = await getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+    const injData = await dataStore.read('injuries');
     if (injData && injData.length > 1) {
       const headers = injData[0].map(h => String(h).trim().toLowerCase());
       const leagueIdx = headers.findIndex(h => h === 'league' || h === 'sport');

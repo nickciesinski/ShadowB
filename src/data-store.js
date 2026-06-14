@@ -61,9 +61,9 @@ const REGISTRY = {
   clvSnapshotRows:     { sheet: () => getValues(SPREADSHEET_ID, SHEETS.CLV_SNAPSHOT) },
   triggerRuns:         { sheet: () => getValues(SPREADSHEET_ID, SHEETS.TRIGGER_MONITOR_8T) },
   // ── Category B (external data; Phase 2 tables) ──
-  gameOdds:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS) },
-  scheduleContext: { sheet: () => getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT) },
-  injuries:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY) },
+  gameOdds:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS), supa: () => db.getLatestSnapshot('gameOdds') },
+  scheduleContext: { sheet: () => getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT), supa: () => db.getLatestSnapshot('scheduleContext') },
+  injuries:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY), supa: () => db.getLatestSnapshot('injuries') },
 };
 
 // ── divergence logging (cheap: row counts + sampled cells) ──
@@ -86,7 +86,7 @@ function makeReader(registry, modeFn) {
     if (!ent) throw new Error(`[data-store] unknown entity: ${entity}`);
     const mode = modeFn(entity);
 
-    if (mode === 'supabase' && ent.supa) return ent.supa();
+    if (mode === 'supabase' && ent.supa) { const v = await ent.supa(); return (v && v.length) ? v : ent.sheet(); }
     if (mode === 'supabase') return ent.sheet(); // no mapper yet -> safe fallback
 
     const sheetVal = await ent.sheet();

@@ -242,6 +242,25 @@ async function insertPredictionFeatures(rows) {
   }
 }
 
+
+// ── Sheet-exit staging snapshots (Category B external data) ─────
+async function insertSnapshot(entity, rows) {
+  const sb = getClient();
+  if (!sb) return { ok: false, reason: 'supabase_not_configured' };
+  const { error } = await sb.from('sheet_snapshots').insert({ entity, rows });
+  if (error) { console.error('[db] insertSnapshot FAILED', entity + ':', error.message); return { ok: false, reason: error.message }; }
+  return { ok: true };
+}
+
+async function getLatestSnapshot(entity) {
+  const sb = getClient();
+  if (!sb) return null;
+  const { data, error } = await sb.from('sheet_snapshots')
+    .select('rows').eq('entity', entity).order('captured_at', { ascending: false }).limit(1);
+  if (error) { console.warn('[db] getLatestSnapshot', entity + ':', error.message); return null; }
+  return (data && data[0]) ? data[0].rows : null;
+}
+
 module.exports = {
   updatePerformanceResults,
   getRecentTriggerRuns,
@@ -271,4 +290,7 @@ module.exports = {
   rawSelect,
   // Prediction features
   insertPredictionFeatures,
+  // Sheet-exit staging snapshots
+  insertSnapshot,
+  getLatestSnapshot,
 };

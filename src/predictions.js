@@ -361,10 +361,10 @@ async function generateMLBPredictions() {
   // ever covers -1.5, producing 100% dog picks. NBA/NHL/NFL use their
   // per-league constants; only MLB was wired to the generic default.
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
+    dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.MLB_TEAM_STATS),
-    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
+    dataStore.read('scheduleContext').catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'MLB');
@@ -441,10 +441,10 @@ async function generateNBAPredictions() {
   console.log('[predictions] Generating NBA predictions (deterministic)...');
 
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
+    dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
-    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
+    dataStore.read('scheduleContext').catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'NBA');
@@ -502,10 +502,10 @@ async function generateNHLPredictions() {
   console.log('[predictions] Generating NHL predictions (deterministic)...');
 
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
+    dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.NHL_TEAM_STATS),
-    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
+    dataStore.read('scheduleContext').catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'NHL');
@@ -553,10 +553,10 @@ async function generateNFLPredictions() {
   console.log('[predictions] Generating NFL predictions (deterministic)...');
 
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS),
+    dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
     getValues(SPREADSHEET_ID, SHEETS.NFL_TEAM_STATS),
-    getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT).catch(() => []),
+    dataStore.read('scheduleContext').catch(() => []),
   ]);
 
   const games = buildGameObjects(oddsRows, 'NFL');
@@ -1159,7 +1159,7 @@ async function writeApprovedToDailyCombos(picks, sport) {
  */
 async function takeCLVSnapshot() {
   console.log('[predictions] Taking CLV snapshot...');
-  const oddsRows = await getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS);
+  const oddsRows = await dataStore.read('gameOdds');
   const ts = new Date().toISOString();
   const snapshotRows = oddsRows.slice(1).map(r => [ts, ...r]);
   if (snapshotRows.length > 0) {
