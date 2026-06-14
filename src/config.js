@@ -135,13 +135,17 @@ const IS_TEST = process.env.NODE_ENV !== 'production';
 // Per-entity defaults below let us migrate one entity at a time.
 const DATA_SOURCE = (process.env.DATA_SOURCE || '').trim().toLowerCase(); // '', 'sheet', 'supabase', 'dual'
 const DATA_SOURCE_MODES = {
-  // Category A — already mirrored to Supabase: shadow-read in dual by default.
-  performanceRows: 'dual',
-  propPerformanceRows: 'dual',
-  propStatusRows: 'dual',
-  modifierRows: 'dual',
-  clvSnapshotRows: 'dual',
-  triggerRuns: 'dual',
+  // All entities default to 'sheet' — the migration is inert until you opt in.
+  // Flip an entity to 'dual' to begin shadow-reading Supabase (logs divergence,
+  // still returns the Sheet value), then 'supabase' once parity holds.
+  // See docs/sheets-exit-runbook.md.
+  // Category A — already mirrored to Supabase:
+  performanceRows: 'sheet',
+  propPerformanceRows: 'sheet',
+  propStatusRows: 'sheet',
+  modifierRows: 'sheet',
+  clvSnapshotRows: 'sheet',
+  triggerRuns: 'sheet',
   // Category B — external data not yet in Supabase: stay on Sheet until Phase 2 tables exist.
   gameOdds: 'sheet',
   teamStats: 'sheet',
