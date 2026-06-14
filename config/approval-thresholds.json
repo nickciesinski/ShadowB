@@ -1,6 +1,6 @@
 {
   "_comment": "Source of truth for approval-engine thresholds. Edited automatically by scripts/weekly-threshold-tune.js (Sundays, auto-commit) and read by src/approval-engine.js at module load. If this file is missing or malformed, approval-engine.js falls back to its hardcoded defaults. Do not hand-edit during the week unless you also note it in tuning_history.",
-  "updated": "2026-06-07",
+  "updated": "2026-06-14",
   "default": {
     "minEdgePct": 2.5,
     "minMarketQuality": 0.3,
@@ -9,12 +9,35 @@
     "maxUncertainty": 0.75
   },
   "leagues": {
-    "NHL": { "minEdgePct": 2.5, "minConfidence": 3 },
-    "NBA": { "minEdgePct": 2.5, "maxUncertainty": 0.65 },
-    "MLB": { "minEdgePct": 2.5, "minConfidence": 4, "minMarketQuality": 0.30 },
+    "NHL": {
+      "minEdgePct": 2.5,
+      "minConfidence": 3
+    },
+    "NBA": {
+      "minEdgePct": 2.5,
+      "maxUncertainty": 0.65
+    },
+    "MLB": {
+      "minEdgePct": 2,
+      "minConfidence": 4,
+      "minMarketQuality": 0.3
+    },
     "NFL": {}
   },
   "tuning_history": [
-    { "date": "2026-06-07", "league": "ALL", "changes": {}, "reason": "Config file introduced; values mirror approval-engine.js @ 9cef33c. No tuning applied (14-day post-bugfix relearning window through ~6/17)." }
+    {
+      "date": "2026-06-07",
+      "league": "ALL",
+      "changes": {},
+      "reason": "Config file introduced; values mirror approval-engine.js @ 9cef33c. No tuning applied (14-day post-bugfix relearning window through ~6/17)."
+    },
+    {
+      "date": "2026-06-14",
+      "league": "MLB",
+      "changes": {
+        "minEdgePct": 2
+      },
+      "reason": "7d ROI +40.9% on 228 bets — loosen minEdgePct 2.5→2"
+    }
   ]
 }
