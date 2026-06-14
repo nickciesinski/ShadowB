@@ -147,12 +147,13 @@ const DATA_SOURCE_MODES = {
   clvSnapshotRows: 'sheet',
   triggerRuns: 'sheet',
   // Category B — external data not yet in Supabase: stay on Sheet until Phase 2 tables exist.
-  gameOdds: 'sheet',
+  gameOdds: 'dual',   // canary (2026-06-14): dual-write + shadow-read parity
   teamStats: 'sheet',
   injuries: 'sheet',
   scheduleContext: 'sheet',
   playerProps: 'sheet',
   playerTiers: 'sheet',
+  yesterdayResults: 'sheet',
 };
 function dataModeFor(entity) {
   if (DATA_SOURCE === 'sheet' || DATA_SOURCE === 'supabase' || DATA_SOURCE === 'dual') return DATA_SOURCE;

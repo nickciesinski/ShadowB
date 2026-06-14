@@ -15,6 +15,7 @@
 // =============================================================
 
 const { getValues } = require('./sheets');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 // ── Default Weights (used until optimizer tunes them) ────────
@@ -307,7 +308,7 @@ async function readScoringWeights(league) {
  */
 async function buildTierMap() {
   try {
-    const rows = await getValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
+    const rows = await dataStore.read('playerTiers');
     if (!rows || rows.length < 2) return {};
 
     const map = {};

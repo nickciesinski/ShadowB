@@ -57,13 +57,23 @@ const REGISTRY = {
   // Registered (routed) but shadow-inert until their mappers land in Phase 1b.
   propPerformanceRows: { sheet: () => getValues(SPREADSHEET_ID, SHEETS.PROP_PERFORMANCE) },
   propStatusRows:      { sheet: () => getValues(SPREADSHEET_ID, SHEETS.PROP_STATUS) },
-  modifierRows:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.CLV_MODIFIERS) },
+  modifierRows:        {
+    sheet: () => getValues(SPREADSHEET_ID, SHEETS.CLV_MODIFIERS),
+    supa: async () => {
+      const data = await db.readModifiers();
+      const rows = [['League', 'Market', 'Modifier', 'SampleSize', 'WinRate', 'ROI', 'UpdatedAt']];
+      for (const r of (data || [])) rows.push([r.league, r.market, r.modifier, r.sample_size, r.win_rate, r.roi, r.updated_at]);
+      return rows;
+    },
+  },
   clvSnapshotRows:     { sheet: () => getValues(SPREADSHEET_ID, SHEETS.CLV_SNAPSHOT) },
   triggerRuns:         { sheet: () => getValues(SPREADSHEET_ID, SHEETS.TRIGGER_MONITOR_8T) },
   // ── Category B (external data; Phase 2 tables) ──
   gameOdds:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.GAME_ODDS), supa: () => db.getLatestSnapshot('gameOdds') },
   scheduleContext: { sheet: () => getValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT), supa: () => db.getLatestSnapshot('scheduleContext') },
   injuries:        { sheet: () => getValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY), supa: () => db.getLatestSnapshot('injuries') },
+  yesterdayResults:{ sheet: () => getValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS), supa: () => db.getLatestSnapshot('yesterdayResults') },
+  playerTiers:     { sheet: () => getValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS), supa: () => db.getLatestSnapshot('playerTiers') },
 };
 
 // ── divergence logging (cheap: row counts + sampled cells) ──

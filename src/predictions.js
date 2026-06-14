@@ -1365,7 +1365,7 @@ async function gradePerformanceLog() {
 
   // Read yesterday's results + closing-odds snapshot in parallel
   const [resultsRows, closingSnapRows] = await Promise.all([
-    getValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS),
+    dataStore.read('yesterdayResults'),
     getValues(SPREADSHEET_ID, SHEETS.CLV_SNAPSHOT).catch(() => []),
   ]);
   const closingMap = buildClosingOddsMap(closingSnapRows);

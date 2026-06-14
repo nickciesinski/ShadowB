@@ -1,0 +1,31 @@
+name: Sheets-exit Health Check
+
+# Watches the Google-Sheets-exit migration and emails Nick if any entity that
+# has been flipped off 'sheet' looks wrong (Supabase unreachable, snapshot
+# missing/stale, row-count divergence). Healthy => no email.
+
+on:
+  schedule:
+    - cron: '0 13 * * *'   # 9:00 AM ET daily, after the morning data refresh
+  workflow_dispatch:
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci
+      - name: Run Sheets-exit health check
+        run: node scripts/sheets-exit-healthcheck.js
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          NODE_ENV: production

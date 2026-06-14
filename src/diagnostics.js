@@ -114,7 +114,7 @@ async function generateSystemHealthReport() {
 
   // ── 4. Player Tiers (does the dedicated sheet exist and have reasonable distribution?) ──
   try {
-    const tierRows = await getValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
+    const tierRows = await dataStore.read('playerTiers');
     if (tierRows && tierRows.length > 10) {
       const tiers = { S: 0, A: 0, B: 0, C: 0, D: 0 };
       for (let i = 1; i < tierRows.length; i++) {

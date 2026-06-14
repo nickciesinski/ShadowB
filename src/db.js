@@ -252,6 +252,15 @@ async function insertSnapshot(entity, rows) {
   return { ok: true };
 }
 
+async function getSnapshotInfo(entity) {
+  const sb = getClient();
+  if (!sb) return null;
+  const { data, error } = await sb.from('sheet_snapshots')
+    .select('captured_at').eq('entity', entity).order('captured_at', { ascending: false }).limit(1);
+  if (error || !data || !data[0]) return null;
+  return { capturedAt: data[0].captured_at };
+}
+
 async function getLatestSnapshot(entity) {
   const sb = getClient();
   if (!sb) return null;
@@ -293,4 +302,5 @@ module.exports = {
   // Sheet-exit staging snapshots
   insertSnapshot,
   getLatestSnapshot,
+  getSnapshotInfo,
 };

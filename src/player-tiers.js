@@ -12,6 +12,9 @@
  *   - Any player appearing in ESPN leaders gets a minimum B-tier floor
  */
 const { getValues, setValues, clearSheet, ensureSheet } = require('./sheets');
+const db = require('./db');
+const { dataModeFor } = require('./config');
+const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 // Position importance by sport (higher = more impactful when injured)
@@ -135,6 +138,10 @@ async function updatePlayerTiers() {
   await ensureSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
   await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
   await setValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS, 'A1', values);
+  if (dataModeFor('playerTiers') !== 'sheet') {
+    try { await db.insertSnapshot('playerTiers', values); }
+    catch (e) { console.warn('[player-tiers] playerTiers snapshot dual-write failed:', e.message); }
+  }
 
   const tierCounts = { S: 0, A: 0, B: 0, C: 0, D: 0 };
   for (const [, , , , t] of allTierRows) tierCounts[t]++;
@@ -145,7 +152,7 @@ async function updatePlayerTiers() {
  * Read current tier assignments from the sheet.
  */
 async function readPlayerTiers() {
-  const rows = await getValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
+  const rows = await dataStore.read('playerTiers');
   if (!rows || rows.length < 2) return [];
   return rows.slice(1).map((row) => ({
     name:   row[0],

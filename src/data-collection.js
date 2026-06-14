@@ -808,6 +808,10 @@ async function fetchYesterdayResults() {
 
   await clearSheet(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS);
   await setValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS, 'A1', allRows);
+  if (dataModeFor('yesterdayResults') !== 'sheet') {
+    try { await db.insertSnapshot('yesterdayResults', allRows); }
+    catch (e) { console.warn('[data-collection] yesterdayResults snapshot dual-write failed:', e.message); }
+  }
   console.log(`[data-collection] Results updated: ${allRows.length - 1} games (2-day window)`);
 
   return allRows.length - 1;
