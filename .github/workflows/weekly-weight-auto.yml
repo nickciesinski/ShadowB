@@ -63,14 +63,6 @@ jobs:
           git commit -m "auto-apply: ${{ steps.sweep.outputs.winner }} (+${{ steps.sweep.outputs.win_rate_lift }}% win rate, +${{ steps.sweep.outputs.roi_lift }}% ROI)"
           git push
 
-      - name: Push weights to Google Sheets
-        if: steps.sweep.outputs.applied == 'true'
-        env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: node scripts/apply-weights.js
 
       - name: Upload report
         if: always()

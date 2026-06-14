@@ -775,7 +775,7 @@ async function main() {
   // Output summary for GitHub Actions
   if (report.applied) {
     console.log('\n=== WEIGHTS UPDATED ===');
-    console.log('CSV files modified. The workflow will commit + push + trigger apply-weights.');
+    console.log('CSV files modified. The workflow will commit + push the updated config/model-params + CSV.');
   } else {
     console.log('\n=== NO CHANGES ===');
     console.log(report.skipReason);
