@@ -1,0 +1,54 @@
+name: Apply Supabase Migration
+
+# Hands-off DB migrations. After the one-time SUPABASE_DB_URL secret is set:
+#   • click "Run workflow" to apply a migration on demand, and
+#   • any new supabase/*.sql pushed to main applies automatically.
+# All migration SQL is idempotent (IF NOT EXISTS), so re-runs are safe.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: 'Migration file to apply'
+        required: true
+        default: 'supabase/migration_sheets_exit.sql'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**.sql'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply migration(s)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set. See docs/sheets-exit-runbook.md."
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FILES="${{ github.event.inputs.file }}"
+          else
+            # On push: apply the sheets-exit migration (idempotent). Add others here as needed.
+            FILES="supabase/migration_sheets_exit.sql"
+          fi
+          for f in $FILES; do
+            echo "Applying $f ..."
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+          echo "Migration complete."
+
+      - name: Verify table exists
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "SELECT to_regclass('public.sheet_snapshots') AS sheet_snapshots;"
