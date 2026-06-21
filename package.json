@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node src/triggers.js",
-    "test": "node src/diagnostics.js"
+    "test": "node src/diagnostics.js",
+    "test:unit": "node --test test/*.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
