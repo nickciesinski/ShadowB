@@ -582,6 +582,7 @@ async function sendAutoApplyEmail(report) {
   } else {
     html += `<h3>No Changes Applied</h3>`;
     html += `<p>Reason: ${report.skipReason}</p>`;
+    html += `<p style="color:#888;font-size:12px;">Note: scheduled runs are analysis-only (quarantined 2026-06-21). To apply, run the workflow manually with force=true.</p>`;
   }
 
   html += `<h3>Top 5 Configs</h3>`;
