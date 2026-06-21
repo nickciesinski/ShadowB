@@ -55,6 +55,7 @@ jobs:
 
           Applied by the weekly threshold tuner based on 7-day performance analysis.
           See threshold-reviews/ for the segment breakdown and rationale."
+          git pull --rebase origin main  # push-race insurance (R5.2): Sunday loops race to main
           git push
 
       - name: Upload review artifact

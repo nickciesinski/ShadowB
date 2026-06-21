@@ -38,5 +38,6 @@ jobs:
             echo "No param changes to commit"
           else
             git commit -m "[optimizer] nightly tune $(date -u +%Y-%m-%d)"
+            git pull --rebase origin main  # push-race insurance (R5.2): Sunday loops race to main
             git push
           fi
