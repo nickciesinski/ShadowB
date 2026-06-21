@@ -18,7 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { buildSegments } = require('./weekly-threshold-tune');
+const { buildSegments, parseDate, normMarket } = require('./weekly-threshold-tune');
 
 const LEAGUES = ['MLB', 'NBA', 'NHL', 'NFL'];
 const MARKETS = ['moneyline', 'spread', 'total'];
@@ -64,6 +64,83 @@ function portfolio(seg) {
   return { staked, ret, w, l, p, roi, win };
 }
 
+// ── CLV (closing-line value) — R1.1 ──────────────────────────────
+// Read-only: our odds live in Performance Log col 9, the closing odds the
+// grader captured live in col 31. CLV = how much the market moved toward our
+// side after we bet. Positive = we beat the close (the durable skill signal).
+const COL_ODDS = 9, COL_CLOSE_ODDS = 31;
+
+function impliedProb(odds) {
+  const o = parseFloat(odds);
+  if (!Number.isFinite(o) || o === 0) return null;
+  return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
+}
+
+// CLV in implied-probability percentage points. +1.5 means the close implied
+// 1.5pp more probability on our side than the price we took (we beat it).
+function clvPoints(openOdds, closeOdds) {
+  const oi = impliedProb(openOdds), ci = impliedProb(closeOdds);
+  if (oi == null || ci == null) return null;
+  return (ci - oi) * 100;
+}
+
+function emptyClv() { return { n: 0, beats: 0, sumPts: 0 }; }
+function clvFinalize(c) {
+  return {
+    n: c.n,
+    beatPct: c.n ? Math.round((c.beats / c.n) * 1000) / 10 : null,
+    avgPts: c.n ? Math.round((c.sumPts / c.n) * 100) / 100 : null,
+  };
+}
+
+// Bucket CLV by league × market × {all,approved,tracking} over a window.
+function clvSegments(rows, cutoff) {
+  const seg = {};
+  for (const lg of LEAGUES) {
+    seg[lg] = { all: emptyClv(), approved: emptyClv(), tracking: emptyClv(), byMarket: {} };
+    for (const mk of MARKETS) seg[lg].byMarket[mk] = { all: emptyClv(), approved: emptyClv(), tracking: emptyClv() };
+  }
+  for (const row of rows) {
+    const d = parseDate(row[0]);
+    if (!d || d < cutoff) continue;
+    const lg = String(row[1] || '').toUpperCase();
+    if (!seg[lg]) continue;
+    const pts = clvPoints(row[COL_ODDS], row[COL_CLOSE_ODDS]);
+    if (pts == null) continue; // no closing snapshot for this bet
+    const mk = normMarket(row[2]);
+    const appr = String(row[21] || '').trim().toLowerCase();
+    const bucket = appr === 'approved' ? 'approved' : 'tracking';
+    for (const t of [seg[lg].all, seg[lg][bucket]]) { t.n++; if (pts > 0) t.beats++; t.sumPts += pts; }
+    if (seg[lg].byMarket[mk]) {
+      for (const t of [seg[lg].byMarket[mk].all, seg[lg].byMarket[mk][bucket]]) { t.n++; if (pts > 0) t.beats++; t.sumPts += pts; }
+    }
+  }
+  return seg;
+}
+
+function fmtClv(c) {
+  const f = clvFinalize(c);
+  if (!f.n) return '—';
+  return `beat ${f.beatPct}% / avg ${f.avgPts >= 0 ? '+' : ''}${f.avgPts}pp (n=${f.n})`;
+}
+
+function clvTable(seg, title) {
+  let md = `### ${title}\n\n`;
+  md += `| League | Market | All | Approved (staked) | Tracking-only |\n`;
+  md += `|---|---|---|---|---|\n`;
+  for (const lg of LEAGUES) {
+    const m = seg[lg].byMarket;
+    let any = false;
+    for (const mk of MARKETS) {
+      if (m[mk].all.n === 0) continue;
+      any = true;
+      md += `| ${lg} | ${mk} | ${fmtClv(m[mk].all)} | ${fmtClv(m[mk].approved)} | ${fmtClv(m[mk].tracking)} |\n`;
+    }
+    if (any) md += `| **${lg}** | **all** | ${fmtClv(seg[lg].all)} | ${fmtClv(seg[lg].approved)} | ${fmtClv(seg[lg].tracking)} |\n`;
+  }
+  return md + '\n';
+}
+
 async function main() {
   const dataStore = require('../src/data-store');
   const raw = await dataStore.read('performanceRows');
@@ -78,6 +155,8 @@ async function main() {
   const seg7 = buildSegments(rows, cut7);
   const seg30 = buildSegments(rows, cut30);
   const segClean = buildSegments(rows, CLEAN_ERA_START);
+  const clvClean = clvSegments(rows, CLEAN_ERA_START);
+  const clv30 = clvSegments(rows, cut30);
 
   const pf = portfolio(segClean);
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -92,8 +171,15 @@ async function main() {
   md += windowTable(segClean, 'Clean era (since 2026-06-03) — by league × market');
   md += windowTable(seg30, 'Trailing 30 days');
   md += windowTable(seg7, 'Trailing 7 days');
-  md += `## Not yet measured\n\n`;
-  md += `- **CLV (closing-line value)** per staked bet — roadmap R1.1. Until instrumented, ROI above is the only scoreboard, and it is W/L-noisy at low n. Treat segments with n<20 as not-yet-significant.\n`;
+  md += `## CLV — closing-line value (R1.1)\n\n`;
+  md += `CLV = market move toward our side after we bet (our odds vs closing odds). `;
+  md += `**This is the leading indicator** — it gives signal on every bet immediately, unlike W/L. `;
+  md += `Sustained positive CLV on staked bets is the durable proof the edge is real, not luck. `;
+  md += `Rows without a closing snapshot are excluded from CLV counts.\n\n`;
+  md += clvTable(clvClean, 'Clean era (since 2026-06-03) — CLV by league × market');
+  md += clvTable(clv30, 'Trailing 30 days — CLV');
+  md += `## Still W/L-noisy\n\n`;
+  md += `- Treat ROI segments with n<20 as not-yet-significant; lean on CLV beat% there.\n`;
 
   if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUT_DIR, `${dateStr}.md`), md);
@@ -105,4 +191,4 @@ if (require.main === module) {
   main().catch(e => { console.error('[clean-era] FATAL:', e.message); process.exit(1); });
 }
 
-module.exports = { windowTable, portfolio };
+module.exports = { windowTable, portfolio, impliedProb, clvPoints, clvSegments, clvFinalize };
