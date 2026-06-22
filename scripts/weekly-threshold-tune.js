@@ -20,6 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { impliedProb, clvPoints, clvFinalize } = require('./clv-lib');
 
 const CFG_PATH = path.join(__dirname, '..', 'config', 'approval-thresholds.json');
 const REVIEW_DIR = path.join(__dirname, '..', 'threshold-reviews');
@@ -111,12 +112,30 @@ function buildSegments(rows, cutoff) {
   return seg;
 }
 
+
+// Per-league approved-bet CLV over a window. R1.2: the tuner uses this to avoid
+// loosening a segment that wins without beating the close (variance, not edge).
+function leagueApprovedClv(rows, cutoff, league) {
+  let n = 0, beats = 0, sumPts = 0;
+  for (const row of rows) {
+    const d = parseDate(row[COL.DATE]);
+    if (!d || d < cutoff) continue;
+    if (String(row[COL.LEAGUE] || '').toUpperCase() !== league) continue;
+    if (String(row[21] || '').trim().toLowerCase() !== 'approved') continue;
+    const pts = clvPoints(row[COL.ODDS], row[31]); // col 9 our odds, col 31 closing odds
+    if (pts == null) continue;
+    n++; if (pts > 0) beats++; sumPts += pts;
+  }
+  return clvFinalize({ n, beats, sumPts });
+}
+
 // Pure decision function — exported for tests.
 // current = merged thresholds for the league (defaults + override).
-function decideLeagueChange(league, s7, s30, current) {
+function decideLeagueChange(league, s7, s30, current, clvApproved = null) {
   const a7 = s7.all, a30 = s30.all;
   const reasons = [];
   const changes = {};
+  let flag = null;
   const n = a7.graded;
 
   if (n < 20) return { changes, reasons, note: `n=${n} (<20 graded in 7d) — skip` };
@@ -144,17 +163,27 @@ function decideLeagueChange(league, s7, s30, current) {
       }
     }
   } else if (roi > 8) {
-    const cur = current.minEdgePct;
-    const next = round(Math.max(cur - 0.5, 1.5), 2);
-    if (next < cur) {
-      changes.minEdgePct = next;
-      reasons.push(`7d ROI +${roi}% on ${n} bets — loosen minEdgePct ${cur}→${next}`);
+    // R1.2 CLV guard: high ROI with negative closing-line value is usually
+    // variance, not durable edge — do NOT loosen into it. Only act on CLV when
+    // we have >=20 staked closes; otherwise fall back to ROI-only behavior.
+    const clvNeg = clvApproved && clvApproved.n >= 20 && clvApproved.avgPts != null && clvApproved.avgPts < 0;
+    if (clvNeg) {
+      reasons.push(`7d ROI +${roi}% but 30d staked CLV ${clvApproved.avgPts}pp (beat ${clvApproved.beatPct}%, n=${clvApproved.n}) — HOLD, not loosening (likely variance)`);
+      flag = `+ROI without CLV support — held minEdgePct (regression risk)`;
+    } else {
+      const cur = current.minEdgePct;
+      const next = round(Math.max(cur - 0.5, 1.5), 2);
+      if (next < cur) {
+        changes.minEdgePct = next;
+        const clvStr = clvApproved && clvApproved.avgPts != null ? `${clvApproved.avgPts}pp` : 'n/a';
+        reasons.push(`7d ROI +${roi}% on ${n} bets, CLV ${clvStr} — loosen minEdgePct ${cur}→${next}`);
+      }
     }
   }
 
   // Approval-filter sanity flag (reported, not auto-acted): approved doing
   // markedly worse than tracking-only means the filter is selecting badly.
-  let flag = null;
+  // flag declared at top of function (R1.2)
   const ap = s7.approved, tr = s7.tracking;
   if (ap.graded >= 15 && tr.graded >= 15 && ap.roiPct !== null && tr.roiPct !== null
       && ap.roiPct < tr.roiPct - 8) {
@@ -231,7 +260,8 @@ const dataStore = require('../src/data-store');
   const decisions = [];
   for (const lg of LEAGUES) {
     const current = mergedThresholds(cfg, lg);
-    const d = decideLeagueChange(lg, seg7[lg], seg30[lg], current);
+    const clvApproved = leagueApprovedClv(rows, cut30, lg); // 30d staked CLV (R1.2)
+    const d = decideLeagueChange(lg, seg7[lg], seg30[lg], current, clvApproved);
     d.league = lg;
     decisions.push(d);
     const summary = Object.keys(d.changes).length ? JSON.stringify(d.changes) : (d.note || 'hold');
@@ -271,4 +301,4 @@ if (require.main === module) {
   main().catch(e => { console.error('[tune] FATAL:', e.message); process.exit(1); });
 }
 
-module.exports = { decideLeagueChange, buildSegments, normMarket, parseDate, finalize, mergedThresholds };
+module.exports = { decideLeagueChange, buildSegments, normMarket, parseDate, finalize, mergedThresholds, leagueApprovedClv };

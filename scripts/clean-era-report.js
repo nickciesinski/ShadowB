@@ -70,28 +70,7 @@ function portfolio(seg) {
 // side after we bet. Positive = we beat the close (the durable skill signal).
 const COL_ODDS = 9, COL_CLOSE_ODDS = 31;
 
-function impliedProb(odds) {
-  const o = parseFloat(odds);
-  if (!Number.isFinite(o) || o === 0) return null;
-  return o > 0 ? 100 / (o + 100) : Math.abs(o) / (Math.abs(o) + 100);
-}
-
-// CLV in implied-probability percentage points. +1.5 means the close implied
-// 1.5pp more probability on our side than the price we took (we beat it).
-function clvPoints(openOdds, closeOdds) {
-  const oi = impliedProb(openOdds), ci = impliedProb(closeOdds);
-  if (oi == null || ci == null) return null;
-  return (ci - oi) * 100;
-}
-
-function emptyClv() { return { n: 0, beats: 0, sumPts: 0 }; }
-function clvFinalize(c) {
-  return {
-    n: c.n,
-    beatPct: c.n ? Math.round((c.beats / c.n) * 1000) / 10 : null,
-    avgPts: c.n ? Math.round((c.sumPts / c.n) * 100) / 100 : null,
-  };
-}
+const { impliedProb, clvPoints, emptyClv, clvFinalize } = require('./clv-lib');
 
 // Bucket CLV by league × market × {all,approved,tracking} over a window.
 function clvSegments(rows, cutoff) {
