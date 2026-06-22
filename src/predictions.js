@@ -19,6 +19,7 @@ const dataStore = require('./data-store');
 const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb } = require('./market-pricing');
+const { priceStats } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
@@ -223,11 +224,16 @@ function buildGameObjects(oddsRows, sportFilter) {
           }
           nearPrices.sort((a, b) => a - b);
           const medianPrice = chosenPrice !== null ? chosenPrice : nearPrices[Math.floor(nearPrices.length / 2)];
+          // R2.1: best-available price across books (additive — does not change
+          // which side/point/price we pick; surfaces line-shopping upside).
+          const bestPrice = priceStats(nearPrices).best;
           markets[market].push({
             outcome,
             price: medianPrice,
+            bestPrice: bestPrice !== null ? bestPrice : medianPrice,
             point: String(chosenPoint),
             impliedProb: impliedProbability(medianPrice).toFixed(3),
+            bestImpliedProb: impliedProbability(bestPrice !== null ? bestPrice : medianPrice).toFixed(3),
           });
         }
       } else {
@@ -240,7 +246,16 @@ function buildGameObjects(oddsRows, sportFilter) {
         }
         allPrices.sort((a, b) => a - b);
         const median = allPrices[Math.floor(allPrices.length / 2)];
-        markets[market].push({ outcome, price: median, point, impliedProb: impliedProbability(median).toFixed(3) });
+        // R2.1: best-available price across books (additive — pick unchanged).
+        const bestH2h = priceStats(allPrices).best;
+        markets[market].push({
+          outcome,
+          price: median,
+          bestPrice: bestH2h !== null ? bestH2h : median,
+          point,
+          impliedProb: impliedProbability(median).toFixed(3),
+          bestImpliedProb: impliedProbability(bestH2h !== null ? bestH2h : median).toFixed(3),
+        });
       }
     }
     return { home: g.home, away: g.away, commence: g.commence, markets };
