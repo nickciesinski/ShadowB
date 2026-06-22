@@ -24,6 +24,7 @@
 const db = require('../src/db');
 const { getValues, setValues } = require('../src/sheets');
 const { SPREADSHEET_ID, SHEETS } = require('../src/config');
+const { evaluateRecency, STALE_MAX_AGE_DAYS } = require('../src/staleness');
 
 const args = process.argv.slice(2);
 const VERIFY_ONLY = args.includes('--verify-only');
@@ -47,20 +48,19 @@ async function verifySupabaseRecency() {
     console.error('  ERROR querying performance_log:', error.message);
     return { ok: false, reason: error.message };
   }
-  if (!data || data.length === 0) {
+  // Recency decision extracted to pure src/staleness.js (offline-testable; Autopilot #4)
+  const result = evaluateRecency({ rows: data, maxAgeDays: STALE_MAX_AGE_DAYS });
+  if (result.reason === 'empty_table') {
     console.warn('  WARNING: performance_log is empty');
-    return { ok: false, reason: 'empty_table' };
+    return result;
   }
-  const latest = data[0].date;
-  const latestDate = new Date(latest);
-  const ageDays = (Date.now() - latestDate.getTime()) / 86400000;
-  console.log(`  Latest date in Supabase performance_log: ${latest} (${ageDays.toFixed(1)} days old)`);
-  if (ageDays > 2) {
+  console.log(`  Latest date in Supabase performance_log: ${result.latest} (${result.ageDays.toFixed(1)} days old)`);
+  if (result.reason === 'stale') {
     console.error(`  STALE: dual-write may have stopped. Check trigger12/trigger4 logs.`);
-    return { ok: false, reason: 'stale', latest, ageDays };
+    return result;
   }
   console.log('  OK — dual-write is current');
-  return { ok: true, latest, ageDays };
+  return result;
 }
 
 async function resetModifiers() {
