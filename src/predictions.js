@@ -18,7 +18,7 @@ const { getValues, setValues, clearSheet, appendRows } = require('./sheets');
 const dataStore = require('./data-store');
 const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
-const { americanToImpliedProb } = require('./market-pricing');
+const { americanToImpliedProb, roundUnits } = require('./market-pricing');
 const { priceStats } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
@@ -710,7 +710,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         }
       }
 
-      const units = Math.max(0.01, p._units);
+      const units = roundUnits(p._units);
       const odds = p._odds || -110;
       const pick = team;
       const line = p.line || '';
@@ -744,7 +744,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     // Confidence-scaled units with league/market performance modifier
     const baseUnits = confidenceToUnits(confidence);
     const modifier = getPerformanceModifier(sport, betType);
-    let units = parseFloat((baseUnits * modifier).toFixed(3));
+    let units = roundUnits(baseUnits * modifier);
 
     // Enforce minimum stake.
     const minUnits = (weights && Number.isFinite(weights.param_min_units_to_bet))

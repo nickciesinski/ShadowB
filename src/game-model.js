@@ -22,6 +22,7 @@ const {
   totalToOverProb,
   winProbToMLEdge,
   calcUnits,
+  roundUnits,
   edgeToDisplayConfidence,
   applyHeavyFavCap,
   scoreMarketQuality,
@@ -825,7 +826,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
       // Absolute floor
       if (!Number.isFinite(units) || units <= 0) units = 0.01;
 
-      pick._units = units;
+      pick._units = roundUnits(units); // 2 dp, >= 0.01 (penalty/heavy-fav cap leave long floats)
       pick.confidence = edgeToDisplayConfidence(pick._edge);
       allPicks.push(pick);
     }

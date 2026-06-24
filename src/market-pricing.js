@@ -172,11 +172,23 @@ function calcUnits(edgePct, uncertaintyScore, marketQualityScore, performanceMod
   // Apply calibration: adjusts sizing based on historical accuracy at this edge level
   units *= (calibrationMod || 1.0);
 
-  // Clamp: 0.01 floor (every game gets a pick), 0.5 cap
-  units = Math.max(0.01, Math.min(0.5, units));
+  // Cap at 0.5; round to 2 dp and enforce the 0.01 floor (every game gets a pick).
+  units = Math.min(0.5, units);
+  return roundUnits(units);
+}
 
-  // Round to 2 decimal places
-  return Math.round(units * 100) / 100;
+/**
+ * Round a stake to 2 decimal places for clean logging/display, never below the
+ * 0.01-unit floor (rules.js: every pick gets a non-zero stake). Use this wherever
+ * a stake is finalized AFTER post-calcUnits multipliers (model-disagreement
+ * penalty, heavy-favorite cap) would otherwise leave a long float like 0.24194051.
+ * @param {number} units
+ * @returns {number} stake rounded to 2 dp, >= 0.01
+ */
+function roundUnits(units) {
+  if (!Number.isFinite(units) || units <= 0) return 0.01;
+  const r = Math.round(units * 100) / 100;
+  return r < 0.01 ? 0.01 : r;
 }
 
 /**
@@ -288,6 +300,7 @@ module.exports = {
   winProbToMLEdge,
   // Sizing
   calcUnits,
+  roundUnits,
   edgeToDisplayConfidence,
   applyHeavyFavCap,
   // Quality scoring
