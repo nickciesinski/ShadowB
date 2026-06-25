@@ -21,11 +21,11 @@ const db = require('../src/db');
 const { REGISTRY } = require('../src/data-store');
 
 const STALE_HOURS = 36;          // snapshot older than this => dual-write likely stopped
-const COUNT_TOLERANCE = 0.10;    // >10% (and >2 rows) row-count gap => divergence
 const SNAPSHOT_ENTITIES = new Set(['gameOdds', 'scheduleContext', 'injuries', 'yesterdayResults', 'playerTiers']);
 
 const rowCount = (v) => (Array.isArray(v) ? Math.max(0, v.length - 1) : 0);
-const diverges = (a, b) => { const gap = Math.abs(a - b); return gap > 2 && gap > COUNT_TOLERANCE * Math.max(a, 1); };
+// Pure alert-vs-noise logic lives in healthcheck-lib.js (offline-tested).
+const { isTransientError, withRetry, diverges } = require('./healthcheck-lib');
 
 async function checkEntity(entity) {
   const mode = dataModeFor(entity);
@@ -36,8 +36,15 @@ async function checkEntity(entity) {
   const problems = [], notices = [];
   let sheetN = null, supaN = null;
 
-  try { sheetN = rowCount(await ent.sheet()); }
-  catch (e) { problems.push(`Sheet read failed: ${e.message}`); }
+  try { sheetN = rowCount(await withRetry(() => ent.sheet())); }
+  catch (e) {
+    // Failing to read the AUTHORITATIVE Sheet says nothing about whether the
+    // Supabase shadow diverged, so it is NOT a migration problem and must not page.
+    // Log as a notice; the snapshot-staleness + Supabase reads below still catch
+    // real dual-write failures. Count comparison is simply skipped this run.
+    const kind = isTransientError(e) ? 'transient' : 'persistent';
+    notices.push(`Sheet read failed (${kind}, count comparison skipped this run): ${e.message}`);
+  }
 
   if (SNAPSHOT_ENTITIES.has(entity)) {
     let info = null;
@@ -50,14 +57,14 @@ async function checkEntity(entity) {
       const ageH = (Date.now() - new Date(info.capturedAt).getTime()) / 3.6e6;
       if (ageH > STALE_HOURS) problems.push(`Snapshot is stale (${ageH.toFixed(0)}h old) — dual-write may have stopped`);
       try {
-        supaN = rowCount(await ent.supa());
+        supaN = rowCount(await withRetry(() => ent.supa()));
         if (sheetN != null && diverges(sheetN, supaN)) problems.push(`Row-count divergence: Sheet=${sheetN}, Supabase=${supaN}`);
       } catch (e) { problems.push(`Supabase read failed: ${e.message}`); }
     }
   } else {
     // typed-table entity (e.g. modifierRows): Supabase should return data
     try {
-      supaN = rowCount(await ent.supa());
+      supaN = rowCount(await withRetry(() => ent.supa()));
       if (sheetN != null && sheetN > 0 && supaN === 0) problems.push(`Supabase returned 0 rows but Sheet has ${sheetN}`);
       else if (sheetN != null && diverges(sheetN, supaN)) problems.push(`Row-count divergence: Sheet=${sheetN}, Supabase=${supaN}`);
     } catch (e) { problems.push(`Supabase read failed: ${e.message}`); }
@@ -120,4 +127,8 @@ async function sendAlert(globalProblems, failing, active) {
   console.log(`[healthcheck] alert email sent to ${EMAIL_RECIPIENTS.length} recipient(s).`);
 }
 
-main().catch((e) => { console.error('[healthcheck] FATAL:', e.message); process.exitCode = 1; });
+if (require.main === module) {
+  main().catch((e) => { console.error('[healthcheck] FATAL:', e.message); process.exitCode = 1; });
+}
+
+module.exports = { checkEntity };
