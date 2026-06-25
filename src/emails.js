@@ -14,6 +14,7 @@ const nodemailer = require('nodemailer');
 const { SPREADSHEET_ID, SHEETS, GMAIL_USER, GMAIL_APP_PASSWORD, EMAIL_RECIPIENTS } = require('./config');
 const { getValues, appendRows } = require('./sheets');
 const dataStore = require('./data-store');
+const { expectedTriggersFor, mergeTriggerRuns, categorize } = require('./trigger-health');
 let _emailDb = null;
 function getEmailDb() { if (!_emailDb) _emailDb = require('./db'); return _emailDb; }
 
@@ -527,23 +528,19 @@ async function sendTriggerHealthCheck() {
     console.warn('[emails] Trigger_Monitor read failed:', e.message);
   }
 
-  // If Sheets had few results, try Supabase as fallback
-  if (Object.keys(runMap).length < 3) {
-    console.log('[emails] Few Sheets results, checking Supabase trigger_log...');
+  // Always backfill from Supabase trigger_log and merge (Sheets wins per-trigger).
+  // The Trigger_Monitor sheet silently drops writes as it nears the 10M-cell cap,
+  // so gating this on a sheet-row count was a blind spot: at exactly 3 rows the
+  // backup was skipped and real runs got reported as "missing" (the false alarm).
+  try {
     const db = getEmailDb();
     const dbRuns = await db.getRecentTriggerRuns(24);
-    if (dbRuns && dbRuns.length > 0) {
-      for (const row of dbRuns) {
-        const name = row.trigger_name || '';
-        if (runMap[name]) continue; // Sheets data takes precedence
-        runMap[name] = {
-          status: row.status || '',
-          duration: row.duration_sec != null ? String(row.duration_sec) : '',
-          error: row.error_message || '',
-        };
-      }
-      console.log(`[emails] Supabase added ${dbRuns.length} trigger entries`);
-    }
+    const before = Object.keys(runMap).length;
+    const merged = mergeTriggerRuns(runMap, dbRuns);
+    Object.assign(runMap, merged);
+    console.log(`[emails] Supabase backfilled ${Object.keys(runMap).length - before} trigger entries not in Sheets (dbRuns=${(dbRuns || []).length}).`);
+  } catch (e) {
+    console.warn('[emails] Supabase trigger_log backfill failed (using Sheets only):', e.message);
   }
 
   if (Object.keys(runMap).length === 0) {
@@ -553,29 +550,10 @@ async function sendTriggerHealthCheck() {
 
   // Expected triggers for today (use ET since schedule is ET-based)
   const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const dayOfWeek = etNow.getDay(); // 0=Sun
-  const expectedDaily = [
-    'trigger1', 'trigger2', 'trigger3', 'trigger4',
-    'trigger6', 'trigger7', 'trigger8', 'trigger9',
-    'trigger10', 'trigger11', 'trigger12', 'trigger14',
-  ];
-  if (dayOfWeek === 1) expectedDaily.push('trigger13'); // trigger13 runs Mon 01:00 UTC (Sun 8PM ET)
+  const expectedDaily = expectedTriggersFor(etNow.getDay()); // 0=Sun; trigger13 on Mon
 
-  // Categorize
-  const passed = [];
-  const failed = [];
-  const missing = [];
-
-  for (const name of expectedDaily) {
-    const run = runMap[name];
-    if (!run) {
-      missing.push(name);
-    } else if (run.status === 'FAILED') {
-      failed.push({ name, error: run.error, duration: run.duration });
-    } else {
-      passed.push({ name, duration: run.duration });
-    }
-  }
+  // Categorize (pure, offline-tested in src/trigger-health.js)
+  const { passed, failed, missing } = categorize(expectedDaily, runMap);
 
   const allGood = failed.length === 0 && missing.length === 0;
   const statusEmoji = allGood ? '✅' : '🚨';
