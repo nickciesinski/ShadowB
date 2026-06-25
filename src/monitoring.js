@@ -1,4 +1,5 @@
 'use strict';
+const { writeTriggerLog } = require('./trigger-log');
 // =============================================================
 // src/monitoring.js — Instrument panel for trigger runs + API calls
 //
@@ -104,42 +105,15 @@ async function flushApiBuffer() {
  *   F: Duration (sec)  G: Records Processed  H: Errors  I: Notes  J: Memory Used (MB)
  */
 async function logTriggerRun({ name, status, startMs, endMs, records = '', error = '', notes = '' }) {
-  try {
-    const duration = ((endMs - startMs) / 1000).toFixed(2);
-    const memMb = Math.round((process.memoryUsage().rss || 0) / 1024 / 1024);
-    const row = [
-      new Date(startMs).toISOString(),
-      name,
-      status, // "SUCCESS" | "FAILED"
-      new Date(startMs).toISOString(),
-      new Date(endMs).toISOString(),
-      duration,
-      records,
-      error || '',
-      notes,
-      memMb,
-    ];
-
-    // Prefer Supabase for trigger logging too
-    const db = getDb();
-    if (db.isEnabled()) {
-      await db.logTrigger({
-        trigger_name: name,
-        status,
-        start_time: new Date(startMs).toISOString(),
-        end_time: new Date(endMs).toISOString(),
-        duration_sec: parseFloat(duration),
-        records_processed: records ? parseInt(records) : null,
-        error_message: error || null,
-        memory_mb: memMb,
-      });
-    }
-
-    // Always write to Sheets too (keeps the dashboard Sheet updated)
-    await appendRows(SPREADSHEET_ID, SHEETS.TRIGGER_MONITOR, [row]);
-  } catch (e) {
-    console.warn('[monitoring] Trigger_Monitor write failed:', e.message);
-  }
+  // Supabase trigger_log is PRIMARY (the daily health check reads it); the
+  // Trigger_Monitor sheet is a best-effort mirror. The two writes are isolated in
+  // writeTriggerLog() so a full/over-cap workbook can never block or mask the
+  // Supabase record — the failure mode behind the false "triggers missing" alert.
+  const memMb = Math.round((process.memoryUsage().rss || 0) / 1024 / 1024);
+  await writeTriggerLog(
+    { name, status, startMs, endMs, records, error, notes, memMb },
+    { db: getDb(), appendRows, spreadsheetId: SPREADSHEET_ID, sheet: SHEETS.TRIGGER_MONITOR }
+  );
 }
 
 /**
