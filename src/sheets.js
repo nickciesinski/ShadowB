@@ -38,22 +38,10 @@ async function getSheetsClient() {
 // Non-transient errors (e.g. "exceeds grid limits") are rethrown immediately
 // so callers' existing handling — like the grid auto-expand below — still runs.
 
-const TRANSIENT_MSG = [
-  'currently unavailable', 'try again', 'rate limit', 'quota exceeded',
-  'backend error', 'internal error', 'deadline exceeded',
-  'timeout', 'timed out', 'socket hang up', 'network', 'econnreset',
-];
-const TRANSIENT_CODES_NUM = [429, 500, 502, 503, 504];
-const TRANSIENT_CODES_STR = ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE', 'ECONNREFUSED'];
-
-function isTransient(err) {
-  if (!err) return false;
-  const numCode = Number(err.code || err.status || (err.response && err.response.status));
-  if (TRANSIENT_CODES_NUM.includes(numCode)) return true;
-  if (typeof err.code === 'string' && TRANSIENT_CODES_STR.includes(err.code)) return true;
-  const msg = String(err.message || '').toLowerCase();
-  return TRANSIENT_MSG.some(p => msg.includes(p));
-}
+// Transient-error classifier lives in src/transient.js (shared + offline-tested).
+// It now also covers the OAuth token-fetch "Premature close" transport error that
+// took down every trigger — so withRetry actually retries it instead of failing.
+const { isTransient } = require('./transient');
 
 async function withRetry(label, thunk, { tries = 4, baseMs = 800 } = {}) {
   let lastErr;
