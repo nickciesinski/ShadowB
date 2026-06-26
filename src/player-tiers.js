@@ -15,6 +15,7 @@ const { getValues, setValues, clearSheet, ensureSheet } = require('./sheets');
 const db = require('./db');
 const { dataModeFor } = require('./config');
 const dataStore = require('./data-store');
+const { persistSnapshotFirst } = require('./snapshot-sink');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
 
 // Position importance by sport (higher = more impactful when injured)
@@ -135,13 +136,15 @@ async function updatePlayerTiers() {
 
   // Write to PLAYER_TIERS sheet (auto-create if missing)
   const values = [['Player', 'Team', 'League', 'Score', 'Tier'], ...allTierRows];
-  await ensureSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
-  await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
-  await setValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS, 'A1', values);
-  if (dataModeFor('playerTiers') !== 'sheet') {
-    try { await db.insertSnapshot('playerTiers', values); }
-    catch (e) { console.warn('[player-tiers] playerTiers snapshot dual-write failed:', e.message); }
-  }
+  await persistSnapshotFirst({
+    entity: 'playerTiers', rows: values, mode: dataModeFor('playerTiers'),
+    insertSnapshot: (e, r) => db.insertSnapshot(e, r),
+    writeSheet: async () => {
+      await ensureSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
+      await clearSheet(SPREADSHEET_ID, SHEETS.PLAYER_TIERS);
+      await setValues(SPREADSHEET_ID, SHEETS.PLAYER_TIERS, 'A1', values);
+    },
+  });
 
   const tierCounts = { S: 0, A: 0, B: 0, C: 0, D: 0 };
   for (const [, , , , t] of allTierRows) tierCounts[t]++;

@@ -13,6 +13,7 @@ const { dataModeFor } = require('./config');
 const { getValues, setValues, appendRows, clearSheet, ensureSheet } = require('./sheets');
 const { logApiCall } = require('./monitoring');
 const { persistGameOdds } = require('./odds-sink');
+const { persistSnapshotFirst } = require('./snapshot-sink');
 
 // Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
 // We log a flat $0.001/call placeholder so the API_Usage_Log has a signal to sum.
@@ -638,12 +639,14 @@ async function updateScheduleContext() {
   }
 
   if (SHEETS.SCHEDULE_CONTEXT) {
-    await clearSheet(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT);
-    await setValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT, 'A1', allRows);
-    if (dataModeFor('scheduleContext') !== 'sheet') {
-      try { await db.insertSnapshot('scheduleContext', allRows); }
-      catch (e) { console.warn('[data-collection] scheduleContext snapshot dual-write failed:', e.message); }
-    }
+    await persistSnapshotFirst({
+      entity: 'scheduleContext', rows: allRows, mode: dataModeFor('scheduleContext'),
+      insertSnapshot: (e, r) => db.insertSnapshot(e, r),
+      writeSheet: async () => {
+        await clearSheet(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT);
+        await setValues(SPREADSHEET_ID, SHEETS.SCHEDULE_CONTEXT, 'A1', allRows);
+      },
+    });
   }
 
   console.log(`[data-collection] Schedule context updated: ${allRows.length - 1} games`);
@@ -807,12 +810,14 @@ async function fetchYesterdayResults() {
     }
   }
 
-  await clearSheet(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS);
-  await setValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS, 'A1', allRows);
-  if (dataModeFor('yesterdayResults') !== 'sheet') {
-    try { await db.insertSnapshot('yesterdayResults', allRows); }
-    catch (e) { console.warn('[data-collection] yesterdayResults snapshot dual-write failed:', e.message); }
-  }
+  await persistSnapshotFirst({
+    entity: 'yesterdayResults', rows: allRows, mode: dataModeFor('yesterdayResults'),
+    insertSnapshot: (e, r) => db.insertSnapshot(e, r),
+    writeSheet: async () => {
+      await clearSheet(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS);
+      await setValues(SPREADSHEET_ID, SHEETS.YESTERDAY_RESULTS, 'A1', allRows);
+    },
+  });
   console.log(`[data-collection] Results updated: ${allRows.length - 1} games (2-day window)`);
 
   return allRows.length - 1;
@@ -880,13 +885,15 @@ async function fetchInjuryReports() {
 
   // Write to Injury Summary sheet (overwrite — fresh daily snapshot)
   if (allRows.length > 1) {
-    await ensureSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
-    await clearSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
-    await setValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY, 'A1', allRows);
-    if (dataModeFor('injuries') !== 'sheet') {
-      try { await db.insertSnapshot('injuries', allRows); }
-      catch (e) { console.warn('[data-collection] injuries snapshot dual-write failed:', e.message); }
-    }
+    await persistSnapshotFirst({
+      entity: 'injuries', rows: allRows, mode: dataModeFor('injuries'),
+      insertSnapshot: (e, r) => db.insertSnapshot(e, r),
+      writeSheet: async () => {
+        await ensureSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+        await clearSheet(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY);
+        await setValues(SPREADSHEET_ID, SHEETS.INJURY_SUMMARY, 'A1', allRows);
+      },
+    });
     console.log(`[data-collection] Injury reports updated: ${allRows.length - 1} entries across 4 leagues`);
   } else {
     console.log('[data-collection] No injury data retrieved from ESPN');
