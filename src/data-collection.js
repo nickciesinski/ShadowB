@@ -12,6 +12,7 @@ const db = require('./db');
 const { dataModeFor } = require('./config');
 const { getValues, setValues, appendRows, clearSheet, ensureSheet } = require('./sheets');
 const { logApiCall } = require('./monitoring');
+const { persistGameOdds } = require('./odds-sink');
 
 // Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
 // We log a flat $0.001/call placeholder so the API_Usage_Log has a signal to sum.
@@ -705,17 +706,17 @@ async function fetchOddsAndGrade() {
     }
   }
 
-  await clearSheet(SPREADSHEET_ID, SHEETS.GAME_ODDS);
-  await setValues(SPREADSHEET_ID, SHEETS.GAME_ODDS, 'A1', allOddsRows);
-  if (dataModeFor('gameOdds') !== 'sheet') {
-    try { await db.insertSnapshot('gameOdds', allOddsRows); }
-    catch (e) { console.warn('[data-collection] gameOdds snapshot dual-write failed:', e.message); }
-  }
-
-  // Archive to historical (append only)
-  if (allOddsRows.length > 1) {
-    await appendRows(SPREADSHEET_ID, SHEETS.HISTORICAL_ODDS, allOddsRows.slice(1));
-  }
+  // Snapshot-first persistence: the durable Supabase shadow is written before the
+  // Sheet so a Sheet failure can't leave the migration snapshot stale (the cause
+  // of the "Snapshot is stale (53h old)" alert during the OAuth outage).
+  await persistGameOdds(allOddsRows, {
+    mode: dataModeFor('gameOdds'),
+    insertSnapshot: (entity, rows) => db.insertSnapshot(entity, rows),
+    clearSheet, setValues, appendRows,
+    spreadsheetId: SPREADSHEET_ID,
+    gameOddsSheet: SHEETS.GAME_ODDS,
+    historicalSheet: SHEETS.HISTORICAL_ODDS,
+  });
   console.log(`[data-collection] Odds updated: ${allOddsRows.length - 1} rows`);
 }
 
