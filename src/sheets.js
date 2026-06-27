@@ -26,6 +26,16 @@ async function getSheetsClient() {
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 
+  // Pre-warm the OAuth access token with a PATIENT retry. Google's token endpoint
+  // has been intermittently dropping the connection ("Premature close") for windows
+  // longer than a normal API-call retry budget — which failed entire triggers after
+  // ~8s even though other triggers minutes earlier/later succeeded. The token is
+  // cached (~1h) once obtained, so only this first fetch must ride out a bad window;
+  // everything afterward reuses it. ~60s budget here vs ~8s before.
+  const client = await auth.getClient();
+  await withRetry('auth.getAccessToken', () => client.getAccessToken(),
+    { tries: 6, baseMs: 1500, maxMs: 20000 });
+
   _sheetsClient = google.sheets({ version: 'v4', auth });
   return _sheetsClient;
 }
@@ -43,20 +53,9 @@ async function getSheetsClient() {
 // took down every trigger — so withRetry actually retries it instead of failing.
 const { isTransient } = require('./transient');
 
-async function withRetry(label, thunk, { tries = 4, baseMs = 800 } = {}) {
-  let lastErr;
-  for (let attempt = 1; attempt <= tries; attempt++) {
-    try {
-      return await thunk();
-    } catch (err) {
-      lastErr = err;
-      if (attempt === tries || !isTransient(err)) throw err;
-      const delay = baseMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 250);
-      console.warn(`[sheets] ${label}: transient error (attempt ${attempt}/${tries}) — ${err.message}; retrying in ${delay}ms`);
-      await new Promise(r => setTimeout(r, delay));
-    }
-  }
-  throw lastErr;
+const { withRetry: _withRetry } = require('./retry');
+function withRetry(label, thunk, opts = {}) {
+  return _withRetry(label, thunk, { isTransient, log: console, tries: 4, baseMs: 800, ...opts });
 }
 
 /**
