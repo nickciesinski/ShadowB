@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22', cache: 'npm' }
+        with: { node-version: '20', cache: 'npm' }
       - run: npm ci
       - name: Sync Performance Log to Supabase + seed prop weights
         run: node src/triggers.js trigger15
