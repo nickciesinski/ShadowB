@@ -243,6 +243,30 @@ async function insertPredictionFeatures(rows) {
 }
 
 
+// ── Cross-run Google OAuth token cache ──────────────────────────
+// Stored in sheet_snapshots under a reserved entity so no migration is needed.
+// Lets one successful token fetch be reused by other runs for ~1h, so they don't
+// each have to fight the intermittently-failing Google token endpoint. Supabase
+// is reachable even when Google's token endpoint is dropping connections.
+const AUTH_TOKEN_ENTITY = '__google_oauth_token__';
+
+async function setCachedAccessToken(access_token, expiry_date) {
+  const sb = getClient();
+  if (!sb) return { ok: false };
+  const { error } = await sb.from('sheet_snapshots').insert({ entity: AUTH_TOKEN_ENTITY, rows: { access_token, expiry_date } });
+  if (error) { console.warn('[db] setCachedAccessToken failed:', error.message); return { ok: false }; }
+  return { ok: true };
+}
+
+async function getCachedAccessToken() {
+  const sb = getClient();
+  if (!sb) return null;
+  const { data, error } = await sb.from('sheet_snapshots')
+    .select('rows').eq('entity', AUTH_TOKEN_ENTITY).order('captured_at', { ascending: false }).limit(1);
+  if (error || !data || !data[0]) return null;
+  return data[0].rows; // { access_token, expiry_date }
+}
+
 // ── Sheet-exit staging snapshots (Category B external data) ─────
 async function insertSnapshot(entity, rows) {
   const sb = getClient();
@@ -303,4 +327,6 @@ module.exports = {
   insertSnapshot,
   getLatestSnapshot,
   getSnapshotInfo,
+  setCachedAccessToken,
+  getCachedAccessToken,
 };

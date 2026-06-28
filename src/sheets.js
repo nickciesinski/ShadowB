@@ -5,6 +5,8 @@
 // =============================================================
 
 const { google } = require('googleapis');
+const { isUsableToken } = require('./auth-cache');
+let _db; function getDb() { if (!_db) _db = require('./db'); return _db; }
 
 let _sheetsClient = null;
 
@@ -25,16 +27,36 @@ async function getSheetsClient() {
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
-
-  // Pre-warm the OAuth access token with a PATIENT retry. Google's token endpoint
-  // has been intermittently dropping the connection ("Premature close") for windows
-  // longer than a normal API-call retry budget — which failed entire triggers after
-  // ~8s even though other triggers minutes earlier/later succeeded. The token is
-  // cached (~1h) once obtained, so only this first fetch must ride out a bad window;
-  // everything afterward reuses it. ~60s budget here vs ~8s before.
   const client = await auth.getClient();
+
+  // 1) CROSS-RUN TOKEN CACHE. Google's token endpoint has been dropping
+  // connections ("Premature close") for minutes at a time, failing nearly every
+  // trigger. Access tokens live ~1h, so reuse a token a recent successful run
+  // cached in Supabase (reachable even when Google's endpoint isn't) and skip the
+  // flaky endpoint entirely. Best-effort: any cache miss/error falls through to (2).
+  try {
+    const cached = await getDb().getCachedAccessToken();
+    if (isUsableToken(cached)) {
+      client.credentials = { ...client.credentials, access_token: cached.access_token, expiry_date: cached.expiry_date };
+      console.log('[sheets] Using cached OAuth token (skipping token endpoint).');
+      _sheetsClient = google.sheets({ version: 'v4', auth });
+      return _sheetsClient;
+    }
+  } catch (e) {
+    console.warn('[sheets] token cache read failed (will fetch fresh):', e.message);
+  }
+
+  // 2) No usable cached token — fetch fresh with a PATIENT retry (the endpoint's
+  // bad windows outlast a normal API-call budget), then cache it so the next ~1h
+  // of runs can coast on it.
   await withRetry('auth.getAccessToken', () => client.getAccessToken(),
     { tries: 6, baseMs: 1500, maxMs: 20000 });
+  try {
+    const c = client.credentials || {};
+    if (c.access_token && c.expiry_date) await getDb().setCachedAccessToken(c.access_token, c.expiry_date);
+  } catch (e) {
+    console.warn('[sheets] token cache write failed (non-fatal):', e.message);
+  }
 
   _sheetsClient = google.sheets({ version: 'v4', auth });
   return _sheetsClient;
