@@ -726,19 +726,34 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               {isPre && <span style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>vs</span>}
             </div>
           </div>
-          {/* Bottom: pick status dots */}
+          {/* Bottom: pick status dots with M/S/T labels */}
           {displayPicks.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 3, marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               {displayPicks.map((dp, di) => {
+                const origPick = gamePicks[di];
                 const st = getPickStatus(dp, game);
                 const isInProgress = game.status === 'in';
+                const betted = origPick && isBet(origPick);
+                const faded = origPick && isFade(origPick);
+                const selected = betted || faded;
                 let dotColor = '#475569';
                 let anim = 'none';
                 if (st === 'winning') { dotColor = '#10B981'; if (isInProgress) anim = 'flashGreen 1.5s ease-in-out infinite'; }
                 else if (st === 'losing') { dotColor = '#EF4444'; if (isInProgress) anim = 'flashRed 1.5s ease-in-out infinite'; }
                 else if (st === 'even') { dotColor = '#6B7280'; }
                 else if (st === 'pending') { dotColor = '#475569'; }
-                return <span key={di} style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, display: 'inline-block', animation: anim }} />;
+                const bt = (dp.betType || dp.market || '').toLowerCase();
+                const label = bt === 'moneyline' ? 'M' : bt === 'spread' ? 'S' : bt === 'total' ? 'T' : '?';
+                const ringColor = faded ? '#FB923C' : betted ? '#A78BFA' : 'transparent';
+                return (
+                  <span key={di} style={{
+                    width: 16, height: 16, borderRadius: '50%', background: dotColor,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 7, fontWeight: 800, color: 'white', animation: anim,
+                    boxShadow: selected ? `0 0 0 2px ${ringColor}, 0 0 6px ${ringColor}` : 'none',
+                    border: selected ? `1.5px solid ${ringColor}` : '1.5px solid transparent',
+                  }}>{label}</span>
+                );
               })}
             </div>
           )}
