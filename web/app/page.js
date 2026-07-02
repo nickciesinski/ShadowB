@@ -556,6 +556,22 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
     return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>{sf === 'Live' ? 'No live games right now' : 'No games today'}</div>;
   }
 
+  // Tally W/L/T across all picks for final and live games
+  const tally = { final: { w: 0, l: 0, t: 0 }, live: { w: 0, l: 0, t: 0 } };
+  for (const d of gameData) {
+    if (d.isPre || d.isPostponed) continue;
+    const bucket = d.isLive ? 'live' : 'final';
+    for (const dp of d.displayPicks) {
+      const st = getPickStatus(dp, d.game);
+      if (st === 'winning') tally[bucket].w++;
+      else if (st === 'losing') tally[bucket].l++;
+      else if (st === 'even') tally[bucket].t++;
+    }
+  }
+  const hasFinalPicks = tally.final.w + tally.final.l + tally.final.t > 0;
+  const hasLivePicks = tally.live.w + tally.live.l + tally.live.t > 0;
+  const showTally = hasFinalPicks || hasLivePicks;
+
   // Expanded detail renderer (shared between compact-expand and expand-all)
   const renderExpanded = (d) => {
     const { game, gamePicks, displayPicks, isClose, tBorder, tBg, hasBets, hasFades, isLive, isPost, isPre, statusText, statusColor, cardOpacity, gameKey, i } = d;
@@ -770,6 +786,29 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
 
   return (
     <div>
+      {/* Pick performance tally */}
+      {showTally && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, justifyContent: 'center' }}>
+          {hasFinalPicks && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '5px 12px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#64748B' }}>Final</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#10B981' }}>{tally.final.w}W</span>
+              <span style={{ fontSize: 10, color: '#334155' }}>·</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#EF4444' }}>{tally.final.l}L</span>
+              {tally.final.t > 0 && <><span style={{ fontSize: 10, color: '#334155' }}>·</span><span style={{ fontSize: 12, fontWeight: 800, color: '#6B7280' }}>{tally.final.t}T</span></>}
+            </div>
+          )}
+          {hasLivePicks && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.15)', borderRadius: 8, padding: '5px 12px' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#34D399' }}>Live</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#10B981' }}>{tally.live.w}W</span>
+              <span style={{ fontSize: 10, color: '#334155' }}>·</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#EF4444' }}>{tally.live.l}L</span>
+              {tally.live.t > 0 && <><span style={{ fontSize: 10, color: '#334155' }}>·</span><span style={{ fontSize: 12, fontWeight: 800, color: '#6B7280' }}>{tally.live.t}T</span></>}
+            </div>
+          )}
+        </div>
+      )}
       {/* Expand All toggle */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
         <button onClick={() => { setExpandAll(!expandAll); if (!expandAll) setExpanded({}); }} style={{
