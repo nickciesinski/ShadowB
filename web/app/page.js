@@ -701,6 +701,38 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               ))}
             </div>
           )}
+          {/* Game situation / last play */}
+          {game.situation?.lastPlay && (
+            <div style={{ marginBottom: 8, padding: '6px 8px', background: game.situation.lastPlayScore > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', borderRadius: 6, border: game.situation.lastPlayScore > 0 ? '1px solid rgba(16,185,129,0.2)' : '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                <span style={{ fontSize: 10, color: game.situation.lastPlayScore > 0 ? '#34D399' : '#64748B', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{game.situation.lastPlayScore > 0 ? '🏀' : '▸'}</span>
+                <span style={{ fontSize: 11, color: '#CBD5E1', lineHeight: 1.3 }}>{game.situation.lastPlay}</span>
+              </div>
+              {/* MLB situation: runners, outs, batter/pitcher */}
+              {game.league === 'MLB' && game.status === 'in' && (game.situation.batter || game.situation.outs !== null) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 10, color: '#64748B' }}>
+                  {game.situation.outs !== null && <span style={{ fontWeight: 700 }}>{game.situation.outs} out{game.situation.outs !== 1 ? 's' : ''}</span>}
+                  {(game.situation.onFirst || game.situation.onSecond || game.situation.onThird) && (
+                    <span style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                      <span style={{ width: 6, height: 6, transform: 'rotate(45deg)', background: game.situation.onFirst ? '#FBBF24' : 'rgba(255,255,255,0.1)', display: 'inline-block' }} />
+                      <span style={{ width: 6, height: 6, transform: 'rotate(45deg)', background: game.situation.onSecond ? '#FBBF24' : 'rgba(255,255,255,0.1)', display: 'inline-block', marginTop: -4 }} />
+                      <span style={{ width: 6, height: 6, transform: 'rotate(45deg)', background: game.situation.onThird ? '#FBBF24' : 'rgba(255,255,255,0.1)', display: 'inline-block' }} />
+                    </span>
+                  )}
+                  {game.situation.batter && <span>AB: <span style={{ color: '#94A3B8', fontWeight: 600 }}>{game.situation.batter}</span></span>}
+                  {game.situation.pitcher && <span>P: <span style={{ color: '#94A3B8', fontWeight: 600 }}>{game.situation.pitcher}</span></span>}
+                </div>
+              )}
+              {/* NFL situation: down/distance, red zone */}
+              {game.league === 'NFL' && game.status === 'in' && game.situation.downDistance && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, fontSize: 10, color: '#64748B' }}>
+                  <span style={{ fontWeight: 700, color: game.situation.isRedZone ? '#EF4444' : '#94A3B8' }}>{game.situation.downDistance}</span>
+                  {game.situation.isRedZone && <span style={{ fontSize: 8, fontWeight: 700, color: '#EF4444', background: 'rgba(239,68,68,0.2)', padding: '1px 4px', borderRadius: 3 }}>RED ZONE</span>}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Game leaders */}
           {game.leaders?.length > 0 && (
             <div style={{ marginBottom: 6 }}>
               {game.leaders.filter((l, li, arr) => arr.findIndex(x => x.category === l.category) === li).slice(0, 4).map((l, li) => (
@@ -1501,6 +1533,32 @@ async function fetchLiveScores() {
         const broadcast = comp.broadcasts?.[0]?.names?.[0] || '';
         const odds = comp.odds?.[0]?.details || '';
 
+        // Extract game situation (last play, sport-specific context)
+        const sit = comp.situation || {};
+        const lastPlay = sit.lastPlay?.text || '';
+        const lastPlayScore = sit.lastPlay?.scoreValue || 0;
+        let situation = null;
+        if (status === 'in' || status === 'post') {
+          situation = { lastPlay, lastPlayScore };
+          if (league === 'MLB') {
+            situation.outs = sit.outs ?? null;
+            situation.onFirst = !!sit.onFirst;
+            situation.onSecond = !!sit.onSecond;
+            situation.onThird = !!sit.onThird;
+            situation.batter = sit.batter?.athlete?.shortName || '';
+            situation.pitcher = sit.pitcher?.athlete?.shortName || '';
+          }
+          if (league === 'NFL') {
+            situation.downDistance = sit.downDistanceText || '';
+            situation.possession = sit.possession || '';
+            situation.isRedZone = !!sit.isRedZone;
+            situation.yardLine = sit.yardLine || '';
+          }
+          if (league === 'NBA' || league === 'NHL') {
+            situation.possession = sit.possession || '';
+          }
+        }
+
         games.push({
           league,
           eventId: event.id,
@@ -1517,6 +1575,7 @@ async function fetchLiveScores() {
           venue,
           broadcast,
           odds,
+          situation,
           status: isPostponed ? 'postponed' : status,
           statusDetail: isPostponed ? (statusDescription || statusName.replace('STATUS_', '')) : '',
           period,
