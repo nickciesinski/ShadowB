@@ -331,6 +331,7 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
             {g.picks.map((p, j) => {
               const selected = isBet(p);
               const faded = isFade(p);
+              const display = faded ? findOppositePick(p, dedupedPicks) : p;
               return (
                 <div key={j} onClick={() => toggleBet(p)} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', cursor: 'pointer',
@@ -338,15 +339,18 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
                   background: faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)',
                   borderLeft: faded ? '5px solid #FB923C' : '5px solid #A78BFA',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
-                    {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
-                    <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{p.pick}</span>
-                    {p.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{p.line}</span>}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                      {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                      <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{display.pick}</span>
+                      {display.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{display.line}</span>}
+                    </div>
+                    {faded && <div style={{ fontSize: 10, color: '#78716C', fontStyle: 'italic', marginTop: 1 }}>Fading: {p.pick} {p.line || ''} {fmt(p.odds)}</div>}
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#F1F5F9' }}>{fmt(p.odds)}</div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#F1F5F9' }}>{fmt(display.odds)}</div>
                     <div style={{ fontSize: 11, color: '#64748B' }}>{p.units}u</div>
                   </div>
                 </div>
@@ -429,12 +433,14 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
             const dimmed = p.units === 0;
             const selected = isBet(p);
             const faded = isFade(p);
+            // When faded, show the opposite side (what you're actually betting)
+            const display = faded ? findOppositePick(p, dedupedPicks) : p;
             const bt = (p.betType || p.market || '').toLowerCase();
             const isTotal = bt === 'total';
-            const isOverPick = isTotal && (p.pick || '').toLowerCase().includes('over');
+            const displayIsOver = isTotal && (display.pick || '').toLowerCase().includes('over');
             // For ML/spread, find the picked team for the big logo
-            const pickedTeam = !isTotal ? p.pick : null;
-            const pickedLogoUrl = pickedTeam ? teamLogo(pickedTeam, g.league) : null;
+            const displayTeam = !isTotal ? display.pick : null;
+            const displayLogoUrl = displayTeam ? teamLogo(displayTeam, g.league) : null;
             return (
               <div key={j} onClick={() => toggleBet(p)} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', cursor: 'pointer',
@@ -449,21 +455,22 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
                     {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
                     {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{p.pick}</span>
-                    {p.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{p.line}</span>}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{display.pick}</span>
+                    {display.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{display.line}</span>}
                   </div>
-                  {p.rationale && <div style={{ fontSize: 11, color: '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.rationale}</div>}
+                  {faded && <div style={{ fontSize: 10, color: '#78716C', fontStyle: 'italic' }}>Fading: {p.pick} {p.line || ''} {fmt(p.odds)}</div>}
+                  {!faded && p.rationale && <div style={{ fontSize: 11, color: '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.rationale}</div>}
                 </div>
                 {/* Big visual indicator: team logo for ML/spread, arrow for totals */}
                 <div style={{ margin: '0 10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: '50%', background: isTotal ? 'transparent' : 'rgba(255,255,255,0.08)', border: isTotal ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
                   {isTotal ? (
-                    <span style={{ fontSize: 22, color: isOverPick ? '#34D399' : '#F87171', fontWeight: 900, lineHeight: 1 }}>{isOverPick ? '▲' : '▼'}</span>
-                  ) : pickedLogoUrl ? (
-                    <img src={pickedLogoUrl} alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
+                    <span style={{ fontSize: 22, color: displayIsOver ? '#34D399' : '#F87171', fontWeight: 900, lineHeight: 1 }}>{displayIsOver ? '▲' : '▼'}</span>
+                  ) : displayLogoUrl ? (
+                    <img src={displayLogoUrl} alt="" style={{ width: 30, height: 30, objectFit: 'contain' }} />
                   ) : null}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#F1F5F9' }}>{fmt(p.odds)}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#F1F5F9' }}>{fmt(display.odds)}</div>
                   <div style={{ fontSize: 11, color: '#64748B' }}>{p.units}u</div>
                   <span style={{ fontSize: 10, fontWeight: 700, color: confColor(p.confidence), background: confBg(p.confidence), padding: '1px 5px', borderRadius: 10 }}>{String(p.confidence).replace('%', '')}</span>
                 </div>
@@ -474,6 +481,28 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
       ))}
     </>
   );
+}
+
+// Find the actual opposite-side pick from data (real odds), fallback to flipPick
+function findOppositePick(p, allPicks) {
+  const bt = (p.betType || p.market || '').toLowerCase();
+  const candidates = allPicks.filter(c =>
+    c.league === p.league && c.away === p.away && c.home === p.home &&
+    (c.betType || c.market || '').toLowerCase() === bt
+  );
+  if (bt === 'moneyline' || bt === 'spread') {
+    const opp = candidates.find(c => (c.pick || '').toLowerCase() !== (p.pick || '').toLowerCase());
+    if (opp) return opp;
+  }
+  if (bt === 'total') {
+    const isOver = (p.pick || '').toLowerCase().includes('over');
+    const opp = candidates.find(c => {
+      const cIsOver = (c.pick || '').toLowerCase().includes('over');
+      return cIsOver !== isOver;
+    });
+    if (opp) return opp;
+  }
+  return flipPick(p); // fallback to approximation
 }
 
 // ── Scores Tab ──────────────────────────────────────────────────────
