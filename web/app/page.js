@@ -585,21 +585,35 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
     return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>{sf === 'Live' ? 'No live games right now' : 'No games today'}</div>;
   }
 
-  // Tally W/L/T across all picks for final and live games
-  const tally = { final: { w: 0, l: 0, t: 0 }, live: { w: 0, l: 0, t: 0 } };
+  // Tally W/L/T + units P/L across picks (respects My Bets filter)
+  const calcProfit = (odds, units) => {
+    if (!odds || !units) return 0;
+    return odds > 0 ? units * (odds / 100) : units * (100 / Math.abs(odds));
+  };
+  const tally = { final: { w: 0, l: 0, t: 0, units: 0 }, live: { w: 0, l: 0, t: 0, units: 0 } };
   for (const d of gameData) {
     if (d.isPre || d.isPostponed) continue;
     const bucket = d.isLive ? 'live' : 'final';
-    for (const dp of d.displayPicks) {
+    for (let di = 0; di < d.displayPicks.length; di++) {
+      const dp = d.displayPicks[di];
+      const origPick = d.gamePicks[di];
+      // When My Bets filter active, only count user's actual bets
+      if (sf === 'My Bets' && origPick && !isBet(origPick)) continue;
       const st = getPickStatus(dp, d.game);
-      if (st === 'winning') tally[bucket].w++;
-      else if (st === 'losing') tally[bucket].l++;
-      else if (st === 'even') tally[bucket].t++;
+      // For unit calc, use the real opposite odds for fades
+      const isFaded = origPick && isFade(origPick);
+      const betOdds = isFaded ? findOppositePick(origPick, picks).odds : origPick?.odds;
+      const betUnits = origPick?.units || 0;
+      if (st === 'winning') { tally[bucket].w++; tally[bucket].units += calcProfit(betOdds, betUnits); }
+      else if (st === 'losing') { tally[bucket].l++; tally[bucket].units -= betUnits; }
+      else if (st === 'even') { tally[bucket].t++; }
     }
   }
   const hasFinalPicks = tally.final.w + tally.final.l + tally.final.t > 0;
   const hasLivePicks = tally.live.w + tally.live.l + tally.live.t > 0;
   const showTally = hasFinalPicks || hasLivePicks;
+  const totalUnits = tally.final.units + tally.live.units;
+  const unitsStr = (totalUnits >= 0 ? '+' : '') + totalUnits.toFixed(2) + 'u';
 
   // Expanded detail renderer (shared between compact-expand and expand-all)
   const renderExpanded = (d) => {
@@ -849,7 +863,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
     <div>
       {/* Pick performance tally */}
       {showTally && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 8, justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
           {hasFinalPicks && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '5px 12px' }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: '#64748B' }}>Final</span>
@@ -868,6 +882,9 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               {tally.live.t > 0 && <><span style={{ fontSize: 10, color: '#334155' }}>·</span><span style={{ fontSize: 12, fontWeight: 800, color: '#6B7280' }}>{tally.live.t}T</span></>}
             </div>
           )}
+          <div style={{ background: totalUnits >= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${totalUnits >= 0 ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`, borderRadius: 8, padding: '5px 12px' }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: totalUnits >= 0 ? '#34D399' : '#F87171' }}>{unitsStr}</span>
+          </div>
         </div>
       )}
       {/* Expand All toggle */}
