@@ -3,7 +3,7 @@
 // live buildGameObjects wiring stays additive and non-breaking.
 const test = require('node:test');
 const assert = require('node:assert');
-const { bestAmericanPrice, medianAmericanPrice, priceStats } = require('../src/price-lib');
+const { bestAmericanPrice, medianAmericanPrice, priceStats, selectGradedPrice } = require('../src/price-lib');
 
 test('bestAmericanPrice picks the most favorable price to the bettor', () => {
   // Plus money: higher is better.
@@ -46,4 +46,25 @@ test('best is always >= median (line-shopping never hurts the logged price)', ()
 test('priceStats reports usable count and both prices', () => {
   assert.deepStrictEqual(priceStats([-110, -105, 120, '', 0]), { median: -105, best: 120, n: 3 });
   assert.deepStrictEqual(priceStats([]), { median: null, best: null, n: 0 });
+});
+
+test('selectGradedPrice: approved picks grade at best price', () => {
+  assert.strictEqual(selectGradedPrice('approved', -110, -105), -105);
+  assert.strictEqual(selectGradedPrice('approved', -110, 120), 120);
+});
+
+test('selectGradedPrice: tracking_only picks keep median, unchanged', () => {
+  assert.strictEqual(selectGradedPrice('tracking_only', -110, 120), -110);
+  assert.strictEqual(selectGradedPrice('tracking_only', -110, -105), -110);
+});
+
+test('selectGradedPrice: falls back to median when bestOdds is unusable', () => {
+  assert.strictEqual(selectGradedPrice('approved', -110, null), -110);
+  assert.strictEqual(selectGradedPrice('approved', -110, undefined), -110);
+  assert.strictEqual(selectGradedPrice('approved', -110, NaN), -110);
+});
+
+test('selectGradedPrice: unknown/missing approval status defaults to median (safe)', () => {
+  assert.strictEqual(selectGradedPrice(undefined, -110, 120), -110);
+  assert.strictEqual(selectGradedPrice('', -110, 120), -110);
 });

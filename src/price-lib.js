@@ -45,4 +45,24 @@ function priceStats(prices) {
   return { median, best, n };
 }
 
-module.exports = { bestAmericanPrice, medianAmericanPrice, priceStats };
+// R2.1 step 2 — point the STAKED-pick grade path at the best price.
+// Pure decision function: given a pick's approval status and the two prices
+// already computed (median = today's logged/graded price, best = line-shopped
+// price), decide which number the Performance Log should log/grade against.
+//
+// Rules (deliberately conservative):
+//   - Only `approved` (staked) picks get the best price. tracking_only rows
+//     keep logging median, unchanged -- this ticket only touches the units we
+//     actually risk.
+//   - Falls back to median whenever bestOdds isn't a usable finite number,
+//     so a missing/odd bestPrice never breaks logging.
+//   - Does NOT decide which side/outcome to bet -- callers must pass in the
+//     price for the side that was ALREADY selected by the model.
+function selectGradedPrice(approvalStatus, medianOdds, bestOdds) {
+  if (approvalStatus === 'approved' && Number.isFinite(bestOdds)) {
+    return bestOdds;
+  }
+  return medianOdds;
+}
+
+module.exports = { bestAmericanPrice, medianAmericanPrice, priceStats, selectGradedPrice };

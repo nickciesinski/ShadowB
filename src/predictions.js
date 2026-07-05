@@ -19,7 +19,7 @@ const dataStore = require('./data-store');
 const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb, roundUnits } = require('./market-pricing');
-const { priceStats } = require('./price-lib'); // R2.1 line-shopping (best vs median)
+const { priceStats, selectGradedPrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
@@ -759,7 +759,12 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       }
 
       const units = roundUnits(p._units);
-      const odds = p._odds || -110;
+      const medianOdds = p._odds || -110;
+      // R2.1 step 2: staked (approved) picks log/grade at the best-available
+      // price instead of median; tracking_only picks are unchanged. This only
+      // changes the price/grade recorded -- the side/outcome above (`team`,
+      // `p._units`) was already decided upstream in game-model.js.
+      const odds = selectGradedPrice(approvalStatus, medianOdds, p._bestOdds);
       const pick = team;
       const line = p.line || '';
 
