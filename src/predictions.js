@@ -699,14 +699,29 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       // Find game info for this pick
       let game = gameLookup[team] || {};
       if (!game.away && isTotal) {
-        // Total picks have team name like "Over 8.5" — find game from rationale
-        const rationale = (p.rationale || '').toLowerCase();
-        for (const [teamName, info] of Object.entries(gameLookup)) {
-          if (rationale.includes(teamName.toLowerCase())) { game = info; break; }
-        }
-        if (!game.away) {
-          const first = Object.values(gameLookup)[0];
-          if (first) game = first;
+        // Total picks have team name like "Over 8.5", so gameLookup[team] never
+        // hits. Every pick from game-model.js already carries the real matchup
+        // via _awayTeam/_homeTeam (attached in generateAllPicks) — use that
+        // directly instead of the old rationale-text match, which could never
+        // succeed because generateTotalPick()'s rationale never mentions team
+        // names. That bug silently fell through to "first game in today's
+        // lookup" and mis-attributed every total pick of the day to whichever
+        // game happened to be first, corrupting the game/matchup column for
+        // totals in Performance Log + Supabase and orphaning the pickMetaMap
+        // key (breaking predicted_prob/market_prob/edge_driver logging for
+        // most tracked total picks — 2026-07-06 audit).
+        if (p._awayTeam || p._homeTeam) {
+          game = gameLookup[p._homeTeam] || gameLookup[p._awayTeam] || {
+            away: p._awayTeam || '', home: p._homeTeam || '', commence: '',
+          };
+        } else {
+          // Legacy fallback only for picks with no _awayTeam/_homeTeam attached.
+          const rationale = (p.rationale || '').toLowerCase();
+          for (const [teamName, info] of Object.entries(gameLookup)) {
+            if (rationale.includes(teamName.toLowerCase())) { game = info; break; }
+          }
+          // No more "first game in lookup" fallback — better to log an empty
+          // game than silently attribute the pick to the wrong matchup.
         }
       }
 

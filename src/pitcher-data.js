@@ -14,7 +14,12 @@
  * Used by predictions.js to feed pitcher quality into the game model.
  */
 
-const MLB_AVG_ERA = 4.20; // League average ERA (approximate)
+// 2026-05-31 fix bumped the totals-side AVG_ERA baseline (game-model.js) from
+// 4.20 -> 4.40 because most starter ERAs were registering above the stale 4.20
+// figure, creating a systematic bias. This is the same constant duplicated for
+// the moneyline/spread pitcher-margin adjustment — it never got the same fix.
+// Kept in sync with game-model.js's local AVG_ERA (2026-07-06).
+const MLB_AVG_ERA = 4.40; // League average ERA (approximate)
 
 /**
  * Fetch probable pitchers for today's MLB games from ESPN scoreboard.
