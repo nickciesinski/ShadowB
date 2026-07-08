@@ -102,7 +102,7 @@
     "total_injury_weight": -0.3,
     "severe_injury_factor": -0.25,
     "injury_weight_diff": 0.05,
-    "sp_edge_total": 3.2,
-    "sp_pred_total": 1.1
+    "sp_edge_total": 1.6,
+    "sp_pred_total": 0.55
   }
 }

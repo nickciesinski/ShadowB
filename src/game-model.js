@@ -321,6 +321,39 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     }
   }
 
+  // ── Extend sp_*_total revival to NBA/NFL/NHL (2026-07-07) ────────────────
+  // The 6/10 fix above was MLB-only. NBA/NFL/NHL total blocks carry the same
+  // sp_edge_total/sp_pred_total weights (~3.2/1.1, config/model-params.*.json)
+  // sitting on permanently-zero features since inception — same dead-signal
+  // shape, just never revived. Mirrors the MLB approach exactly: matchup
+  // scoring rate vs. league-average matchup (AVG_TOTAL), zero-mean, 0 when
+  // data is missing. Field names per stat-features.js's scoringDifferential:
+  // NBA/NFL use pointsFor/pointsAgainst, NHL uses goalsFor/goalsAgainst.
+  // Bounds are scaled off market-pricing.js's TOTAL_STDEV (the same stdevs
+  // totalToOverProb uses), at the same ~0.9x-stdev ratio the MLB bound (2.5
+  // vs stdev 2.8) already uses.
+  const TOTAL_REVIVAL_FIELDS = {
+    NBA: { for: 'pointsFor', against: 'pointsAgainst', bound: 16 },   // stdev 18.0
+    NFL: { for: 'pointsFor', against: 'pointsAgainst', bound: 10.7 }, // stdev 12.0
+    NHL: { for: 'goalsFor', against: 'goalsAgainst', bound: 1.8 },    // stdev 2.0
+  };
+  if (TOTAL_REVIVAL_FIELDS[league]) {
+    const { for: forKey, against: againstKey, bound } = TOTAL_REVIVAL_FIELDS[league];
+    const hFor = parseFloat(homeStats[forKey]);
+    const hAgainst = parseFloat(homeStats[againstKey]);
+    const aFor = parseFloat(awayStats[forKey]);
+    const aAgainst = parseFloat(awayStats[againstKey]);
+    const tMkt2 = (game.markets.totals || []).find(o => o.outcome === 'Over')
+              || (game.markets.totals || []).find(o => o.outcome === 'Under');
+    const tLine2 = tMkt2 ? parseFloat(tMkt2.point) : NaN;
+    if (isFinite(hFor) && isFinite(hAgainst) && isFinite(aFor) && isFinite(aAgainst) && isFinite(tLine2)) {
+      const expTotal2 = (hFor + aFor + hAgainst + aAgainst) / 2;
+      const matchupDev2 = expTotal2 - (AVG_TOTAL[league] || tLine2);
+      features.sp_pred_total = Math.max(-bound, Math.min(bound, matchupDev2));
+      features.sp_edge_total = Math.max(-0.4, Math.min(0.4, totalToOverProb(tLine2 + matchupDev2, tLine2, league) - 0.5));
+    }
+  }
+
   // ── Wire sp_prob_home/away, sp_edge_ml_home/away, sp_edge_spread_home/away
   // from real market data (2026-07-07) ────────────────────────────────────
   // These have been hardcoded to 0 since 2026-06-10, when a stale 0.5
