@@ -1961,12 +1961,20 @@ export default function App() {
     if (data && resultsData === null) fetchResults();
   }, [data, resultsData, fetchResults]);
 
-  // Re-fetch data when app becomes visible (switching back to tab/app)
+  // Re-fetch data when app becomes visible (switching back to tab/app).
+  // Also refresh graded results so they stay current as games finish through
+  // the day. fetchResults leaves existing data intact on failure, so a
+  // transient error on refocus won't blank the Results tab.
   useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') fetchData(); };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchData();
+        fetchResults();
+      }
+    };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [fetchData]);
+  }, [fetchData, fetchResults]);
 
   // Fetch live scores every 30s
   const refreshScores = useCallback(async () => {
