@@ -2,9 +2,15 @@ import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-// Force dynamic — never cache this route
+// This route serves the MAIN load: today's picks, props, and today's games.
+// Graded history (Results tab) lives in /api/results and is loaded lazily by
+// the client after this returns.
+//
+// `force-dynamic` keeps the function running per-request (no build-time
+// prerender / no frozen data). Edge caching is handled purely by the
+// Cache-Control header on the response below — Vercel's CDN caches the
+// response for 60s and serves it stale for up to 5 min while refreshing.
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -89,151 +95,65 @@ function parseOddsRow(row) {
 export async function GET() {
   try {
     const sheets = await getSheetsClient();
+    const sb = getSupabase();
 
-    // Fetch in parallel
-    const [perfRows, propRows, oddsRows] = await Promise.all([
-      getValues(sheets, 'Performance Log', 'A1:S10000'),
-      getValues(sheets, 'Prop_Combos', 'A1:P500'),
-      getValues(sheets, 'Today_Odds', 'A1:J5000'),
-    ]);
-
-    // Parse Performance Log (use PST/PDT to match sheet dates)
     const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
     const mm = today.getMonth() + 1;
     const dd = today.getDate();
     const yyyy = today.getFullYear();
     const todayStr = `${mm}/${dd}/${yyyy}`;
+    const isoToday = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+
+    // Supabase queries for the MAIN load only (today's picks + odds snapshot).
+    // Graded-history queries were moved to /api/results. Each resolves to null
+    // on error so the Sheets fallbacks below still work.
+    const sbTodayQ = sb
+      ? sb.from('performance_log')
+          .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
+          .eq('date', isoToday)
+          .then(r => (r.error ? null : r.data)).catch(() => null)
+      : Promise.resolve(null);
+
+    const sbSnapQ = sb
+      ? sb.from('sheet_snapshots')
+          .select('rows').eq('entity', 'gameOdds')
+          .order('captured_at', { ascending: false }).limit(1)
+          .then(r => (r.error ? null : r.data)).catch(() => null)
+      : Promise.resolve(null);
+
+    const [perfRows, propRows, oddsRows, sbTodayRows, sbSnap] = await Promise.all([
+      getValues(sheets, 'Performance Log', 'A1:S10000'),
+      getValues(sheets, 'Prop_Combos', 'A1:P500'),
+      getValues(sheets, 'Today_Odds', 'A1:J5000'),
+      sbTodayQ,
+      sbSnapQ,
+    ]);
 
     const allPicks = perfRows.slice(1).map(parsePerfRow);
+
+    // Today's picks: default to Sheets filter; prefer Supabase if it has rows.
     let todayPicks = allPicks.filter(p => p.date === todayStr);
-    // Prefer Supabase performance_log for today's slate (Sheets exit).
-    {
-      const sbToday = getSupabase();
-      if (sbToday) {
-        try {
-          const isoToday = `${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
-          const { data: tRows, error: tErr } = await sbToday.from('performance_log')
-            .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
-            .eq('date', isoToday);
-          if (!tErr && tRows && tRows.length > 0) {
-            todayPicks = tRows.map(r => {
-              const gp = (r.game || '').split(' @ ');
-              return {
-                date: todayStr, league: r.league || '', market: r.market || '',
-                away: gp[0] || '', home: gp[1] || '', startTime: '', betType: r.market || '',
-                pick: r.pick || '', line: r.line != null ? String(r.line) : '',
-                odds: r.odds || -110, units: r.final_units || 0,
-                confidence: r.confidence != null ? String(r.confidence) : '', result: r.result || '',
-                unitReturn: 0,
-              };
-            });
-            console.log(`[api] todayPicks from Supabase: ${todayPicks.length}`);
-          }
-        } catch (err) { console.warn('[api] Supabase todayPicks failed, using Sheet:', err.message); }
-      }
-    }
-
-    // Graded picks: prefer Supabase (complete history), fall back to Sheets
-    let gradedPicks = [];
-    const sb = getSupabase();
-    if (sb) {
-      try {
-        const { data: sbRows, error } = await sb.from('performance_log')
-          .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
-          .in('result', ['W', 'L', 'P'])
-          .order('date', { ascending: false });
-        if (!error && sbRows && sbRows.length > 0) {
-          gradedPicks = sbRows.map(r => {
-            const gameParts = (r.game || '').split(' @ ');
-            const away = gameParts[0] || '';
-            const home = gameParts[1] || '';
-            // Convert YYYY-MM-DD to M/D/YYYY for frontend consistency
-            let dateStr = r.date || '';
-            if (dateStr.includes('-')) {
-              const [y, m, d] = dateStr.split('-');
-              dateStr = `${parseInt(m)}/${parseInt(d)}/${y}`;
-            }
-            return {
-              date: dateStr,
-              league: r.league || '',
-              market: r.market || '',
-              away,
-              home,
-              betType: r.market || '',
-              pick: r.pick || '',
-              line: r.line != null ? String(r.line) : '',
-              odds: r.odds || -110,
-              units: r.final_units || 0,
-              confidence: r.confidence != null ? String(r.confidence) : '',
-              result: r.result || '',
-              unitReturn: r.result === 'W' ? (r.odds > 0 ? (r.final_units * r.odds / 100) : (r.final_units * 100 / Math.abs(r.odds))) : r.result === 'L' ? -(r.final_units || 0) : 0,
-            };
-          });
-          console.log(`[api] Loaded ${gradedPicks.length} graded picks from Supabase`);
-        }
-      } catch (err) {
-        console.warn('[api] Supabase graded picks failed, falling back to Sheets:', err.message);
-      }
-    }
-    // Fallback to Sheets if Supabase returned nothing
-    if (gradedPicks.length === 0) {
-      gradedPicks = allPicks.filter(p => p.result === 'W' || p.result === 'L' || p.result === 'P');
-    }
-
-    // Graded prop results from Supabase
-    let gradedProps = [];
-    if (sb) {
-      try {
-        const { data: propRows2, error: propErr } = await sb.from('prop_performance')
-          .select('date, league, player, market, line, direction, book, opening_edge, closing_edge, clv_grade, units, actual_result')
-          .in('actual_result', ['W', 'L'])
-          .order('date', { ascending: false });
-        if (!propErr && propRows2 && propRows2.length > 0) {
-          gradedProps = propRows2.map(r => {
-            let dateStr = r.date || '';
-            if (dateStr.includes('-')) {
-              const [y, m, d] = dateStr.split('-');
-              dateStr = `${parseInt(m)}/${parseInt(d)}/${y}`;
-            }
-            const u = r.units || 0;
-            return {
-              date: dateStr,
-              league: r.league || '',
-              player: r.player || '',
-              market: r.market || '',
-              line: r.line != null ? String(r.line) : '',
-              direction: r.direction || '',
-              book: r.book || '',
-              edge: r.closing_edge || r.opening_edge || 0,
-              clvGrade: r.clv_grade || '',
-              units: u,
-              result: r.actual_result || '',
-              unitReturn: r.actual_result === 'W' ? u : -(u),
-            };
-          });
-          console.log(`[api] Loaded ${gradedProps.length} graded props from Supabase`);
-        }
-      } catch (err) {
-        console.warn('[api] Supabase graded props failed:', err.message);
-      }
+    if (sbTodayRows && sbTodayRows.length > 0) {
+      todayPicks = sbTodayRows.map(r => {
+        const gp = (r.game || '').split(' @ ');
+        return {
+          date: todayStr, league: r.league || '', market: r.market || '',
+          away: gp[0] || '', home: gp[1] || '', startTime: '', betType: r.market || '',
+          pick: r.pick || '', line: r.line != null ? String(r.line) : '',
+          odds: r.odds || -110, units: r.final_units || 0,
+          confidence: r.confidence != null ? String(r.confidence) : '', result: r.result || '',
+          unitReturn: 0,
+        };
+      });
     }
 
     // Parse props
     const props = propRows.slice(1).map(parsePropRow).filter(p => p.player);
 
-    // Build unique games from today's odds.
-    // Prefer the gameOdds snapshot in Supabase (Sheets exit); fall back to Today_Odds.
+    // Build unique games: prefer the gameOdds snapshot in Supabase, else Today_Odds.
     let oddsSource = oddsRows;
-    if (sb) {
-      try {
-        const { data: snap } = await sb.from('sheet_snapshots')
-          .select('rows').eq('entity', 'gameOdds')
-          .order('captured_at', { ascending: false }).limit(1);
-        if (snap && snap[0] && Array.isArray(snap[0].rows) && snap[0].rows.length > 1) {
-          oddsSource = snap[0].rows;
-          console.log('[api] todayGames from gameOdds snapshot');
-        }
-      } catch (err) { console.warn('[api] gameOdds snapshot failed, using Sheet:', err.message); }
+    if (sbSnap && sbSnap[0] && Array.isArray(sbSnap[0].rows) && sbSnap[0].rows.length > 1) {
+      oddsSource = sbSnap[0].rows;
     }
     const gameMap = {};
     for (const row of oddsSource.slice(1)) {
@@ -252,13 +172,11 @@ export async function GET() {
 
     return NextResponse.json({
       todayPicks,
-      gradedPicks,
-      gradedProps,
       props,
       todayGames,
       lastUpdated: new Date().toISOString(),
     }, {
-      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' },
+      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
     });
   } catch (err) {
     console.error('API error:', err);

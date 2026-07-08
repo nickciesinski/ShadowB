@@ -1859,6 +1859,7 @@ export default function App() {
   const [propDateFilter, setPropDateFilter] = useState('Today');
   const [resultType, setResultType] = useState('Games');
   const [data, setData] = useState(null);
+  const [resultsData, setResultsData] = useState(null); // graded history, loaded lazily after main data
   const [liveGames, setLiveGames] = useState([]);
   const [liveStats, setLiveStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1946,6 +1947,19 @@ export default function App() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Fetch graded history (Results tab) lazily — never blocks the main load.
+  const fetchResults = useCallback(() => {
+    fetch('/api/results')
+      .then(r => r.json())
+      .then(d => { setResultsData(d); })
+      .catch(() => {}); // Results stays in "loading" state on failure; main app unaffected
+  }, []);
+
+  // Kick off the results fetch once, right AFTER the main data has arrived.
+  useEffect(() => {
+    if (data && resultsData === null) fetchResults();
+  }, [data, resultsData, fetchResults]);
 
   // Re-fetch data when app becomes visible (switching back to tab/app)
   useEffect(() => {
@@ -2128,7 +2142,11 @@ export default function App() {
         })} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
         {data && tab === 'results' && resultType === 'Changelog' && <ChangelogTab />}
-        {data && tab === 'results' && resultType !== 'Changelog' && <ResultsTab results={data.gradedPicks} gradedProps={data.gradedProps || []} sf={sf} bf={bf} dateFilter={dateFilter} resultType={resultType} isBet={isBet} isPropBet={isPropBet} />}
+        {data && tab === 'results' && resultType !== 'Changelog' && (
+          resultsData
+            ? <ResultsTab results={resultsData.gradedPicks} gradedProps={resultsData.gradedProps || []} sf={sf} bf={bf} dateFilter={dateFilter} resultType={resultType} isBet={isBet} isPropBet={isPropBet} />
+            : <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>Loading results…</div>
+        )}
         {tab === 'settings' && <SettingsTab />}
       </div>
 
