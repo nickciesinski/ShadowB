@@ -1528,6 +1528,12 @@ async function gradePerformanceLog() {
       market,
       pick,
       result: betResult,
+      // 2026-07-07: unit_return was computed above and written to the Sheet
+      // (col R) but never included here, so Supabase's performance_log.result
+      // got graded while unit_return stayed permanently null for every row —
+      // any Supabase-based ROI calc (e.g. the weekly threshold tuner) would
+      // silently compute 0% ROI forever regardless of real performance.
+      unit_return: parseFloat(unitReturn.toFixed(2)),
     });
     console.log(`[predictions] Row ${i + 1}: ${betResult} — ${awayTeam} @ ${homeTeam} (${market}) — ${unitReturn.toFixed(2)} units`);
   }

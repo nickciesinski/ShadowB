@@ -356,7 +356,32 @@ async function enrichTeamStats(league, espn, teamMap) {
 /**
  * NBA: Pull team stats page for offensive/defensive rating and pace.
  * ESPN exposes these on the team's stats endpoint.
+ *
+ * 2026-07-07: `defensiveRating`/`avgPointsAgainst` and `pace`/`possessions`
+ * were never matching anything real -- Supabase's daily_team_stats snapshot
+ * (a direct passthrough of this same Sheet data) showed def_rating and pace
+ * as null for every single NBA team, while off_rating (via the avgPoints
+ * fallback) was fine. That silently kills pace_diff/pace_factor/pace_combined
+ * (weight 1.0 on the total market -- the single largest NBA total coefficient)
+ * and defensive_rating_diff, and also makes the core scoringDifferential
+ * strength calc always fall back to win%+form only (it requires both off AND
+ * def rating or returns null) -- for every NBA game.
+ *
+ * I don't have live network access to ESPN's API from this environment to
+ * confirm the exact real field names, so this is a best-effort widening of
+ * the candidate list based on ESPN's common team-stat naming patterns, plus:
+ *   1. One-time diagnostic logging of every stat name ESPN actually returned
+ *      -- check GitHub Actions logs for "[data-collection] NBA stat keys"
+ *      after this deploys, and refine the field name from there if these
+ *      guesses still miss.
+ *   2. A derived defRating fallback from pointsAgainst (which does resolve),
+ *      so the feature carries real signal instead of a guaranteed zero even
+ *      if none of the named-field guesses land.
+ * Pace has no simple derivation from basic per-game stats, so if the widened
+ * candidates still miss, it stays 0 (paceAdjustment() already guards this
+ * safely -- no crash, just no signal, same as today).
  */
+let _nbaStatKeysLogged = false;
 async function enrichNBA(espn, teamMap) {
   // The scoreboard gives us today's schedule; for ratings we hit each team
   for (const abbr of Object.keys(teamMap)) {
@@ -368,11 +393,21 @@ async function enrichNBA(espn, teamMap) {
 
       // ESPN returns stats in categories â stats array
       const stats = flattenESPNStats(data);
-      teamMap[abbr].offRating = stats['offensiveRating'] || stats['avgPoints'] || '';
-      teamMap[abbr].defRating = stats['defensiveRating'] || stats['avgPointsAgainst'] || '';
-      teamMap[abbr].pace = stats['pace'] || stats['possessions'] || '';
-      teamMap[abbr].pointsFor = stats['avgPoints'] || stats['points'] || '';
-      teamMap[abbr].pointsAgainst = stats['avgPointsAgainst'] || stats['opponentPoints'] || '';
+
+      if (!_nbaStatKeysLogged) {
+        _nbaStatKeysLogged = true;
+        console.log(`[data-collection] NBA stat keys (${abbr}, for verifying the field-name guesses below): ${Object.keys(stats).join(', ')}`);
+      }
+
+      const pointsFor = stats['avgPoints'] || stats['points'] || stats['pointsPerGame'] || '';
+      const pointsAgainst = stats['avgPointsAgainst'] || stats['opponentPoints'] || stats['opponentPointsPerGame']
+        || stats['avgOpponentPoints'] || stats['pointsAllowed'] || stats['avgPointsAllowed'] || '';
+
+      teamMap[abbr].offRating = stats['offensiveRating'] || stats['offRtg'] || pointsFor || '';
+      teamMap[abbr].defRating = stats['defensiveRating'] || stats['defRtg'] || pointsAgainst || '';
+      teamMap[abbr].pace = stats['pace'] || stats['paceFactor'] || stats['possessions'] || stats['avgPossessions'] || '';
+      teamMap[abbr].pointsFor = pointsFor;
+      teamMap[abbr].pointsAgainst = pointsAgainst;
     } catch (err) {
       // Skip individual team failures silently
     }

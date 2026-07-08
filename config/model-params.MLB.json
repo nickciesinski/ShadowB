@@ -62,10 +62,10 @@
     "home_injury_weight": -0.15,
     "away_injury_weight": 0.15,
     "total_injury_weight": -0.1,
-    "sp_prob_home": 3,
-    "sp_prob_away": 3,
-    "sp_edge_ml_home": 2.6,
-    "sp_edge_ml_away": 2.6,
+    "sp_prob_home": 0.03,
+    "sp_prob_away": 0.03,
+    "sp_edge_ml_home": 0.03,
+    "sp_edge_ml_away": 0.03,
     "sp_pred_margin": 0.8
   },
   "spread": {
@@ -105,8 +105,8 @@
     "home_injury_weight": -0.12,
     "away_injury_weight": 0.12,
     "total_injury_weight": -0.08,
-    "sp_edge_spread_home": 3.2,
-    "sp_edge_spread_away": 3.2,
+    "sp_edge_spread_home": 0.03,
+    "sp_edge_spread_away": 0.03,
     "sp_pred_margin": 1.2
   },
   "total": {

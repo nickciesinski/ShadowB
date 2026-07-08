@@ -30,8 +30,44 @@ const MARKETS = ['moneyline', 'spread', 'total'];
 
 // Performance Log column indices (0-based). See predictions.js column legend:
 // A date, B league, C market, ... J odds, K units, ... Q result(16), R unit_return(17),
-// ... V approval_status(21).
-const COL = { DATE: 0, LEAGUE: 1, MARKET: 2, ODDS: 9, UNITS: 10, RESULT: 16, RETURN: 17, APPROVAL: 21 };
+// ... V approval_status(21). Index 33 is not a real Sheet column — it's used
+// only when rows come from Supabase (see supaRowsToArrayRows) to carry a
+// precomputed CLV-points value derived from clv_opening_prob/clv_closing_prob,
+// since Supabase doesn't store raw closing odds.
+const COL = { DATE: 0, LEAGUE: 1, MARKET: 2, ODDS: 9, UNITS: 10, RESULT: 16, RETURN: 17, APPROVAL: 21, CLV_PTS: 33 };
+
+// Format a JS Date as 'YYYY-MM-DD' — for the Supabase `date` column filter.
+function toISODate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Map Supabase performance_log rows (named columns) into the same positional
+ * array shape the Sheet-based code below already expects, so buildSegments /
+ * leagueApprovedClv / decideLeagueChange don't need to change at all.
+ * clv_opening_prob/clv_closing_prob are probabilities (not odds), so we
+ * precompute the CLV-points delta directly rather than round-tripping
+ * through clvPoints(), which expects American odds.
+ */
+function supaRowsToArrayRows(rows) {
+  return (rows || []).map(r => {
+    const row = new Array(34).fill('');
+    // date comes back as 'YYYY-MM-DD' from Postgres — convert to M/D/YYYY.
+    const m = String(r.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    row[COL.DATE] = m ? `${parseInt(m[2])}/${parseInt(m[3])}/${m[1]}` : '';
+    row[COL.LEAGUE] = r.league || '';
+    row[COL.MARKET] = r.market || '';
+    row[COL.ODDS] = r.odds != null ? r.odds : '';
+    row[COL.UNITS] = r.final_units != null ? r.final_units : '';
+    row[COL.RESULT] = r.result || '';
+    row[COL.RETURN] = r.unit_return != null ? r.unit_return : '';
+    row[COL.APPROVAL] = r.approval_status || '';
+    if (r.clv_opening_prob != null && r.clv_closing_prob != null) {
+      row[COL.CLV_PTS] = (parseFloat(r.clv_closing_prob) - parseFloat(r.clv_opening_prob)) * 100;
+    }
+    return row;
+  });
+}
 
 function round(n, d = 2) { const f = Math.pow(10, d); return Math.round(n * f) / f; }
 
@@ -122,7 +158,10 @@ function leagueApprovedClv(rows, cutoff, league) {
     if (!d || d < cutoff) continue;
     if (String(row[COL.LEAGUE] || '').toUpperCase() !== league) continue;
     if (String(row[21] || '').trim().toLowerCase() !== 'approved') continue;
-    const pts = clvPoints(row[COL.ODDS], row[31]); // col 9 our odds, col 31 closing odds
+    // Supabase-sourced rows carry a precomputed points value at CLV_PTS
+    // (see supaRowsToArrayRows); Sheet-sourced rows fall back to the
+    // odds-based calc (col 9 our odds, col 31 closing odds).
+    const pts = typeof row[COL.CLV_PTS] === 'number' ? row[COL.CLV_PTS] : clvPoints(row[COL.ODDS], row[31]);
     if (pts == null) continue;
     n++; if (pts > 0) beats++; sumPts += pts;
   }
@@ -237,20 +276,40 @@ function buildReview(dateStr, seg7, seg30, decisions) {
 }
 
 async function main() {
-  const { getValues } = require('../src/sheets');
-const dataStore = require('../src/data-store');
-  const { SPREADSHEET_ID, SHEETS } = require('../src/config');
+  const dataStore = require('../src/data-store');
+  const db = require('../src/db');
   const dryRun = process.argv.includes('--dry-run');
   console.log(`[tune] weekly-threshold-tune starting${dryRun ? ' (dry-run)' : ''}`);
-
-  const raw = await dataStore.read('performanceRows');
-  if (!raw || raw.length < 2) { console.error('[tune] Performance Log empty or unreadable'); process.exit(1); }
-  const rows = raw.slice(1); // drop header
-  console.log(`[tune] read ${rows.length} Performance Log rows`);
 
   const now = new Date();
   const cut7 = new Date(now); cut7.setDate(now.getDate() - 7);
   const cut30 = new Date(now); cut30.setDate(now.getDate() - 30);
+
+  // 2026-07-07: read Supabase directly instead of dataStore.read('performanceRows')
+  // (which reads the live Sheet). The Sheet tab is subject to a read-modify-write
+  // race between logPicksToPerformanceLog's full clear+rewrite and
+  // gradePerformanceLog's in-place grade write, which can revert freshly-graded
+  // W/L/P cells back to blank — this tuner had reported 0 graded picks for every
+  // league on 6/21, 6/28, and 7/5 despite ~289 real graded picks/week. Supabase
+  // writes are row-level and not exposed to that race, so it's read-only-safe
+  // here. Falls back to the Sheet if Supabase isn't configured or errors.
+  let rows = null;
+  let source = 'sheet';
+  if (db.isEnabled()) {
+    const supaRows = await db.getRecentPerformanceLog(toISODate(cut30));
+    if (supaRows && supaRows.length > 0) {
+      rows = supaRowsToArrayRows(supaRows);
+      source = 'supabase';
+    } else {
+      console.warn('[tune] Supabase returned no rows, falling back to Sheet');
+    }
+  }
+  if (!rows) {
+    const raw = await dataStore.read('performanceRows');
+    if (!raw || raw.length < 2) { console.error('[tune] Performance Log empty or unreadable (both Supabase and Sheet)'); process.exit(1); }
+    rows = raw.slice(1); // drop header
+  }
+  console.log(`[tune] read ${rows.length} Performance Log rows (source: ${source})`);
   const seg7 = buildSegments(rows, cut7);
   const seg30 = buildSegments(rows, cut30);
 
@@ -301,4 +360,4 @@ if (require.main === module) {
   main().catch(e => { console.error('[tune] FATAL:', e.message); process.exit(1); });
 }
 
-module.exports = { decideLeagueChange, buildSegments, normMarket, parseDate, finalize, mergedThresholds, leagueApprovedClv };
+module.exports = { decideLeagueChange, buildSegments, normMarket, parseDate, finalize, mergedThresholds, leagueApprovedClv, supaRowsToArrayRows, toISODate };

@@ -321,6 +321,81 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     }
   }
 
+  // ── Wire sp_prob_home/away, sp_edge_ml_home/away, sp_edge_spread_home/away
+  // from real market data (2026-07-07) ────────────────────────────────────
+  // These have been hardcoded to 0 since 2026-06-10, when a stale 0.5
+  // placeholder was found injecting a constant +1.35 run MLB home tilt
+  // through the same weight slots (sp_prob_home=3.0, sp_prob_away=3.0,
+  // sp_edge_ml_home=2.6, sp_edge_ml_away=2.6, sp_edge_spread_home/away=3.2
+  // for MLB; similar sizes for NBA/NFL/NHL). The fix zeroed them out but
+  // nobody wired real data back in — same shape as the totals
+  // sp_edge_total/sp_pred_total bug fixed the same day (see above), except
+  // that one got revived and these didn't.
+  //
+  // Important: this is NOT a dedicated sharp-money/Pinnacle feed. The Odds
+  // API fetch here uses `regions=us` only — no offshore sharp book is in the
+  // mix — so calling this "sharp" would overstate what it is. It's built
+  // from two market signals we already collect for every game but don't
+  // otherwise feed into pick logic:
+  //   sp_prob_home/away: no-vig consensus win probability from the
+  //     moneyline market for that side. This is a "regress toward the
+  //     market" shrinkage term (tempers overconfidence) — legitimate, but
+  //     it's not new information the model doesn't already see via the
+  //     edge/threshold gate elsewhere, so treat it as a calibration nudge,
+  //     not a discovery signal.
+  //   sp_edge_ml_home/away, sp_edge_spread_home/away: R2.1's
+  //     best-available-price-vs-consensus gap for that side (price-lib.js,
+  //     computed for every game already, previously only used for CLV
+  //     logging/line-shopping display). This genuinely is new information —
+  //     how much a book is out of line with consensus — not fed into any
+  //     pick logic until now.
+  // Bounded to keep either signal from overpowering the base model.
+  // Contributes 0 when market data for a side is missing.
+  // 2026-07-07: starting weights intentionally very low across all leagues
+  // (config/model-params.*.json) since this is untested — MLB especially,
+  // given current live performance is good and we don't want to disrupt it.
+  {
+    const h2hMkt = game.markets.h2h || [];
+    const spreadMkt = game.markets.spreads || [];
+
+    const homeH2h = h2hMkt.find(o => o.outcome === game.home);
+    const awayH2h = h2hMkt.find(o => o.outcome === game.away);
+    if (homeH2h && awayH2h) {
+      const homeImplied = parseFloat(homeH2h.impliedProb);
+      const awayImplied = parseFloat(awayH2h.impliedProb);
+      if (isFinite(homeImplied) && isFinite(awayImplied)) {
+        const [homeNoVig, awayNoVig] = removeVig(homeImplied, awayImplied);
+        features.sp_prob_home = Math.max(0.15, Math.min(0.85, homeNoVig));
+        features.sp_prob_away = Math.max(0.15, Math.min(0.85, awayNoVig));
+      }
+      const homeBest = parseFloat(homeH2h.bestImpliedProb);
+      const awayBest = parseFloat(awayH2h.bestImpliedProb);
+      if (isFinite(homeImplied) && isFinite(homeBest)) {
+        features.sp_edge_ml_home = Math.max(-0.15, Math.min(0.15, homeImplied - homeBest));
+      }
+      if (isFinite(awayImplied) && isFinite(awayBest)) {
+        features.sp_edge_ml_away = Math.max(-0.15, Math.min(0.15, awayImplied - awayBest));
+      }
+    }
+
+    const homeSpreadOdds = spreadMkt.find(o => o.outcome === game.home);
+    const awaySpreadOdds = spreadMkt.find(o => o.outcome === game.away);
+    if (homeSpreadOdds) {
+      const hi = parseFloat(homeSpreadOdds.impliedProb);
+      const hb = parseFloat(homeSpreadOdds.bestImpliedProb);
+      if (isFinite(hi) && isFinite(hb)) {
+        features.sp_edge_spread_home = Math.max(-0.15, Math.min(0.15, hi - hb));
+      }
+    }
+    if (awaySpreadOdds) {
+      const ai = parseFloat(awaySpreadOdds.impliedProb);
+      const ab = parseFloat(awaySpreadOdds.bestImpliedProb);
+      if (isFinite(ai) && isFinite(ab)) {
+        features.sp_edge_spread_away = Math.max(-0.15, Math.min(0.15, ai - ab));
+      }
+    }
+  }
+
   const mlScore = scoreMarket(features, mlWeights);
   const spreadScore = scoreMarket(features, spreadWeights);
   const totalScore = scoreMarket(features, totalWeights);

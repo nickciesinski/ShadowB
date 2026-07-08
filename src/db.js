@@ -154,11 +154,17 @@ async function updatePerformanceResults(gradedRows) {
   let updated = 0;
   let failed = 0;
   for (const row of gradedRows) {
+    const update = {
+      result: row.result,
+      prediction_correct: row.result === 'W' ? true : row.result === 'L' ? false : null,
+    };
+    // 2026-07-07: unit_return was being computed in predictions.js but never
+    // passed through to this update, so it stayed null in Supabase forever —
+    // any ROI calc reading performance_log directly (not the Sheet) silently
+    // saw 0% ROI regardless of actual performance. Write it when present.
+    if (row.unit_return != null) update.unit_return = row.unit_return;
     const { error } = await sb.from('performance_log')
-      .update({
-        result: row.result,
-        prediction_correct: row.result === 'W' ? true : row.result === 'L' ? false : null,
-      })
+      .update(update)
       .eq('date', row.date)
       .eq('league', row.league)
       .eq('game', row.game)
@@ -211,6 +217,47 @@ async function getConfidenceCalibration() {
   const { data, error } = await sb.from('v_confidence_calibration').select('*');
   if (error) { console.warn('[db] getConfidenceCalibration:', error.message); return null; }
   return data;
+}
+
+/**
+ * Read performance_log rows since a given date, bounded and paginated so we
+ * never silently hit PostgREST's default ~1000-row cap on a table this size
+ * (106k+ rows and growing). Ordered oldest-first isn't required by callers,
+ * so we just page through everything >= sinceDateISO.
+ *
+ * 2026-07-07: added because scripts/weekly-threshold-tune.js reads the
+ * Google Sheet's Performance Log directly (dataStore mode is 'sheet'), and
+ * that tab is subject to a read-modify-write race between logPicksToPerformanceLog
+ * (full clear+rewrite on every trigger4 run) and gradePerformanceLog's in-place
+ * grade write — the two aren't coordinated, so a same-day trigger4 run can
+ * silently revert freshly-graded W/L/P cells back to blank. Supabase writes
+ * are row-level (insert / targeted update), so it isn't exposed to that race
+ * and is the more reliable source for anything read-only like the tuner.
+ *
+ * @param {string} sinceDateISO - 'YYYY-MM-DD', inclusive lower bound on `date`
+ * @returns {Promise<Array<Object>|null>} raw performance_log rows, or null if
+ *   Supabase isn't configured / the query failed (callers should fall back).
+ */
+async function getRecentPerformanceLog(sinceDateISO) {
+  const sb = getClient();
+  if (!sb) return null;
+  const PAGE = 1000;
+  let all = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await sb.from('performance_log')
+      .select('date, league, game, market, pick, line, odds, confidence, final_units, result, unit_return, approval_status, clv_opening_prob, clv_closing_prob')
+      .gte('date', sinceDateISO)
+      .order('date', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.warn('[db] getRecentPerformanceLog:', error.message);
+      return all.length ? all : null;
+    }
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break; // last page
+    if (offset > 200000) break; // sanity guard, should never trigger
+  }
+  return all;
 }
 
 // ── Raw query for bootstrap/migration ───────────────────────────
@@ -321,6 +368,7 @@ module.exports = {
   getConfidenceCalibration,
   // Raw
   rawSelect,
+  getRecentPerformanceLog,
   // Prediction features
   insertPredictionFeatures,
   // Sheet-exit staging snapshots
