@@ -25,7 +25,10 @@ const MLB_AVG_ERA = 4.40; // League average ERA (approximate)
  * Fetch probable pitchers for today's MLB games from ESPN scoreboard.
  * @returns {Map<string, { homePitcher, awayPitcher, pitcherAdj }>}
  *   Key: "AwayTeam@HomeTeam" matching buildGameObjects format
- *   pitcherAdj: signed adjustment in runs (negative = home pitcher advantage)
+ *   pitcherAdj: signed adjustment in runs (POSITIVE = home pitcher advantage;
+ *   this docstring previously said the opposite — the math in
+ *   computePitcherAdj and the usage in game-model.js are and always were
+ *   positive-favors-home. Doc-only fix, 2026-07-09.)
  */
 async function fetchProbablePitchers() {
   const map = new Map();
@@ -127,8 +130,11 @@ function extractPitcher(probables) {
  * Scale to ~6 innings typical start = factor of 6/9 = 0.667.
  * 
  * The adjustment is from the HOME team's perspective:
- *   - Negative = home has the better pitcher (home advantage)
- *   - Positive = away has the better pitcher (away advantage)
+ *   - Positive = home has the better pitcher (home advantage)
+ *   - Negative = away has the better pitcher (away advantage)
+ * (Doc fix 2026-07-09: previously stated backwards. Verify from the math
+ * below: home ERA below average → homeRunsVsAvg negative → adj positive,
+ * and game-model.js ADDS adj to the home-positive margin.)
  * 
  * This feeds into the margin projection as a direct runs adjustment.
  * 

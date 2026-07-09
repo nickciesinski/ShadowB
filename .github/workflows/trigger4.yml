@@ -27,4 +27,7 @@ jobs:
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # 2026-07-09: goalie-data.js reads the 'NHL Goalie Stats' rankings
+          # sheet as the presumed-starter fallback for the NHL goalie adj.
+          RANKINGS_SPREADSHEET_ID: ${{ secrets.RANKINGS_SPREADSHEET_ID }}
           NODE_ENV: production

@@ -277,11 +277,33 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // Core projection: margin (home perspective, positive = home favored)
   const baseMargin = projectMargin(homeStr, awayStr, league, restAdj, homeFormAdj, awayFormAdj);
 
+  // ── Starting-player quality adjustment (2026-07-09) ──────────────────────
+  // The `pitcherData` param now carries league-specific starter data:
+  //   MLB → { pitcherAdj, homePitcher, awayPitcher }  (src/pitcher-data.js)
+  //   NHL → { goalieAdj, goalieTotalAdj, homeGoalie, awayGoalie } (src/goalie-data.js)
+  // Both adjustments are in the game's scoring units (runs/goals), home
+  // perspective, positive = home advantage.
+
   // MLB probable pitcher adjustment (positive = home pitcher advantage)
   const pitcherAdj = (league === 'MLB' && pitcherData?.pitcherAdj) ? pitcherData.pitcherAdj : 0;
   if (pitcherAdj !== 0) {
     console.log(`[game-model] ${game.away}@${game.home}: pitcher adj = ${pitcherAdj.toFixed(2)} runs (${pitcherData.awayPitcher?.name || 'TBD'} vs ${pitcherData.homePitcher?.name || 'TBD'})`);
   }
+
+  // NHL starting goalie adjustment (positive = home goalie advantage).
+  // Gated by tunable factor `goalie_adj_scale` (param_auto_goalie_adj_scale in
+  // config/model-params.NHL.json), seeded at 0.5 — conservative start for a
+  // newly-wired signal that can't be live-validated until the season resumes
+  // in October (same convention as 554fea1 / e6ee86c).
+  const goalieScale = getTunableFactor('goalie_adj_scale', 0.5);
+  const goalieAdj = (league === 'NHL' && pitcherData?.goalieAdj)
+    ? pitcherData.goalieAdj * goalieScale : 0;
+  if (goalieAdj !== 0) {
+    console.log(`[game-model] ${game.away}@${game.home}: goalie adj = ${goalieAdj.toFixed(2)} goals (${pitcherData.awayGoalie?.name || 'TBD'} vs ${pitcherData.homeGoalie?.name || 'TBD'}, scale=${goalieScale})`);
+  }
+
+  // Unified starter adjustment fed into margin projections below.
+  const starterAdj = pitcherAdj + goalieAdj;
 
   // CSV-weighted adjustment: if weights exist for moneyline/spread, blend in
   const mlWeights = (weights && weights.moneyline) || {};
@@ -435,7 +457,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
 
   // Blend: base projection + CSV-weighted signal (dampened to prevent overshoot)
   const csvDampen = getTunableFactor('csv_dampen', 0.3); // tunable via param_auto_csv_dampen
-  const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen + pitcherAdj;
+  const margin = baseMargin + scoreToMarginAdj(spreadScore, league) * csvDampen + starterAdj;
 
 
   // ── Prediction variance: how much do different signals agree? ──
@@ -472,7 +494,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // Update SP features with our projections (self-referential signal)
   features.sp_pred_margin = margin / (STRENGTH_TO_MARGIN[league] || 20);
 
-  const mlMargin = baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen + pitcherAdj;
+  const mlMargin = baseMargin + scoreToMarginAdj(mlScore, league) * csvDampen + starterAdj;
   const mlPick = generateMLPick(game, mlMargin, league, h2hMarket, uncertainty);
   if (mlPick) {
     const mlMainProb = projectWinProb(mlMargin, league);
@@ -510,8 +532,15 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     pitcherTotalAdj = avgDeviation * (6 / 9); // ~6 innings per starter
     pitcherTotalAdj = Math.max(-1.5, Math.min(1.5, pitcherTotalAdj));
   }
+  // NHL goalie impact on totals: two above-average goalies = lower total,
+  // two weak goalies = higher. Computed in goalie-data.js (capped ±0.5 goals),
+  // scaled by the same conservative goalie_adj_scale factor as the margin adj.
+  let goalieTotalAdj = 0;
+  if (league === 'NHL' && pitcherData?.goalieTotalAdj) {
+    goalieTotalAdj = pitcherData.goalieTotalAdj * goalieScale;
+  }
   const weatherAdj = gameWeather?.impact || 0;
-  const combinedTotalAdj = totalAdj + pitcherTotalAdj + weatherAdj;
+  const combinedTotalAdj = totalAdj + pitcherTotalAdj + goalieTotalAdj + weatherAdj;
   const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, combinedTotalAdj);
   if (totalPick) {
     totalPick._disagreement = 0; // Simple model has no total projection
@@ -899,7 +928,9 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Look up weather for this game
     const gameWeather = weatherMap ? weatherMap.get(`${game.away}@${game.home}`) : null;
 
-    // Look up probable pitcher data (MLB only)
+    // Look up starting-player data for this game:
+    //   MLB → probable pitchers (pitcher-data.js), NHL → starting goalies (goalie-data.js).
+    // Both maps are keyed "Away@Home"; other leagues pass null.
     const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
 
     const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData);

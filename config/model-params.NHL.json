@@ -18,7 +18,8 @@
     "param_auto_margin_rest_impact": 1,
     "param_auto_total_market_anchor": 0.95,
     "param_auto_total_pace_dampening": 0.3,
-    "param_auto_confidence_power": 1.4
+    "param_auto_confidence_power": 1.4,
+    "param_auto_goalie_adj_scale": 0.5
   },
   "moneyline": {
     "nhl_goal_diff": 0,

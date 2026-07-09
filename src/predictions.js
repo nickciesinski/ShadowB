@@ -24,6 +24,7 @@ const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
 const { fetchProbablePitchers } = require('./pitcher-data');
+const { fetchStartingGoalies } = require('./goalie-data');
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -547,7 +548,22 @@ async function generateNHLPredictions() {
   }
 
   const scheduleMap = buildScheduleMap(scheduleRows, 'NHL');
-  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NHL', getPerformanceModifier, scheduleMap);
+
+  // Starting goalie quality (NHL analog of MLB's probable pitchers).
+  // ESPN confirmed starters when available, presumed #1 from the weekly
+  // goalie rankings sheet otherwise. Failure is non-fatal — picks proceed
+  // without the adjustment, exactly like the MLB pitcher fetch.
+  let goalieMap = new Map();
+  try {
+    goalieMap = await fetchStartingGoalies(games);
+    console.log(`[predictions] NHL goalie data: ${goalieMap.size} games`);
+  } catch (err) {
+    console.warn('[predictions] NHL goalie fetch failed, continuing without:', err.message);
+  }
+
+  // goalieMap rides in the same positional slot MLB uses for pitcherMap
+  // (weatherMap slot stays null — no NHL weather model).
+  const picks = await generateAllPicks(games, teamsMap, parsedWeights, 'NHL', getPerformanceModifier, scheduleMap, null, goalieMap);
   console.log(`[predictions] NHL: ${picks.length} deterministic picks generated`);
 
   // Sprint 3: Apply approval filters before logging
