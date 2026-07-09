@@ -555,9 +555,25 @@ async function sendTriggerHealthCheck() {
   // Categorize (pure, offline-tested in src/trigger-health.js)
   const { passed, failed, missing } = categorize(expectedDaily, runMap);
 
-  const allGood = failed.length === 0 && missing.length === 0;
+  // ── Season-start verification (2026-07-09) ────────────────────────────
+  // For the first week after a league's season resumes, assert the fixes
+  // and signals that couldn't be validated offseason (NBA pace/defRating,
+  // NHL goalie coverage, MLB pitcher coverage). Empty outside that window.
+  let seasonChecks = [];
+  try {
+    const { runSeasonStartChecks } = require('./season-verification');
+    seasonChecks = await runSeasonStartChecks(now);
+  } catch (e) {
+    console.warn('[emails] Season-start checks failed to run (non-fatal):', e.message);
+  }
+  const seasonFailures = seasonChecks.filter(c => !c.ok);
+
+  const allGood = failed.length === 0 && missing.length === 0 && seasonFailures.length === 0;
   const statusEmoji = allGood ? '✅' : '🚨';
-  const statusText = allGood ? 'All Clear' : `${failed.length} Failed, ${missing.length} Missing`;
+  const statusText = allGood
+    ? 'All Clear'
+    : `${failed.length} Failed, ${missing.length} Missing` +
+      (seasonFailures.length > 0 ? `, ${seasonFailures.length} Season-Start Check${seasonFailures.length > 1 ? 's' : ''} Failing` : '');
 
   // Build email
   const todayFmt = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -585,6 +601,16 @@ async function sendTriggerHealthCheck() {
     html += `<h2 style="color:#e85d04;">Missing Triggers</h2>
 <p>These triggers were expected today but never ran:</p>
 <p style="font-size:16px;"><strong>${missing.join(', ')}</strong></p>`;
+  }
+
+  if (seasonChecks.length > 0) {
+    html += `<h2 style="color:${seasonFailures.length > 0 ? '#d00000' : '#2d6a4f'};">Season-Start Verification</h2>
+<table style="width:100%;border-collapse:collapse;">
+<tr style="background:#333;color:white;"><th style="padding:6px;">League</th><th style="padding:6px;">Check</th><th style="padding:6px;">Status</th><th style="padding:6px;">Detail</th></tr>`;
+    for (const c of seasonChecks) {
+      html += `<tr style="background:${c.ok ? '#f0fff4' : '#fff0f0'};"><td style="padding:6px;border:1px solid #ddd;">${c.league}</td><td style="padding:6px;border:1px solid #ddd;">${c.check}</td><td style="padding:6px;border:1px solid #ddd;">${c.ok ? '✅' : '🚨'}</td><td style="padding:6px;border:1px solid #ddd;font-size:12px;">${c.detail}</td></tr>`;
+    }
+    html += '</table>';
   }
 
   if (passed.length > 0) {

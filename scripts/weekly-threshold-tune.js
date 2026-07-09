@@ -310,6 +310,39 @@ async function main() {
     rows = raw.slice(1); // drop header
   }
   console.log(`[tune] read ${rows.length} Performance Log rows (source: ${source})`);
+
+  // ── Zero-data tripwire (2026-07-09) ─────────────────────────────────────
+  // This tuner reported 0 graded picks for every league on 6/21, 6/28, and
+  // 7/5 with no alarm. Now: count graded picks per league in the 7d window
+  // and ALERT for any league that is in season but shows zero. Non-fatal —
+  // the tune still runs (it will correctly hold on n<20).
+  try {
+    const { collectZeroDataAlerts } = require('../src/zero-data-guard');
+    const { sendAlertEmail } = require('../src/alerts');
+    const gradedCounts = {};
+    for (const lg of LEAGUES) gradedCounts[lg] = 0;
+    for (const r of rows) {
+      const res = String(r[COL.RESULT] || '').trim();
+      if (res !== 'W' && res !== 'L' && res !== 'P') continue;
+      const m = String(r[COL.DATE] || '').match(/(\d+)\/(\d+)\/(\d+)/);
+      if (!m) continue;
+      const d = new Date(parseInt(m[3]), parseInt(m[1]) - 1, parseInt(m[2]));
+      if (d < cut7) continue;
+      const lg = String(r[COL.LEAGUE] || '').trim().toUpperCase();
+      if (gradedCounts[lg] !== undefined) gradedCounts[lg]++;
+    }
+    console.log(`[tune] graded picks in 7d: ${JSON.stringify(gradedCounts)}`);
+    const alerts = collectZeroDataAlerts(gradedCounts, { windowDays: 7 });
+    if (alerts.length > 0) {
+      const text = alerts.map(a => `${a.league}: ${a.reason}`).join('\n\n') +
+        `\n\nData source this run: ${source}. If source is 'sheet', the Supabase read failed and the Sheet may be mid-rewrite (the June race).`;
+      console.error(`[tune] ZERO-DATA ALERT:\n${text}`);
+      await sendAlertEmail({ subject: `Weekly threshold tuner saw 0 graded picks — ${alerts.map(a => a.league).join(', ')}`, text });
+    }
+  } catch (e) {
+    console.warn('[tune] Zero-data guard failed (non-fatal):', e.message);
+  }
+
   const seg7 = buildSegments(rows, cut7);
   const seg30 = buildSegments(rows, cut30);
 

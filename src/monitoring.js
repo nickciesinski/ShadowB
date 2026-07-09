@@ -215,6 +215,7 @@ const TRIM_TARGETS = [
   { sheet: SHEETS.PERFORMANCE,      keep: 5000 },   // Main picks log
   { sheet: SHEETS.PROP_COMBOS,      keep: 1000 },
   { sheet: SHEETS.ODDS_RAW,         keep: 2000 },
+  { sheet: 'Signal_Health',         keep: 500 },   // coverage stats, ~2-4 rows/day (signal-health.js)
   { sheet: SHEETS.PROP_STATUS,      keep: 1000 },
   { sheet: SHEETS.YESTERDAY_RESULTS,keep: 500 },
 ];

@@ -159,4 +159,35 @@ function computePitcherAdj(homePitcher, awayPitcher) {
   return Math.max(-2.0, Math.min(2.0, adj));
 }
 
-module.exports = { fetchProbablePitchers, computePitcherAdj, extractPitcher };
+/**
+ * Re-key an ESPN-name-keyed starter map onto the actual game objects
+ * (Odds API names) using normalized team-name matching.
+ *
+ * Why: fetchProbablePitchers keys by ESPN displayNames, but game-model
+ * looks up with Odds API names. Any naming drift ("St. Louis" vs
+ * "St Louis", "Athletics" vs "Oakland Athletics") was a SILENT miss —
+ * no pitcher adjustment, no error. After remapping, every surviving
+ * entry is guaranteed to hit, and coverage (map.size / games.length)
+ * becomes a meaningful health metric (see signal-health.js).
+ *
+ * @param {Map} espnKeyedMap  From fetchProbablePitchers
+ * @param {Array} games       buildGameObjects output
+ * @returns {Map} keyed by each game's own `${game.away}@${game.home}`
+ */
+function remapStarterMapToGames(espnKeyedMap, games) {
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const idx = new Map();
+  for (const [key, val] of espnKeyedMap.entries()) {
+    const at = key.indexOf('@');
+    if (at < 0) continue;
+    idx.set(`${norm(key.slice(0, at))}@${norm(key.slice(at + 1))}`, val);
+  }
+  const out = new Map();
+  for (const g of (games || [])) {
+    const hit = idx.get(`${norm(g.away)}@${norm(g.home)}`);
+    if (hit) out.set(`${g.away}@${g.home}`, hit);
+  }
+  return out;
+}
+
+module.exports = { fetchProbablePitchers, computePitcherAdj, extractPitcher, remapStarterMapToGames };

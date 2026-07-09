@@ -30,6 +30,8 @@ const { getHistoricalTeamStats } = require('./snapshots');
 const paramStore = require('./param-store');
 const { isLockedKey, clampFactor } = require('../config/rules');
 const { computeSplits } = require('./split-metrics');
+const { collectZeroDataAlerts } = require('./zero-data-guard');
+const { sendAlertEmail } = require('./alerts');
 
 // Factors we'll optimize and their defaults
 const TUNABLE_FACTORS = {
@@ -293,9 +295,11 @@ async function optimizeGameWeights() {
   console.log('[game-optimizer] Starting nightly game weight optimization...');
 
   const results = {};
+  const gradedCounts = {}; // league → graded picks seen (zero-data tripwire)
   for (const league of ['MLB', 'NBA', 'NFL', 'NHL']) {
     try {
       const analysis = await analyzeGamePerformance(league, 14);
+      gradedCounts[league] = analysis ? analysis.total : 0;
       if (!analysis || analysis.total < 50) {
         console.log(`[game-optimizer] ${league}: ${analysis ? analysis.total : 0} picks in 14 days — need 20+, skipping`);
         continue;
@@ -339,6 +343,28 @@ async function optimizeGameWeights() {
     } catch (err) {
       console.warn(`[game-optimizer] ${league} failed: ${err.message}`);
     }
+  }
+
+  // ── Zero-data tripwire (2026-07-09) ──────────────────────────────────────
+  // An in-season league with 0 graded picks in 14 days means grading, the
+  // Performance Log read, or the picks pipeline is broken — never legitimate.
+  // The weekly tuner failed exactly this way for 3 weeks in June with no
+  // alarm. Alert loudly; never let the optimizer "skip" its way past a
+  // dead pipeline in silence. (Note: this read still comes from the Sheet
+  // via dataStore, which is exposed to the same clear+rewrite race the
+  // tuner hit — a persistent race would now trip this alert.)
+  try {
+    const alerts = collectZeroDataAlerts(gradedCounts, { windowDays: 14 });
+    if (alerts.length > 0) {
+      const text = alerts.map(a => `${a.league}: ${a.reason}`).join('\n\n');
+      console.error(`[game-optimizer] ZERO-DATA ALERT:\n${text}`);
+      await sendAlertEmail({
+        subject: `Nightly optimizer saw 0 graded picks — ${alerts.map(a => a.league).join(', ')}`,
+        text,
+      });
+    }
+  } catch (err) {
+    console.warn('[game-optimizer] Zero-data guard failed (non-fatal):', err.message);
   }
 
   console.log('[game-optimizer] Nightly optimization complete');

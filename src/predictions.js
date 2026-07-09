@@ -23,8 +23,9 @@ const { priceStats } = require('./price-lib'); // R2.1 line-shopping (best vs me
 const { applyApprovalFilters } = require('./approval-engine');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
-const { fetchProbablePitchers } = require('./pitcher-data');
+const { fetchProbablePitchers, remapStarterMapToGames } = require('./pitcher-data');
 const { fetchStartingGoalies } = require('./goalie-data');
+const { recordSignalHealth } = require('./signal-health');
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -416,6 +417,17 @@ async function generateMLBPredictions() {
     console.warn('[predictions] MLB pitcher fetch failed, continuing without:', err.message);
   }
 
+  // 2026-07-09: re-key the ESPN-name-keyed map onto the actual game objects
+  // (Odds API names). ESPN-vs-Odds-API naming drift was a SILENT miss — no
+  // pitcher adjustment, no error. Coverage is now a real, alertable metric.
+  pitcherMap = remapStarterMapToGames(pitcherMap, games);
+  const pitcherCoverage = games.length > 0 ? pitcherMap.size / games.length : 1;
+  console.log(`[predictions] MLB pitcher coverage after remap: ${pitcherMap.size}/${games.length} games`);
+  await recordSignalHealth({
+    league: 'MLB', signal: 'pitcher_coverage', coverage: pitcherCoverage,
+    detail: `${pitcherMap.size}/${games.length} games`,
+  });
+
   // Fetch game-day weather for outdoor stadiums
   let weatherMap = new Map();
   try {
@@ -560,6 +572,11 @@ async function generateNHLPredictions() {
   } catch (err) {
     console.warn('[predictions] NHL goalie fetch failed, continuing without:', err.message);
   }
+  await recordSignalHealth({
+    league: 'NHL', signal: 'goalie_coverage',
+    coverage: games.length > 0 ? goalieMap.size / games.length : 1,
+    detail: `${goalieMap.size}/${games.length} games`,
+  });
 
   // goalieMap rides in the same positional slot MLB uses for pitcherMap
   // (weatherMap slot stays null — no NHL weather model).

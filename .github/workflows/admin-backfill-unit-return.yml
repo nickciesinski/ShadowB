@@ -1,0 +1,38 @@
+name: Admin — Backfill unit_return (Supabase)
+
+# One-shot backfill for graded rows written before the 2026-07-07 dual-write
+# fix, which left unit_return null in Supabase and silently zeroed ROI in any
+# lookback that reads performance_log directly (weekly threshold tuner).
+# Idempotent — only touches rows where unit_return IS NULL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Write the backfill (false = dry-run report only)'
+        required: false
+        default: 'true'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Audit + backfill unit_return
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.apply }}" = "true" ]; then
+            ARGS="--apply"
+          fi
+          node scripts/audit-unit-return.js $ARGS
