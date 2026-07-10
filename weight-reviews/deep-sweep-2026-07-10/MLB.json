@@ -1,0 +1,3087 @@
+{
+  "league": "MLB",
+  "gradedPicks": 2265,
+  "withFeatures": 1366,
+  "folds": [
+    {
+      "idx": 2,
+      "trainN": 224,
+      "testN": 594,
+      "trainRange": [
+        "2026-05-02",
+        "2026-05-10"
+      ],
+      "testRange": [
+        "2026-05-10",
+        "2026-05-31"
+      ],
+      "baselineTrain": {
+        "winRate": 47.8,
+        "roi": -6
+      },
+      "baselineTest": {
+        "winRate": 45.6,
+        "roi": -5.3
+      },
+      "trainWinner": {
+        "name": "rand_1",
+        "trainRoiLift": 0.5,
+        "trainWinLift": 0,
+        "testRoiLift": 0.2,
+        "testWinLift": 0
+      }
+    },
+    {
+      "idx": 3,
+      "trainN": 788,
+      "testN": 578,
+      "trainRange": [
+        "2026-05-02",
+        "2026-05-31"
+      ],
+      "testRange": [
+        "2026-05-31",
+        "2026-06-21"
+      ],
+      "baselineTrain": {
+        "winRate": 45.8,
+        "roi": -6.4
+      },
+      "baselineTest": {
+        "winRate": 58,
+        "roi": 17.9
+      },
+      "trainWinner": {
+        "name": "rand_1",
+        "trainRoiLift": 0.3,
+        "trainWinLift": 0,
+        "testRoiLift": -0.4,
+        "testWinLift": 0
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "name": "rand_446",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0.1,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 13,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 13,
+          "trainRoiLift": 0.3,
+          "testRoiLift": 0,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 2.153
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 0.706
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 1.394
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.865
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 1.876
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 2.144
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 0.448
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.257
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 1.501
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 0.53
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 2.081
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 1.068
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.968
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 0.508
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.551
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 0.918
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 1.548
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.524
+        }
+      ]
+    },
+    {
+      "name": "rand_50",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 2,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 2,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.764
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 0.668
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 1.791
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 1.833
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.376
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 0.414
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 1.12
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 2.269
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 0.69
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 1.442
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.093
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 1.394
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 0.673
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 2.23
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.669
+        }
+      ]
+    },
+    {
+      "name": "rand_73",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 3,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 3,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 1.824
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 0.959
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 0.409
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.351
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 2.128
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 2.145
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 0.483
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 1.467
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.516
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 1.649
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.722
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 0.664
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 2.078
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 1.256
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 1.208
+        }
+      ]
+    },
+    {
+      "name": "rand_126",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 4,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 4,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.627
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.775
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 1.446
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 0.566
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.76
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.348
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 0.695
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.86
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 0.561
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 0.518
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 0.701
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.596
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.006
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 0.785
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 0.998
+        }
+      ]
+    },
+    {
+      "name": "rand_184",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 5,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 5,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 2.131
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.605
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 1.761
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 2.234
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 2.135
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.467
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.73
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 0.416
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.33
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 1.826
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.738
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 1.105
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.819
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 1.267
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 0.618
+        }
+      ]
+    },
+    {
+      "name": "rand_194",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 6,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 6,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.449
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.842
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 1.256
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.458
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 1.884
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 0.551
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 1.77
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 0.444
+        },
+        {
+          "market": "all",
+          "key": "whip_diff",
+          "action": "multiply",
+          "value": 0.46
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.705
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 0.437
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.561
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 1.424
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.986
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 0.628
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 1.256
+        }
+      ]
+    },
+    {
+      "name": "rand_237",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 7,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 7,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 1.664
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 0.448
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.214
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 0.91
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 0.658
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.815
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 2.497
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "multiply",
+          "value": 1.127
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 0.646
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.525
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.061
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 1.985
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.632
+        }
+      ]
+    },
+    {
+      "name": "rand_271",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 8,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 8,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 1.701
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 1.849
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 0.514
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 1.656
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.5
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 0.586
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 0.411
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.738
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 1.854
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 0.625
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.906
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 1.334
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 1.369
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.541
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 2.184
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 1.284
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 0.844
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 1.534
+        }
+      ]
+    },
+    {
+      "name": "rand_283",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 9,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 9,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 1.86
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.545
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 0.461
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 1.574
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.603
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 1.495
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 1.504
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.407
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.394
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 0.611
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 0.832
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.608
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.786
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.62
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 0.693
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 0.439
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "zero"
+        }
+      ]
+    },
+    {
+      "name": "rand_319",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 10,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 10,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 1.075
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.476
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 0.523
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.376
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 1.458
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 1.514
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 1.056
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 0.756
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 1.57
+        },
+        {
+          "market": "all",
+          "key": "whip_diff",
+          "action": "multiply",
+          "value": 0.817
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 1.127
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.59
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 1.971
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 1.697
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 0.649
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 1.731
+        }
+      ]
+    },
+    {
+      "name": "rand_359",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 11,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 11,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 1.742
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 0.884
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.423
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.456
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 0.643
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 0.89
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 0.642
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.887
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.516
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 2.062
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 1.129
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.469
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 1.358
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 1.938
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 1.132
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 0.452
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 1.337
+        }
+      ]
+    },
+    {
+      "name": "rand_377",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 12,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 12,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 2.295
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.505
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 1.276
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 1.434
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.653
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.406
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 1.892
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 1.153
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 1.342
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.503
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "multiply",
+          "value": 0.888
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 0.944
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 0.63
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.756
+        }
+      ]
+    },
+    {
+      "name": "rand_493",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 14,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 14,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.758
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 1.229
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.067
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.959
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 0.468
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.424
+        },
+        {
+          "market": "all",
+          "key": "whip_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 0.634
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 0.844
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 2.258
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 0.439
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 0.748
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 0.881
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.779
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 0.437
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 0.818
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 0.627
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.942
+        }
+      ]
+    },
+    {
+      "name": "rand_523",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 15,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 15,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.654
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 1.465
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.284
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 1.881
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 0.614
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.637
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 0.559
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.738
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 0.476
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "multiply",
+          "value": 0.503
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 1.58
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 1.231
+        }
+      ]
+    },
+    {
+      "name": "rand_562",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 16,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 16,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.42
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.967
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 0.534
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.435
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 1.656
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.883
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.463
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.539
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 2.415
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 0.449
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 2.052
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 1.846
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 0.465
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 0.851
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 1.531
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 1
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 0.421
+        }
+      ]
+    },
+    {
+      "name": "rand_636",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 17,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 18,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 1.503
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 1.123
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 0.826
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.384
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.813
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.596
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 0.512
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 1.104
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 2.216
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 0.694
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 0.527
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 1.352
+        }
+      ]
+    },
+    {
+      "name": "rand_638",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 18,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 19,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 0.413
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 0.804
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.943
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.403
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 1.419
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 0.523
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 1.532
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 1.043
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.912
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 1.494
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 2.26
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 1.347
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 2.411
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 0.58
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 1.783
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 0.663
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 1.274
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.807
+        }
+      ]
+    },
+    {
+      "name": "rand_860",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 21,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 22,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 1.836
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 1.318
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 0.603
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 1.429
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 1.601
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.425
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 1.401
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 0.514
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 0.921
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 0.519
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.45
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 1.089
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 1.003
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 1.487
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 0.883
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 0.478
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 2.155
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 0.439
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "multiply",
+          "value": 2.158
+        }
+      ]
+    },
+    {
+      "name": "rand_876",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 22,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 23,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.2,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 0.418
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 0.666
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "multiply",
+          "value": 1.036
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 1.503
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.244
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 0.65
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 0.487
+        },
+        {
+          "market": "all",
+          "key": "whip_diff",
+          "action": "multiply",
+          "value": 0.803
+        },
+        {
+          "market": "all",
+          "key": "offensive_rating_diff",
+          "action": "multiply",
+          "value": 1.848
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 1.92
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 0.61
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.435
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 1.007
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 0.868
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 0.902
+        }
+      ]
+    },
+    {
+      "name": "rand_994",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": 0,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 24,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 25,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.3,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.872
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.561
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 1.265
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 0.507
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "multiply",
+          "value": 0.946
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.304
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 1.651
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 0.619
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 0.97
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 0.979
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 1.437
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 0.627
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 0.901
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "multiply",
+          "value": 1.549
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 2.165
+        },
+        {
+          "market": "all",
+          "key": "home_injury_weight",
+          "action": "multiply",
+          "value": 1.892
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.467
+        }
+      ]
+    },
+    {
+      "name": "rand_1",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": -0.1,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 1,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 1,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.4,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.461
+        },
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.666
+        },
+        {
+          "market": "all",
+          "key": "offense_rs_diff",
+          "action": "multiply",
+          "value": 1.038
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 2.48
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 1.155
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 0.912
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.473
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 1.086
+        },
+        {
+          "market": "all",
+          "key": "bullpen_era_diff",
+          "action": "multiply",
+          "value": 1.689
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.956
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 2.378
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 0.602
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 0.584
+        },
+        {
+          "market": "all",
+          "key": "pitcher_quality_diff",
+          "action": "multiply",
+          "value": 0.727
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.509
+        },
+        {
+          "market": "all",
+          "key": "pitcher_whip_diff",
+          "action": "multiply",
+          "value": 0.407
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 1.992
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 1.21
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 0.682
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 2.448
+        }
+      ]
+    },
+    {
+      "name": "rand_670",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": -0.1,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 19,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 20,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.4,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.456
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 0.568
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 0.466
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.484
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 1.427
+        },
+        {
+          "market": "all",
+          "key": "whip_diff",
+          "action": "multiply",
+          "value": 1.695
+        },
+        {
+          "market": "all",
+          "key": "defensive_rating_diff",
+          "action": "multiply",
+          "value": 1.034
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.874
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "multiply",
+          "value": 1.25
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "multiply",
+          "value": 1.194
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 0.519
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.5
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 0.453
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 2.151
+        },
+        {
+          "market": "all",
+          "key": "injury_advantage",
+          "action": "multiply",
+          "value": 0.596
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 0.424
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.956
+        }
+      ]
+    },
+    {
+      "name": "rand_807",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": -0.1,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 20,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 21,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.5,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "run_differential_diff",
+          "action": "multiply",
+          "value": 0.477
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l10_diff",
+          "action": "multiply",
+          "value": 1.495
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 0.639
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l3_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l1_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 2.344
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.213
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 1.222
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 0.58
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 1.151
+        },
+        {
+          "market": "all",
+          "key": "net_rating_diff",
+          "action": "multiply",
+          "value": 1.568
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 1.518
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 0.736
+        },
+        {
+          "market": "all",
+          "key": "pitcher_away_advantage",
+          "action": "multiply",
+          "value": 1.926
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 0.684
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 0.996
+        },
+        {
+          "market": "all",
+          "key": "severe_injury_factor",
+          "action": "multiply",
+          "value": 1.607
+        },
+        {
+          "market": "all",
+          "key": "ace_matchup",
+          "action": "zero"
+        }
+      ]
+    },
+    {
+      "name": "rand_902",
+      "topKFolds": 2,
+      "posTestFolds": 1,
+      "meanTestRoiLift": -0.1,
+      "meanTestWinLift": 0,
+      "perFold": [
+        {
+          "fold": 2,
+          "trainRank": 23,
+          "trainRoiLift": 0.5,
+          "testRoiLift": 0.2,
+          "testWinLift": 0
+        },
+        {
+          "fold": 3,
+          "trainRank": 24,
+          "trainRoiLift": 0.3,
+          "testRoiLift": -0.4,
+          "testWinLift": 0
+        }
+      ],
+      "mods": [
+        {
+          "market": "all",
+          "key": "mlb_run_diff",
+          "action": "multiply",
+          "value": 0.955
+        },
+        {
+          "market": "all",
+          "key": "defense_ra_diff",
+          "action": "multiply",
+          "value": 0.508
+        },
+        {
+          "market": "all",
+          "key": "recent_form_l5_diff",
+          "action": "multiply",
+          "value": 0.428
+        },
+        {
+          "market": "all",
+          "key": "momentum_diff",
+          "action": "multiply",
+          "value": 0.457
+        },
+        {
+          "market": "all",
+          "key": "trend_diff",
+          "action": "multiply",
+          "value": 0.433
+        },
+        {
+          "market": "all",
+          "key": "home_away_split_diff",
+          "action": "multiply",
+          "value": 2.385
+        },
+        {
+          "market": "all",
+          "key": "home_field_advantage",
+          "action": "multiply",
+          "value": 0.903
+        },
+        {
+          "market": "all",
+          "key": "weather_factor",
+          "action": "multiply",
+          "value": 0.529
+        },
+        {
+          "market": "all",
+          "key": "division_game_factor",
+          "action": "multiply",
+          "value": 0.903
+        },
+        {
+          "market": "all",
+          "key": "ops_diff",
+          "action": "multiply",
+          "value": 0.618
+        },
+        {
+          "market": "all",
+          "key": "era_diff",
+          "action": "multiply",
+          "value": 1.075
+        },
+        {
+          "market": "all",
+          "key": "batting_avg_diff",
+          "action": "multiply",
+          "value": 1.19
+        },
+        {
+          "market": "all",
+          "key": "pitcher_era_diff",
+          "action": "multiply",
+          "value": 0.841
+        },
+        {
+          "market": "all",
+          "key": "pitcher_matchup_score",
+          "action": "zero"
+        },
+        {
+          "market": "all",
+          "key": "pitcher_home_advantage",
+          "action": "multiply",
+          "value": 0.545
+        },
+        {
+          "market": "all",
+          "key": "home_pitcher_rating",
+          "action": "multiply",
+          "value": 0.634
+        },
+        {
+          "market": "all",
+          "key": "away_pitcher_rating",
+          "action": "multiply",
+          "value": 1.258
+        },
+        {
+          "market": "all",
+          "key": "injury_weight_diff",
+          "action": "multiply",
+          "value": 1.116
+        },
+        {
+          "market": "all",
+          "key": "away_injury_weight",
+          "action": "multiply",
+          "value": 0.93
+        },
+        {
+          "market": "all",
+          "key": "total_injury_weight",
+          "action": "multiply",
+          "value": 0.995
+        },
+        {
+          "market": "all",
+          "key": "poor_pitching_matchup",
+          "action": "multiply",
+          "value": 0.683
+        }
+      ]
+    }
+  ],
+  "survivors": [],
+  "honesty": {
+    "meanTrainWinnerTestRoiLift": -0.1,
+    "meanTrainWinnerTestWinLift": 0,
+    "interpretation": "If ~0 or negative, selecting on in-sample performance does not generalize at this data size — apply nothing."
+  },
+  "notes": [
+    "24 stable train candidates of 1614 configs; 0 survived out-of-sample."
+  ],
+  "configsTested": 1614
+}

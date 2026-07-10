@@ -1,0 +1,56 @@
+{
+  "date": "2026-07-10",
+  "days": 150,
+  "configs": 1500,
+  "seed": 42,
+  "leagues": {
+    "MLB": {
+      "gradedPicks": 2265,
+      "withFeatures": 1366,
+      "folds": 2,
+      "candidates": 24,
+      "survivors": [],
+      "honesty": {
+        "meanTrainWinnerTestRoiLift": -0.1,
+        "meanTrainWinnerTestWinLift": 0,
+        "interpretation": "If ~0 or negative, selecting on in-sample performance does not generalize at this data size — apply nothing."
+      },
+      "notes": [
+        "24 stable train candidates of 1614 configs; 0 survived out-of-sample."
+      ]
+    },
+    "NBA": {
+      "gradedPicks": 390,
+      "withFeatures": 176,
+      "folds": 0,
+      "candidates": 0,
+      "survivors": [],
+      "honesty": {},
+      "notes": [
+        "Insufficient feature-backed picks (176 < 190) — league skipped. Result-replay can't test weight changes."
+      ]
+    },
+    "NHL": {
+      "gradedPicks": 377,
+      "withFeatures": 174,
+      "folds": 0,
+      "candidates": 0,
+      "survivors": [],
+      "honesty": {},
+      "notes": [
+        "Insufficient feature-backed picks (174 < 190) — league skipped. Result-replay can't test weight changes."
+      ]
+    },
+    "NFL": {
+      "gradedPicks": 0,
+      "withFeatures": 0,
+      "folds": 0,
+      "candidates": 0,
+      "survivors": [],
+      "honesty": {},
+      "notes": [
+        "Insufficient feature-backed picks (0 < 190) — league skipped. Result-replay can't test weight changes."
+      ]
+    }
+  }
+}

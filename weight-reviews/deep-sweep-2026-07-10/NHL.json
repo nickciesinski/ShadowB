@@ -1,0 +1,12 @@
+{
+  "league": "NHL",
+  "gradedPicks": 377,
+  "withFeatures": 174,
+  "folds": [],
+  "candidates": [],
+  "survivors": [],
+  "honesty": {},
+  "notes": [
+    "Insufficient feature-backed picks (174 < 190) — league skipped. Result-replay can't test weight changes."
+  ]
+}

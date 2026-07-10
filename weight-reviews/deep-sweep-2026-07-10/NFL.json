@@ -1,0 +1,12 @@
+{
+  "league": "NFL",
+  "gradedPicks": 0,
+  "withFeatures": 0,
+  "folds": [],
+  "candidates": [],
+  "survivors": [],
+  "honesty": {},
+  "notes": [
+    "Insufficient feature-backed picks (0 < 190) — league skipped. Result-replay can't test weight changes."
+  ]
+}
