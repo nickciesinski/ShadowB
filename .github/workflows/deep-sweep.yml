@@ -20,6 +20,9 @@ on:
         required: false
         default: 'MLB,NBA,NHL,NFL'
 
+permissions:
+  contents: write
+
 jobs:
   sweep:
     runs-on: ubuntu-latest
