@@ -43,6 +43,7 @@ const PARAM_BOUNDS = {
   total_pace_dampening:   { min: 0.05, max: 0.80 },
   confidence_power:       { min: 0.80, max: 2.50 },
   csv_dampen:             { min: 0.10, max: 0.60 },
+  goalie_adj_scale:       { min: 0.25, max: 0.75 },  // 2026-07-09: NHL starting-goalie signal (game-optimizer.js graduation rules)
 };
 
 function isLockedKey(key) {

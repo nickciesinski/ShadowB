@@ -38,6 +38,10 @@ const args = process.argv.slice(2);
 const DAYS = parseInt(args.find((_, i, a) => a[i - 1] === '--days') || '60');
 const DRY_RUN = args.includes('--dry-run');
 const FORCE = args.includes('--force');
+// 2026-07-09: passed by the workflow on cron runs. Scheduled applies are
+// governed by the promotion state machine (src/promotion-state.js) instead
+// of the old hard-coded shell-level quarantine.
+const SCHEDULED = args.includes('--scheduled');
 
 // ── Thresholds ──────────────────────────────────────────────────
 const MIN_PICKS = 50;
@@ -45,6 +49,11 @@ const MIN_WIN_RATE_LIFT = 1.0;   // percentage points (2026-06-01: 2.0→1.0; wi
 const MIN_ROI_LIFT = 5.0;       // percentage points
 const MAX_WEIGHT_DELTA_PCT = 30; // max % change per individual weight
 const WEIGHT_CLAMP = 5.0;       // absolute max weight magnitude
+// Walk-forward: winner is SELECTED on train picks only, then SCORED on the
+// most recent HOLDOUT_DAYS it never saw. That out-of-sample score drives
+// the promotion state machine. (R0.1's core complaint was that in-sample
+// sweep wins never replicated out-of-sample — now that's measured weekly.)
+const HOLDOUT_DAYS = 14;
 
 // ── Email config ────────────────────────────────────────────────
 const GMAIL_USER = process.env.GMAIL_USER;
@@ -560,7 +569,18 @@ async function sendAutoApplyEmail(report) {
   if (report.winner.totalReturn !== undefined) {
     html += `<p>Return: ${report.winner.totalReturn}u | Risked: ${report.winner.totalRisked || 'N/A'}u | Edge changes: ${report.winner.edgeChanges || 0} | Unit changes: ${report.winner.unitChanges || 0}</p>`;
   }
-  html += `<p>Win% lift: <strong>${report.winRateLift >= 0 ? '+' : ''}${report.winRateLift}%</strong> | ROI lift: <strong>${report.roiLift >= 0 ? '+' : ''}${report.roiLift}%</strong></p>`;
+  html += `<p>Win% lift: <strong>${report.winRateLift >= 0 ? '+' : ''}${report.winRateLift}%</strong> | ROI lift: <strong>${report.roiLift >= 0 ? '+' : ''}${report.roiLift}%</strong> <span style="color:#888;">(train / in-sample)</span></p>`;
+
+  if (report.holdout) {
+    const h = report.holdout;
+    const p = report.promotion || {};
+    html += `<h3>Out-of-Sample (last ${h.days}d holdout, ${h.sample || 0} graded)</h3>`;
+    html += h.sample >= 30
+      ? `<p>Win% lift: <strong>${h.winRateLift >= 0 ? '+' : ''}${h.winRateLift}%</strong> | ROI lift: <strong>${h.roiLift >= 0 ? '+' : ''}${h.roiLift}%</strong></p>`
+      : `<p style="color:#888;">Insufficient holdout sample — streak held.</p>`;
+    html += `<p>Promotion state: <strong>${(p.mode || 'quarantined').toUpperCase()}</strong> | streak ${p.streak}/${p.required}${p.event ? ` | <strong style="color:${p.event === 'PROMOTED' ? '#2d6a4f' : '#d00000'};">${p.event} this week</strong>` : ''}</p>`;
+    html += `<p style="color:#888;font-size:12px;">${p.verdict || ''}</p>`;
+  }
 
   if (applied) {
     html += `<h3>Changes Applied</h3>`;
@@ -644,18 +664,30 @@ async function main() {
     weightsByLeague[lg] = await readWeights(sheetForLeague(lg));
   }
 
-  // 3. Run sweep
-  console.log('\n[3/5] Running sweep...');
+  // 3. Run sweep — walk-forward (2026-07-09)
+  console.log('\n[3/5] Running sweep (walk-forward)...');
+  const promo = require('../src/promotion-state');
+  const { train, holdout, cutoffISO } = promo.splitTrainHoldout(simPicks, { holdoutDays: HOLDOUT_DAYS });
+  console.log(`  Train: ${train.length} picks (< ${cutoffISO}) | Holdout: ${holdout.length} picks (>= ${cutoffISO})`);
+
+  // Selection happens on TRAIN ONLY. If train is too thin (early season),
+  // fall back to selecting on everything but treat holdout scoring as
+  // insufficient — the state machine holds the streak on small samples.
+  const selectionPicks = train.length >= MIN_PICKS ? train : simPicks;
+  if (selectionPicks !== train) {
+    console.log(`  Train too thin (${train.length} < ${MIN_PICKS}) — selecting on full window; holdout verdict will be insufficient-sample`);
+  }
+
   const refWeights = weightsByLeague['NBA'] || Object.values(weightsByLeague)[0];
   const combos = buildWeightCombos(refWeights);
   console.log(`  ${combos.length} combos to test`);
 
-  const baseline = simulate(simPicks, weightsByLeague, null, useFeatures);
+  const baseline = simulate(selectionPicks, weightsByLeague, null, useFeatures);
   baseline.name = 'BASELINE';
 
   const results = [baseline];
   for (const c of combos) {
-    const r = simulate(simPicks, weightsByLeague, c.mods, useFeatures);
+    const r = simulate(selectionPicks, weightsByLeague, c.mods, useFeatures);
     r.name = c.name; r.cat = c.cat; r.mods = c.mods;
     results.push(r);
   }
@@ -665,14 +697,48 @@ async function main() {
   const winRateLift = parseFloat((winner.winRate - baseline.winRate).toFixed(1));
   const roiLift = parseFloat((winner.roi - baseline.roi).toFixed(1));
 
-  console.log(`\n  Baseline: ${baseline.wins}W-${baseline.losses}L | ${baseline.winRate}% | ROI ${baseline.roi}% | Units risked: ${baseline.totalRisked || 'N/A'}`);
-  console.log(`  Winner:   ${winner.name} | ${winner.wins}W-${winner.losses}L | ${winner.winRate}% | ROI ${winner.roi}% | Units risked: ${winner.totalRisked || 'N/A'}`);
-  console.log(`  Lift:     Win% ${winRateLift >= 0 ? '+' : ''}${winRateLift} | ROI ${roiLift >= 0 ? '+' : ''}${roiLift}`);
-  console.log(`  Return:   Baseline ${baseline.totalReturn}u vs Winner ${winner.totalReturn}u (delta: ${(winner.totalReturn - baseline.totalReturn).toFixed(2)}u)`);
+  console.log(`\n  Baseline (train): ${baseline.wins}W-${baseline.losses}L | ${baseline.winRate}% | ROI ${baseline.roi}% | Units risked: ${baseline.totalRisked || 'N/A'}`);
+  console.log(`  Winner (train):   ${winner.name} | ${winner.wins}W-${winner.losses}L | ${winner.winRate}% | ROI ${winner.roi}% | Units risked: ${winner.totalRisked || 'N/A'}`);
+  console.log(`  Train lift:       Win% ${winRateLift >= 0 ? '+' : ''}${winRateLift} | ROI ${roiLift >= 0 ? '+' : ''}${roiLift}`);
+
+  // ── Out-of-sample score + promotion state machine ─────────────
+  let holdoutResult = { sample: 0, roiLift: null, winRateLift: null, winnerName: winner.name };
+  const holdoutUsable = selectionPicks === train && winner.name !== 'BASELINE' && useFeatures;
+  if (holdoutUsable && holdout.length > 0) {
+    const hBase = simulate(holdout, weightsByLeague, null, useFeatures);
+    const hWin = simulate(holdout, weightsByLeague, winner.mods, useFeatures);
+    holdoutResult = {
+      sample: hBase.wins + hBase.losses,
+      roiLift: parseFloat((hWin.roi - hBase.roi).toFixed(1)),
+      winRateLift: parseFloat((hWin.winRate - hBase.winRate).toFixed(1)),
+      winnerName: winner.name,
+    };
+    console.log(`  Holdout (${holdoutResult.sample} graded): baseline ${hBase.winRate}%/${hBase.roi}% vs winner ${hWin.winRate}%/${hWin.roi}% → lift Win% ${holdoutResult.winRateLift >= 0 ? '+' : ''}${holdoutResult.winRateLift} | ROI ${holdoutResult.roiLift >= 0 ? '+' : ''}${holdoutResult.roiLift}`);
+  } else {
+    console.log(`  Holdout scoring skipped (${!useFeatures ? 'result-replay mode' : winner.name === 'BASELINE' ? 'baseline won' : 'train too thin'}) — recorded as insufficient sample`);
+  }
+
+  const prevState = promo.loadState();
+  const { state: promoState, event: promoEvent, verdict: promoVerdict } = promo.evaluateTransition(prevState, holdoutResult);
+  promo.saveState(promoState);
+  console.log(`  Promotion state: ${prevState.mode} → ${promoState.mode} | streak ${promoState.streak}/${promoState.required_streak} | ${promoVerdict}`);
+
+  if (promoEvent) {
+    try {
+      const { sendAlertEmail } = require('../src/alerts');
+      await sendAlertEmail({
+        subject: `Weight optimizer ${promoEvent}: ${promoEvent === 'PROMOTED' ? 'scheduled applies now ENABLED' : 'back to analysis-only quarantine'}`,
+        text: `${promoVerdict}\n\nHoldout: ${holdoutResult.sample} graded picks, ROI lift ${holdoutResult.roiLift}, win% lift ${holdoutResult.winRateLift}\nWinner: ${holdoutResult.winnerName}\n\nState: config/weight-promotion-state.json (committed by the weekly workflow).\nGuardrails still active: per-run lift thresholds, ±${MAX_WEIGHT_DELTA_PCT}% weight clamps, drift-guard live backstop.`,
+      });
+    } catch (e) { console.warn('[auto-apply] Transition alert failed (non-fatal):', e.message); }
+  }
 
   // 4. Decide whether to apply
   const report = {
     totalPicks: simPicks.length,
+    trainPicks: train.length,
+    holdout: { days: HOLDOUT_DAYS, cutoff: cutoffISO, ...holdoutResult },
+    promotion: { mode: promoState.mode, streak: promoState.streak, required: promoState.required_streak, event: promoEvent, verdict: promoVerdict },
     mode: useFeatures ? 'feature-rescore' : 'result-replay',
     baseline: { wins: baseline.wins, losses: baseline.losses, winRate: baseline.winRate, roi: baseline.roi, totalReturn: baseline.totalReturn, totalRisked: baseline.totalRisked },
     winner: { wins: winner.wins, losses: winner.losses, winRate: winner.winRate, roi: winner.roi, totalReturn: winner.totalReturn, totalRisked: winner.totalRisked, edgeChanges: winner.edgeChanges, unitChanges: winner.unitChanges },
@@ -688,9 +754,9 @@ async function main() {
 
   // Check: statistical significance — need meaningful edge/unit changes, not just noise
   const flippedPicks = Math.abs(winner.wins - baseline.wins) + Math.abs(winner.losses - baseline.losses);
-  const MIN_FLIPS = Math.max(5, Math.ceil(simPicks.length * 0.05)); // at least 5 or 5% of picks
-  const edgeChangePct = winner.edgeChanges ? (winner.edgeChanges / simPicks.length * 100).toFixed(1) : '0';
-  const unitChangePct = winner.unitChanges ? (winner.unitChanges / simPicks.length * 100).toFixed(1) : '0';
+  const MIN_FLIPS = Math.max(5, Math.ceil(selectionPicks.length * 0.05)); // at least 5 or 5% of the selection window
+  const edgeChangePct = winner.edgeChanges ? (winner.edgeChanges / selectionPicks.length * 100).toFixed(1) : '0';
+  const unitChangePct = winner.unitChanges ? (winner.unitChanges / selectionPicks.length * 100).toFixed(1) : '0';
   console.log(`  Edge changes: ${winner.edgeChanges || 0} (${edgeChangePct}%) | Unit changes: ${winner.unitChanges || 0} (${unitChangePct}%)`);
   if (winner.name !== 'BASELINE' && flippedPicks < MIN_FLIPS * 2 && (winner.edgeChanges || 0) < MIN_FLIPS) {
     report.skipReason = `Too few meaningful changes: ${flippedPicks / 2} picks flipped, ${winner.edgeChanges || 0} edge changes (need ${MIN_FLIPS}+). Likely noise.`;
@@ -710,6 +776,23 @@ async function main() {
   else if (!FORCE && winRateLift < MIN_WIN_RATE_LIFT && roiLift < MIN_ROI_LIFT) {
     report.skipReason = `Improvement below threshold (need +${MIN_WIN_RATE_LIFT}% win rate OR +${MIN_ROI_LIFT}% ROI, got +${winRateLift}% / +${roiLift}%)`;
     console.log(`\n[4/5] Below threshold — skipping.`);
+  }
+  // Check: promotion governance for scheduled runs (2026-07-09, replaces the
+  // shell-level R0.1 quarantine). Cron applies require PROMOTED mode — earned
+  // by ${'3'} consecutive weeks of qualifying out-of-sample lift — AND a
+  // non-negative holdout this week. Manual dispatch (Nick's explicit intent)
+  // and --force are exempt.
+  else if (!FORCE && SCHEDULED && promoState.mode !== 'promoted') {
+    report.skipReason = `Quarantined (analysis-only): promotion streak ${promoState.streak}/${promoState.required_streak}. ${promoVerdict}`;
+    console.log(`\n[4/5] ${report.skipReason}`);
+  }
+  else if (!FORCE && SCHEDULED && promoState.mode === 'promoted' &&
+           holdoutResult.sample >= 30 &&
+           (holdoutResult.roiLift < 0 && holdoutResult.winRateLift < 0)) {
+    // Belt-and-braces: evaluateTransition already demotes on degradation, so
+    // this branch should be unreachable — keep it as a hard stop anyway.
+    report.skipReason = `Promoted but this week's holdout is negative (ROI ${holdoutResult.roiLift}, win% ${holdoutResult.winRateLift}) — not applying.`;
+    console.log(`\n[4/5] ${report.skipReason}`);
   }
   // Check: winner has mods we can apply
   else if (!winner.mods || winner.mods.length === 0) {
@@ -790,6 +873,8 @@ async function main() {
     fs.appendFileSync(outputFile, `winner=${report.winnerName}\n`);
     fs.appendFileSync(outputFile, `win_rate_lift=${report.winRateLift}\n`);
     fs.appendFileSync(outputFile, `roi_lift=${report.roiLift}\n`);
+    fs.appendFileSync(outputFile, `promotion_mode=${report.promotion.mode}\n`);
+    fs.appendFileSync(outputFile, `promotion_event=${report.promotion.event || ''}\n`);
   }
 }
 

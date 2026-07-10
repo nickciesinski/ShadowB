@@ -45,7 +45,19 @@ const TUNABLE_FACTORS = {
   total_pace_dampening:    { default: 0.30, min: 0.05, max: 0.80 },
   confidence_power:        { default: 1.40, min: 0.80, max: 2.50 },
   csv_dampen:              { default: 0.30, min: 0.10, max: 0.60 },
+  // 2026-07-09: NHL starting-goalie adjustment scale (goalie-data.js →
+  // game-model.js). Auto-graduation: `leagues` scopes it to NHL configs only
+  // (read/write/nudge all skip other leagues), and `minSample` keeps the
+  // nightly optimizer hands-off until 150 graded NHL picks exist with the
+  // signal live — the "quarantine new signals until data validates them"
+  // rule, made self-resolving instead of a calendar note for December.
+  goalie_adj_scale:        { default: 0.50, min: 0.25, max: 0.75, leagues: ['NHL'], minSample: 150 },
 };
+
+/** Does a factor apply to this league? (No `leagues` field = all leagues.) */
+function factorAppliesTo(config, league) {
+  return !config.leagues || config.leagues.includes(league);
+}
 
 /**
  * Read current tunable factor values from a league's weight sheet.
@@ -55,6 +67,7 @@ async function readTunableFactors(league) {
   const weights = await readWeights(sheetForLeague(league));
   const factors = {};
   for (const [name, config] of Object.entries(TUNABLE_FACTORS)) {
+    if (!factorAppliesTo(config, league)) continue; // league-scoped factor
     const key = `param_auto_${name}`;
     factors[name] = weights.params[key] !== undefined
       ? weights.params[key]
@@ -211,6 +224,30 @@ function computeNudges(analysis, currentFactors, splits) {
     }
   }
 
+  // ── NHL goalie signal graduation (2026-07-09) ─────────────────
+  // Present in currentFactors only for NHL (league-scoped in
+  // TUNABLE_FACTORS). Hands-off until minSample graded picks exist —
+  // before that the signal stays at its config-seeded 0.5 exactly as
+  // quarantined. After graduation: margin markets (where the goalie adj
+  // lands) winning → trust the signal 1% more; losing → 1% less. Same
+  // attribution-free style and step size as every other factor here,
+  // hard-bounded [0.25, 0.75].
+  if (currentFactors.goalie_adj_scale !== undefined) {
+    const gCfg = TUNABLE_FACTORS.goalie_adj_scale;
+    const total = totalW + totalL;
+    if (total >= (gCfg.minSample || 150)) {
+      const mW = picks.moneyline.wins.length + picks.spread.wins.length;
+      const mL = picks.moneyline.losses.length + picks.spread.losses.length;
+      if (mW + mL >= 30) {
+        const marginWinRate = mW / (mW + mL);
+        if (marginWinRate > 0.55) nudges.goalie_adj_scale = 1.01;
+        else if (marginWinRate < 0.45) nudges.goalie_adj_scale = 0.99;
+      }
+    } else {
+      console.log(`[game-optimizer] goalie_adj_scale: ${total}/${gCfg.minSample} graded NHL picks — signal still quarantined from tuning`);
+    }
+  }
+
   // ── Objective penalty: degenerate splits (unless realized ROI backs them) ──
   // Overrides the win-rate heuristic above for the offending factors so the
   // optimizer self-corrects an Over-heavy or Home-heavy lean instead of
@@ -239,6 +276,10 @@ function computeNudges(analysis, currentFactors, splits) {
 function applyNudges(currentFactors, nudges) {
   const updated = { ...currentFactors };
   for (const [name, config] of Object.entries(TUNABLE_FACTORS)) {
+    // League-scoped factors (e.g. goalie_adj_scale) are absent from other
+    // leagues' currentFactors — skip, or undefined * nudge poisons the
+    // config with NaN.
+    if (currentFactors[name] === undefined) continue;
     const nudge = nudges[name] || 1.0;
     updated[name] = Math.max(config.min, Math.min(config.max, currentFactors[name] * nudge));
     updated[name] = parseFloat(updated[name].toFixed(4));
@@ -377,6 +418,7 @@ module.exports = {
   readTunableFactors,
   writeTunableFactors,
   analyzeGamePerformance,
+  factorAppliesTo,
   computeNudges,
   applyNudges,
   TUNABLE_FACTORS,

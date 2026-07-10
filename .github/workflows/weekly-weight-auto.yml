@@ -45,12 +45,14 @@ jobs:
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: |
           ARGS="--days ${{ github.event.inputs.days || '60' }}"
-          # QUARANTINE (R0.1, 2026-06-21): scheduled runs are ANALYSIS-ONLY.
-          # The sweep has not shown out-of-sample lift (ties baseline at +0% win
-          # lift; only shrinks weights), so it may NOT auto-write on a cron.
-          # To actually apply, run manually: workflow_dispatch + force=true.
+          # 2026-07-09: R0.1's shell-level quarantine replaced by the promotion
+          # state machine (src/promotion-state.js). Scheduled runs pass
+          # --scheduled; the script only applies when the sweep has EARNED
+          # promotion via 3 consecutive weeks of out-of-sample holdout lift,
+          # and it self-demotes on holdout degradation. Manual dispatch and
+          # force behave as before.
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            ARGS="$ARGS --dry-run"
+            ARGS="$ARGS --scheduled"
           fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
@@ -60,14 +62,24 @@ jobs:
           fi
           node scripts/auto-apply-weights.js $ARGS
 
-      - name: Commit updated weight CSVs
-        if: steps.sweep.outputs.applied == 'true'
+      - name: Commit weights + promotion state
         run: |
           git config user.name "shadow-bets-bot"
           git config user.email "shadow-bets-bot@users.noreply.github.com"
-          git add weights/Weights_*.csv config/model-params.*.json
+          # Promotion state + weekly report are committed EVERY run — the
+          # streak must persist across weeks. Weights only change on applies.
+          git add config/weight-promotion-state.json weight-reviews/auto-apply-*.json
+          if [ "${{ steps.sweep.outputs.applied }}" = "true" ]; then
+            git add weights/Weights_*.csv config/model-params.*.json
+          fi
           git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "auto-apply: ${{ steps.sweep.outputs.winner }} (+${{ steps.sweep.outputs.win_rate_lift }}% win rate, +${{ steps.sweep.outputs.roi_lift }}% ROI)"
+          if [ "${{ steps.sweep.outputs.applied }}" = "true" ]; then
+            MSG="auto-apply: ${{ steps.sweep.outputs.winner }} (+${{ steps.sweep.outputs.win_rate_lift }}% win rate, +${{ steps.sweep.outputs.roi_lift }}% ROI) [${{ steps.sweep.outputs.promotion_mode }}]"
+          else
+            EVENT="${{ steps.sweep.outputs.promotion_event }}"
+            MSG="weight sweep: analysis-only [${{ steps.sweep.outputs.promotion_mode }}]${EVENT:+ — $EVENT} — promotion state updated"
+          fi
+          git commit -m "$MSG"
           # Rebase first: multiple workflows push to main on Sundays; without this
           # a non-fast-forward push is rejected and the apply silently evaporates.
           git pull --rebase origin main

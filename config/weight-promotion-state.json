@@ -1,0 +1,8 @@
+{
+  "mode": "quarantined",
+  "streak": 0,
+  "required_streak": 3,
+  "history": [],
+  "updated": null,
+  "note": "R0.1 quarantine (2026-06-21) converted to self-resolving rule on 2026-07-09. Promotes after 3 consecutive weeks of qualifying out-of-sample lift; demotes on holdout degradation."
+}
