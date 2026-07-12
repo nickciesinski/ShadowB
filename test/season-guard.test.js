@@ -6,7 +6,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const sw = require('../src/season-windows');
-const { evaluateGradedCoverage, collectZeroDataAlerts } = require('../src/zero-data-guard');
+const { evaluateGradedCoverage, collectZeroDataAlerts, countGradedByLeague, reconcileGradedCount } = require('../src/zero-data-guard');
 const { remapStarterMapToGames } = require('../src/pitcher-data');
 
 // Use the real config file — these assertions double as a sanity check
@@ -130,4 +130,56 @@ test('remapStarterMapToGames: exact names hit, punctuation drift hits, misses dr
 test('remapStarterMapToGames tolerates empty inputs', () => {
   assert.strictEqual(remapStarterMapToGames(new Map(), []).size, 0);
   assert.strictEqual(remapStarterMapToGames(new Map(), null).size, 0);
+});
+
+test('countGradedByLeague counts W/L/P per league, ignores ungraded/ junk', () => {
+  const rows = [
+    { league: 'MLB', result: 'W' },
+    { league: 'MLB', result: 'L' },
+    { league: 'MLB', result: 'P' },
+    { league: 'mlb', result: 'w' },       // case-insensitive
+    { league: 'MLB', result: null },      // ungraded, not counted
+    { league: 'MLB', result: '' },
+    { league: 'NFL', result: 'W' },
+    { league: '', result: 'W' },          // no league, dropped
+  ];
+  assert.deepStrictEqual(countGradedByLeague(rows), { MLB: 4, NFL: 1 });
+});
+
+test('countGradedByLeague tolerates empty/null input', () => {
+  assert.deepStrictEqual(countGradedByLeague([]), {});
+  assert.deepStrictEqual(countGradedByLeague(null), {});
+});
+
+test('reconcileGradedCount: Supabase evidence vetoes a false-positive Sheet zero', () => {
+  assert.strictEqual(reconcileGradedCount(0, 438), 438);
+});
+
+test('reconcileGradedCount: both sources agreeing on zero stays zero (real break still alerts)', () => {
+  assert.strictEqual(reconcileGradedCount(0, 0), 0);
+});
+
+test('reconcileGradedCount: Supabase unavailable falls back to Sheet count, unchanged', () => {
+  assert.strictEqual(reconcileGradedCount(0, undefined), 0);
+  assert.strictEqual(reconcileGradedCount(0, NaN), 0);
+  assert.strictEqual(reconcileGradedCount(12, undefined), 12);
+});
+
+test('reconcileGradedCount: never lowers a nonzero Sheet count', () => {
+  assert.strictEqual(reconcileGradedCount(30, 5), 30);
+  assert.strictEqual(reconcileGradedCount(30, 0), 30);
+});
+
+test('end-to-end: reconciled count suppresses the alert evaluateGradedCoverage would otherwise raise', () => {
+  const now = new Date(2026, 6, 12); // MLB in season
+  const sheetCount = 0;
+  const supabaseCount = 438;
+  const reconciled = reconcileGradedCount(sheetCount, supabaseCount);
+  const res = evaluateGradedCoverage({ league: 'MLB', gradedCount: reconciled, now, windowDays: 14 });
+  assert.strictEqual(res.alert, false);
+
+  // Without reconciliation, the same Sheet-only zero WOULD have alerted —
+  // proves the fix actually changes the outcome, not just passes through.
+  const resUnreconciled = evaluateGradedCoverage({ league: 'MLB', gradedCount: sheetCount, now, windowDays: 14 });
+  assert.strictEqual(resUnreconciled.alert, true);
 });

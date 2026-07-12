@@ -60,4 +60,55 @@ function collectZeroDataAlerts(counts, { now = new Date(), windowDays = 7 } = {}
   return alerts;
 }
 
-module.exports = { evaluateGradedCoverage, collectZeroDataAlerts };
+/**
+ * Count graded (W/L/P) Supabase performance_log rows per league.
+ * Pure — takes the array already fetched by db.getRecentPerformanceLog(),
+ * shaped as {league, result, ...}. Rows are assumed already date-filtered
+ * by the caller's `sinceDateISO` query bound.
+ *
+ * @param {Array<Object>} supaRows
+ * @returns {Object} {league: count}
+ */
+function countGradedByLeague(supaRows) {
+  const counts = {};
+  for (const r of (supaRows || [])) {
+    const result = String((r && r.result) || '').trim().toUpperCase();
+    if (result !== 'W' && result !== 'L' && result !== 'P') continue;
+    const league = String((r && r.league) || '').trim().toUpperCase();
+    if (!league) continue;
+    counts[league] = (counts[league] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * Reconcile a Sheet-sourced graded count against an independent Supabase
+ * count before a zero-data tripwire fires.
+ *
+ * Why: the Sheet's Performance Log is subject to a read-modify-write race
+ * (logPicksToPerformanceLog's full clear+rewrite vs. gradePerformanceLog's
+ * in-place grade write — see src/db.js getRecentPerformanceLog comment).
+ * That race is EXACTLY the failure mode that let 0-graded-picks go
+ * unnoticed for 3 weeks in June 2026, so any check reading the Sheet is
+ * vulnerable to reporting a false zero. Supabase writes are row-level and
+ * not exposed to that race, so when it disagrees with a Sheet-reported
+ * zero, Supabase wins.
+ *
+ * Deliberately asymmetric: this can only RAISE a zero to a real count
+ * (veto a false-positive alert), never LOWER a nonzero Sheet count. If
+ * Supabase is unavailable (supabaseCount not a finite number — query
+ * failed or wasn't run), falls back to the Sheet count unchanged so the
+ * guard stays conservative (still alerts) rather than silently trusting
+ * an unverified source.
+ *
+ * @param {number} sheetCount
+ * @param {number} [supabaseCount]
+ * @returns {number} the count to feed into evaluateGradedCoverage/collectZeroDataAlerts
+ */
+function reconcileGradedCount(sheetCount, supabaseCount) {
+  const sc = Number.isFinite(sheetCount) ? sheetCount : 0;
+  if (!Number.isFinite(supabaseCount)) return sc;
+  return Math.max(sc, supabaseCount);
+}
+
+module.exports = { evaluateGradedCoverage, collectZeroDataAlerts, countGradedByLeague, reconcileGradedCount };

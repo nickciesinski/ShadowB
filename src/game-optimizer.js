@@ -30,8 +30,9 @@ const { getHistoricalTeamStats } = require('./snapshots');
 const paramStore = require('./param-store');
 const { isLockedKey, clampFactor } = require('../config/rules');
 const { computeSplits } = require('./split-metrics');
-const { collectZeroDataAlerts } = require('./zero-data-guard');
+const { collectZeroDataAlerts, countGradedByLeague, reconcileGradedCount } = require('./zero-data-guard');
 const { sendAlertEmail } = require('./alerts');
+const db = require('./db');
 
 // Factors we'll optimize and their defaults
 const TUNABLE_FACTORS = {
@@ -395,7 +396,37 @@ async function optimizeGameWeights() {
   // via dataStore, which is exposed to the same clear+rewrite race the
   // tuner hit — a persistent race would now trip this alert.)
   try {
-    const alerts = collectZeroDataAlerts(gradedCounts, { windowDays: 14 });
+    // 2026-07-12: cross-check against Supabase before alerting. This tripwire
+    // reads the Sheet (via dataStore, same as the nudge computation above —
+    // deliberately NOT changed here, that's live tuning input) which is
+    // exposed to the exact clear+rewrite race this guard exists to catch.
+    // Supabase writes are row-level and immune to that race, so when it
+    // shows real graded picks for a league the Sheet read reported as zero,
+    // trust Supabase and suppress the false alarm. Never lowers a nonzero
+    // Sheet count, and falls back to Sheet-only (original behavior) if
+    // Supabase is unreachable — so a genuine double-failure still alerts.
+    let reconciled = gradedCounts;
+    try {
+      if (db.isEnabled()) {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 14);
+        const sinceISO = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+        const supaRows = await db.getRecentPerformanceLog(sinceISO);
+        const supaCounts = countGradedByLeague(supaRows || []);
+        reconciled = {};
+        for (const [league, sheetCount] of Object.entries(gradedCounts)) {
+          const count = reconcileGradedCount(sheetCount, supaCounts[league]);
+          reconciled[league] = count;
+          if (sheetCount === 0 && count > 0) {
+            console.warn(`[game-optimizer] ${league}: Sheet read showed 0 graded picks in 14d but Supabase shows ${count} — Sheet race, not a real break. Suppressing alert.`);
+          }
+        }
+      }
+    } catch (crossCheckErr) {
+      console.warn('[game-optimizer] Supabase cross-check failed (non-fatal, using Sheet-only counts):', crossCheckErr.message);
+    }
+
+    const alerts = collectZeroDataAlerts(reconciled, { windowDays: 14 });
     if (alerts.length > 0) {
       const text = alerts.map(a => `${a.league}: ${a.reason}`).join('\n\n');
       console.error(`[game-optimizer] ZERO-DATA ALERT:\n${text}`);
