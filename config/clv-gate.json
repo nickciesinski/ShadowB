@@ -1,0 +1,13 @@
+{
+  "enabled": false,
+  "updated": "2026-07-12",
+  "_doc": "R1.3 CLV-beat staking gate. When enabled=true, a pick that the approval engine would otherwise APPROVE is downgraded to tracking_only if its league x market segment appears in gated_segments below (sustained negative closing-line value = the ROI is variance, not edge). GUARD ONLY: it can never upgrade a pick, never zeroes a stake, and the pick still logs, so the ML+spread+total coverage rule (config/rules.js) stays satisfied. Default enabled=false so this ships inert — flip to true only after reviewing the latest clean-era-reports CLV table.",
+  "criteria_used_to_build_list": { "maxApprovedAvgClvPp": -1.5, "maxApprovedBeatPct": 45, "minSample": 20 },
+  "gated_segments": [
+    {
+      "league": "NHL",
+      "market": "*",
+      "evidence": "clean-era approved-staked CLV beat 41.7% / avg -3.38pp (n=24) as of 2026-07-12, worsening across weeks (-1.46pp on 6/22 -> -3.38pp on 7/12); NHL spread alone -6.79pp. Approved ROI +11.6% is CLV-negative => variance to fade, not an edge to stake. MLB (workhorse, +CLV on ML) intentionally NOT gated."
+    }
+  ]
+}

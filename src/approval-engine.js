@@ -80,6 +80,8 @@ const LEAGUE_OVERRIDES_FALLBACK = {
 // breaks on a bad/absent config.
 const fs = require('fs');
 const path = require('path');
+// R1.3: CLV-beat staking gate (pure; inert unless config/clv-gate.json enabled=true).
+const { isSegmentGated, loadGateConfig } = require('./clv-gate');
 
 function loadThresholdConfig() {
   try {
@@ -100,6 +102,7 @@ function loadThresholdConfig() {
 const _loaded = loadThresholdConfig();
 const DEFAULT_THRESHOLDS = _loaded.defaults;
 const LEAGUE_OVERRIDES = _loaded.overrides;
+const CLV_GATE = loadGateConfig();
 
 /**
  * Merge default thresholds with league-specific overrides.
@@ -178,14 +181,28 @@ function applyApprovalFilters(picks, league) {
   const thresholds = getThresholds(league);
   let approved = 0;
   let tracking = 0;
+  let gated = 0;
 
   for (const pick of picks) {
     const result = shouldApprove(pick, thresholds, league);
     if (result.approved) {
-      pick.approval_status = 'approved';
-      pick.approval_reason = '';
-      pick.pick_purpose = 'bet';
-      approved++;
+      // R1.3: CLV-beat staking gate. If enabled and this league x market
+      // segment has sustained negative closing-line value, downgrade to
+      // tracking_only (the ROI there is variance, not edge). Guard only —
+      // never upgrades. Coverage rule still satisfied: the pick still logs.
+      const gate = isSegmentGated(league, pick.betType, CLV_GATE);
+      if (gate.gated) {
+        pick.approval_status = 'tracking_only';
+        pick.approval_reason = gate.reason;
+        pick.pick_purpose = 'tracking';
+        gated++;
+        tracking++;
+      } else {
+        pick.approval_status = 'approved';
+        pick.approval_reason = '';
+        pick.pick_purpose = 'bet';
+        approved++;
+      }
     } else {
       pick.approval_status = 'tracking_only';
       pick.approval_reason = result.reasons.join('; ');
@@ -198,7 +215,8 @@ function applyApprovalFilters(picks, league) {
     }
   }
 
-  console.log(`[approval] ${league}: ${approved} approved, ${tracking} tracking-only out of ${picks.length} total`);
+  const gatedNote = gated > 0 ? ` (${gated} CLV-gated)` : '';
+  console.log(`[approval] ${league}: ${approved} approved, ${tracking} tracking-only${gatedNote} out of ${picks.length} total`);
   return picks;
 }
 
