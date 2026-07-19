@@ -19,8 +19,9 @@ const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
 const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
 // PLATFORMS is built dynamically from props data (see bookPills in App)
-const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#2563EB', NFL: '#1D4ED8' };
-const LEAGUE_BG = { NBA: 'rgba(249,115,22,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(37,99,235,0.12)', NFL: 'rgba(29,78,216,0.12)' };
+const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#1D4ED8', NFL: '#795548' };
+const LEAGUE_TEXT = { NBA: 'white', NHL: 'white', MLB: 'white', NFL: 'white' }; // all league badges dark enough for white text
+const LEAGUE_BG = { NBA: 'rgba(249,115,22,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(29,78,216,0.12)', NFL: 'rgba(121,85,72,0.12)' };
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'All Time'];
 const TAB_ACCENTS = {
   picks: { gradient: 'linear-gradient(135deg, #059669 0%, #10B981 50%, #064E3B 100%)', accent: '#10B981', glow: 'rgba(16,185,129,0.3)' },
@@ -73,8 +74,8 @@ const TEAM_CODES = {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 const fmt = (odds) => (odds > 0 ? `+${odds}` : `${odds}`);
-const confColor = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? '#34D399' : n >= 6 ? '#FBBF24' : '#64748B'; };
-const confBg = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? 'rgba(16,185,129,0.15)' : n >= 6 ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.08)'; };
+const confColor = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? '#34D399' : n >= 6 ? '#F59E0B' : '#64748B'; };
+const confBg = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? 'rgba(16,185,129,0.15)' : n >= 6 ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.08)'; };
 
 function teamLogo(teamName, league) {
   const code = TEAM_CODES[teamName];
@@ -235,7 +236,7 @@ function BestBets({ picks }) {
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-              <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>
+              <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: LEAGUE_TEXT[p.league] || 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>
               <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
             </div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{p.pick} <span style={{ color: '#34D399', fontWeight: 800 }}>{fmt(p.odds)}</span></div>
@@ -272,14 +273,14 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
         <div style={{ fontSize: 13, fontWeight: 800, color: '#F1F5F9' }}>Today's Slate</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {Object.entries(leagueCounts).map(([lg, ct]) => (
-            <span key={lg} style={{ fontSize: 9, fontWeight: 700, color: 'white', background: LEAGUE_COLORS[lg] || '#6B7280', padding: '2px 6px', borderRadius: 4 }}>{lg} {ct}</span>
+            <span key={lg} style={{ fontSize: 9, fontWeight: 700, color: LEAGUE_TEXT[lg] || 'white', background: LEAGUE_COLORS[lg] || '#6B7280', padding: '2px 6px', borderRadius: 4 }}>{lg} {ct}</span>
           ))}
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 10, textAlign: 'center' }}>
         <div><div style={{ fontSize: 20, fontWeight: 900, color: '#F1F5F9' }}>{totalPlays}</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>PLAYS</div></div>
         <div><div style={{ fontSize: 20, fontWeight: 900, color: '#10B981' }}>{totalUnits.toFixed(1)}u</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>AT RISK</div></div>
-        <div><div style={{ fontSize: 20, fontWeight: 900, color: '#8B5CF6' }}>{lockedCount}{fadedCount > 0 ? <span style={{ color: '#FB923C', fontSize: 14 }}>/{fadedCount}</span> : ''}</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>{fadedCount > 0 ? 'LOCKED/FADED' : 'LOCKED'}</div></div>
+        <div><div style={{ fontSize: 20, fontWeight: 900, color: '#4B9CD3' }}>{lockedCount}{fadedCount > 0 ? <span style={{ color: '#FFC72C', fontSize: 14 }}>/{fadedCount}</span> : ''}</div><div style={{ fontSize: 9, color: '#64748B', fontWeight: 600 }}>{fadedCount > 0 ? 'LOCKED/FADED' : 'LOCKED'}</div></div>
       </div>
       {unlockedQualified > 0 && (
         <button onClick={onLockAll} style={{
@@ -318,10 +319,10 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
     return (
       <>
         {Object.values(games).map((g, i) => (
-          <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: '1px solid rgba(139,92,246,0.2)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+          <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: '1px solid rgba(75,156,211,0.2)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: LEAGUE_BG[g.league] || 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ background: LEAGUE_COLORS[g.league] || '#6B7280', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{g.league}</span>
+                <span style={{ background: LEAGUE_COLORS[g.league] || '#6B7280', color: LEAGUE_TEXT[g.league] || 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{g.league}</span>
                 <TeamLogo team={g.away} league={g.league} size={16} />
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{g.away} @ {g.home}</span>
                 <TeamLogo team={g.home} league={g.league} size={16} />
@@ -336,13 +337,13 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
                 <div key={j} onClick={() => toggleBet(p)} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', cursor: 'pointer',
                   borderBottom: j < g.picks.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
-                  background: faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)',
-                  borderLeft: faded ? '5px solid #FB923C' : '5px solid #A78BFA',
+                  background: faded ? 'rgba(255,199,44,0.12)' : 'rgba(75,156,211,0.12)',
+                  borderLeft: faded ? '5px solid #FFC72C' : '5px solid #4B9CD3',
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
-                      {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                      {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FFE08A', background: 'rgba(255,199,44,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                      {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                       <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
                       <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{display.pick}</span>
                       {display.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{display.line}</span>}
@@ -401,7 +402,7 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
         <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: LEAGUE_BG[g.league] || 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ background: LEAGUE_COLORS[g.league] || '#6B7280', color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{g.league}</span>
+              <span style={{ background: LEAGUE_COLORS[g.league] || '#6B7280', color: LEAGUE_TEXT[g.league] || 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{g.league}</span>
               <TeamLogo team={g.away} league={g.league} size={16} />
               <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{g.away} @ {g.home}</span>
               <TeamLogo team={g.home} league={g.league} size={16} />
@@ -446,14 +447,14 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', cursor: 'pointer',
                 borderBottom: j < g.picks.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
                 opacity: dimmed && !selected ? 0.35 : 1,
-                background: faded ? 'rgba(249,115,22,0.12)' : selected ? 'rgba(139,92,246,0.12)' : 'transparent',
-                borderLeft: faded ? '5px solid #FB923C' : selected ? '5px solid #A78BFA' : '3px solid transparent',
+                background: faded ? 'rgba(255,199,44,0.12)' : selected ? 'rgba(75,156,211,0.12)' : 'transparent',
+                borderLeft: faded ? '5px solid #FFC72C' : selected ? '5px solid #4B9CD3' : '3px solid transparent',
                 transition: 'background 0.15s, border-left 0.15s',
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                    {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
-                    {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                    {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FFE08A', background: 'rgba(255,199,44,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                    {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{display.pick}</span>
                     {display.line && <span style={{ fontSize: 11, color: '#94A3B8' }}>{display.line}</span>}
@@ -561,7 +562,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
     const gameNumLabel = game.gameNum ? ` G${game.gameNum}` : '';
     const gameKey = `${game.league}|${game.away}@${game.home}`;
 
-    let tBorder = hasFades ? '#FB923C' : hasBets ? '#8B5CF6' : 'rgba(255,255,255,0.08)';
+    let tBorder = hasFades ? '#FFC72C' : hasBets ? '#4B9CD3' : 'rgba(255,255,255,0.08)';
     let tBg = 'transparent';
     if (isClose) { tBorder = '#F59E0B'; tBg = 'rgba(245,158,11,0.08)'; }
     else if (trend !== null && trend > 0.3) { tBorder = '#10B981'; tBg = 'rgba(16,185,129,0.08)'; }
@@ -623,7 +624,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
       : isPost ? '1px solid rgba(255,255,255,0.06)' : `${hasBets ? '3px' : '2px'} solid ${tBorder}`;
     const cardLeftBar = isPost && !isLive ? `4px solid ${tBorder}` : undefined;
     const cardShadow = isLive
-      ? (hasFades ? '0 2px 16px rgba(249,115,22,0.25)' : hasBets ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)')
+      ? (hasFades ? '0 2px 16px rgba(255,199,44,0.25)' : hasBets ? '0 2px 16px rgba(75,156,211,0.25)' : '0 2px 12px rgba(0,0,0,0.4)')
       : '0 1px 6px rgba(0,0,0,0.2)';
 
     return (
@@ -632,7 +633,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
         <div onClick={() => { if (!expandAll) setExpanded(prev => ({ ...prev, [i]: false })); }} style={{ padding: '10px 12px', cursor: expandAll ? 'default' : 'pointer', background: tBg }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ background: LEAGUE_COLORS[game.league], color: 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{game.league}</span>
+              <span style={{ background: LEAGUE_COLORS[game.league], color: LEAGUE_TEXT[game.league] || 'white', fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4 }}>{game.league}</span>
               {isLive && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#34D399', display: 'inline-block', boxShadow: '0 0 6px rgba(52,211,153,0.6)', animation: 'pulse 2s infinite' }} />}
               <span style={{ fontSize: 10, fontWeight: 600, color: statusColor }}>{d.isClose ? '🔥 Close game!' : d.trend !== null && isLive ? (d.trend > 0.3 ? 'Trending well' : d.trend < -0.3 ? 'Struggling' : statusText) : statusText}</span>
             </div>
@@ -671,15 +672,15 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
           const icon = status === 'winning' ? '✅' : status === 'losing' ? '❌' : '➖';
           const selected = isBet(p);
           let rowBg = 'transparent';
-          if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : (faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)');
+          if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : (faded ? 'rgba(255,199,44,0.12)' : 'rgba(75,156,211,0.12)');
           else if (status === 'winning') rowBg = 'rgba(16,185,129,0.08)';
           else if (status === 'losing') rowBg = 'rgba(220,38,38,0.08)';
           return (
-            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', background: rowBg, borderTop: '1px solid rgba(255,255,255,0.06)', borderLeft: selected ? (faded ? '5px solid #FB923C' : '5px solid #A78BFA') : '3px solid transparent' }}>
+            <div key={j} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 12px', background: rowBg, borderTop: '1px solid rgba(255,255,255,0.06)', borderLeft: selected ? (faded ? '5px solid #FFC72C' : '5px solid #4B9CD3') : '3px solid transparent' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ fontSize: 13 }}>{icon}</span>
-                {faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 4px', borderRadius: 3 }}>FADE</span>}
-                {selected && !faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
+                {faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#FFE08A', background: 'rgba(255,199,44,0.25)', padding: '1px 4px', borderRadius: 3 }}>FADE</span>}
+                {selected && !faded && <span style={{ fontSize: 8, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 4px', borderRadius: 3 }}>BET</span>}
                 <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3, textTransform: 'uppercase' }}>{displayPick.betType || displayPick.market}</span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{displayPick.pick}</span>
                 {displayPick.line && <span style={{ fontSize: 11, color: '#94A3B8', fontWeight: 600 }}>{displayPick.line}</span>}
@@ -794,7 +795,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
           {/* Top row: league badge + status */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ background: LEAGUE_COLORS[game.league], color: 'white', fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3 }}>{game.league}</span>
+              <span style={{ background: LEAGUE_COLORS[game.league], color: LEAGUE_TEXT[game.league] || 'white', fontSize: 8, fontWeight: 700, padding: '1px 4px', borderRadius: 3 }}>{game.league}</span>
               {isLive && <span style={{ width: 6, height: 6, borderRadius: 3, background: '#34D399', display: 'inline-block', boxShadow: '0 0 4px rgba(52,211,153,0.6)', animation: 'pulse 2s infinite' }} />}
             </div>
             <span style={{ fontSize: 9, fontWeight: 600, color: statusColor }}>{statusText}</span>
@@ -835,7 +836,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
                 else if (st === 'pending') { dotColor = '#475569'; }
                 const bt = (dp.betType || dp.market || '').toLowerCase();
                 const label = bt === 'moneyline' ? 'M' : bt === 'spread' ? 'S' : bt === 'total' ? 'T' : '?';
-                const ringColor = faded ? '#FB923C' : betted ? '#A78BFA' : 'transparent';
+                const ringColor = faded ? '#FFC72C' : betted ? '#4B9CD3' : 'transparent';
                 return (
                   <span key={di} style={{
                     width: 16, height: 16, borderRadius: '50%', background: dotColor,
@@ -982,8 +983,8 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
 
     return (
       <>
-        <div style={{ background: 'rgba(139,92,246,0.08)', borderRadius: 12, padding: '10px 14px', marginBottom: 10, border: '1px solid rgba(139,92,246,0.2)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#C4B5FD' }}>My Prop Bets</div>
+        <div style={{ background: 'rgba(75,156,211,0.08)', borderRadius: 12, padding: '10px 14px', marginBottom: 10, border: '1px solid rgba(75,156,211,0.2)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#BAE0F5' }}>My Prop Bets</div>
           <div style={{ fontSize: 11, color: '#64748B' }}>{myFiltered.length} selections</div>
         </div>
         {myFiltered.map((p, i) => {
@@ -1018,11 +1019,11 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
 
           return (
             <div key={i} onClick={() => toggleProp(p)} style={{
-              background: faded ? 'rgba(249,115,22,0.12)' : 'rgba(139,92,246,0.12)',
+              background: faded ? 'rgba(255,199,44,0.12)' : 'rgba(75,156,211,0.12)',
               borderRadius: 12, marginBottom: 6, padding: '10px 12px',
-              border: faded ? '2px solid rgba(249,115,22,0.4)' : '2px solid rgba(139,92,246,0.4)',
-              boxShadow: isLiveGame ? '0 2px 16px rgba(139,92,246,0.25)' : '0 1px 6px rgba(0,0,0,0.2)',
-              borderLeft: faded ? '5px solid #FB923C' : (live ? `5px solid ${statColor}` : '5px solid #A78BFA'),
+              border: faded ? '2px solid rgba(255,199,44,0.4)' : '2px solid rgba(75,156,211,0.4)',
+              boxShadow: isLiveGame ? '0 2px 16px rgba(75,156,211,0.25)' : '0 1px 6px rgba(0,0,0,0.2)',
+              borderLeft: faded ? '5px solid #FFC72C' : (live ? `5px solid ${statColor}` : '5px solid #4B9CD3'),
               opacity: isDoneGame ? 0.7 : 1,
               cursor: 'pointer', transition: 'background 0.15s, opacity 0.3s',
             }}>
@@ -1030,10 +1031,10 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                    {faded ? <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>
-                      : <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                    {faded ? <span style={{ fontSize: 9, fontWeight: 700, color: '#FFE08A', background: 'rgba(255,199,44,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>
+                      : <span style={{ fontSize: 9, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                     {live && <span style={{ width: isLiveGame ? 8 : 6, height: isLiveGame ? 8 : 6, borderRadius: '50%', background: isLiveGame ? '#34D399' : '#64748B', display: 'inline-block', boxShadow: isLiveGame ? '0 0 6px rgba(52,211,153,0.6)' : 'none', animation: isLiveGame ? 'pulse 2s infinite' : 'none' }} />}
-                    {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
+                    {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: LEAGUE_TEXT[p.league] || 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   </div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#F1F5F9', marginBottom: 1 }}>{p.player}</div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: '#94A3B8', marginBottom: 4, textTransform: 'capitalize' }}>{(p.market || '').replace(/_/g, ' ')}</div>
@@ -1146,11 +1147,11 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
 
         return (
           <div key={i} onClick={() => toggleProp(p)} style={{
-            background: faded ? 'rgba(249,115,22,0.12)' : selected ? (live && statStatus === 'close' ? 'rgba(252,211,77,0.08)' : 'rgba(139,92,246,0.12)') : 'rgba(255,255,255,0.04)',
+            background: faded ? 'rgba(255,199,44,0.12)' : selected ? (live && statStatus === 'close' ? 'rgba(252,211,77,0.08)' : 'rgba(75,156,211,0.12)') : 'rgba(255,255,255,0.04)',
             borderRadius: 12, marginBottom: 6, padding: '10px 12px',
-            border: isDoneGame && !selected ? '1px solid rgba(255,255,255,0.06)' : faded ? '2px solid rgba(249,115,22,0.4)' : selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(139,92,246,0.4)') : '1px solid rgba(255,255,255,0.08)',
-            boxShadow: isLiveGame ? (faded ? '0 2px 16px rgba(249,115,22,0.25)' : selected ? '0 2px 16px rgba(139,92,246,0.25)' : '0 2px 12px rgba(0,0,0,0.4)') : '0 1px 6px rgba(0,0,0,0.2)',
-            borderLeft: faded ? '5px solid #FB923C' : selected ? (live ? `5px solid ${statColor}` : '5px solid #A78BFA') : isDoneGame ? `4px solid ${statColor}` : `3px solid ${edgeColor}`,
+            border: isDoneGame && !selected ? '1px solid rgba(255,255,255,0.06)' : faded ? '2px solid rgba(255,199,44,0.4)' : selected ? (live && statStatus === 'close' ? '2px solid rgba(252,211,77,0.3)' : '2px solid rgba(75,156,211,0.4)') : '1px solid rgba(255,255,255,0.08)',
+            boxShadow: isLiveGame ? (faded ? '0 2px 16px rgba(255,199,44,0.25)' : selected ? '0 2px 16px rgba(75,156,211,0.25)' : '0 2px 12px rgba(0,0,0,0.4)') : '0 1px 6px rgba(0,0,0,0.2)',
+            borderLeft: faded ? '5px solid #FFC72C' : selected ? (live ? `5px solid ${statColor}` : '5px solid #4B9CD3') : isDoneGame ? `4px solid ${statColor}` : `3px solid ${edgeColor}`,
             opacity: isDoneGame && !selected ? 0.65 : 1,
             cursor: 'pointer', transition: 'background 0.15s, border-left 0.15s, opacity 0.3s',
           }}>
@@ -1158,10 +1159,10 @@ function PropsTab({ props, todayGames, sf, pf, propDateFilter, isPropBet, isProp
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                  {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FDBA74', background: 'rgba(249,115,22,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
-                  {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                  {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FFE08A', background: 'rgba(255,199,44,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                  {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
                   {live && <span style={{ width: isLiveGame ? 8 : 6, height: isLiveGame ? 8 : 6, borderRadius: '50%', background: isLiveGame ? '#34D399' : '#64748B', display: 'inline-block', boxShadow: isLiveGame ? '0 0 6px rgba(52,211,153,0.6)' : 'none', animation: isLiveGame ? 'pulse 2s infinite' : 'none' }} />}
-                  {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
+                  {p.league && <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: LEAGUE_TEXT[p.league] || 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>}
                   <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 5px', borderRadius: 3 }}>{p.market}</span>
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#F1F5F9', marginBottom: 1 }}>{p.player}</div>
@@ -1432,7 +1433,7 @@ function ResultsTab({ results, gradedProps, sf, bf, dateFilter, resultType, isBe
               }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
-                    <span style={{ background: LEAGUE_COLORS[r.league], color: 'white', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{r.league}</span>
+                    <span style={{ background: LEAGUE_COLORS[r.league], color: LEAGUE_TEXT[r.league] || 'white', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{r.league}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3 }}>{r.market}</span>
                     {r.clvGrade && <span style={{ fontSize: 9, fontWeight: 700, color: r.clvGrade === 'HIT' ? '#34D399' : '#F87171', background: r.clvGrade === 'HIT' ? 'rgba(52,211,153,0.15)' : 'rgba(248,113,113,0.15)', padding: '1px 4px', borderRadius: 3 }}>CLV {r.clvGrade}</span>}
                   </div>
@@ -1448,14 +1449,14 @@ function ResultsTab({ results, gradedProps, sf, bf, dateFilter, resultType, isBe
               const isMyBet = isBet(r);
               return (
               <div key={j} style={{
-                background: isMyBet ? 'rgba(139,92,246,0.08)' : 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 3, padding: '8px 12px',
-                border: isMyBet ? '1px solid rgba(139,92,246,0.2)' : '1px solid rgba(255,255,255,0.08)', boxShadow: isMyBet ? '0 2px 10px rgba(139,92,246,0.15)' : '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between',
-                borderLeft: isMyBet ? '5px solid #A78BFA' : `3px solid ${r.result === 'W' ? '#34D399' : r.result === 'L' ? '#F87171' : '#64748B'}`
+                background: isMyBet ? 'rgba(75,156,211,0.08)' : 'rgba(255,255,255,0.04)', borderRadius: 8, marginBottom: 3, padding: '8px 12px',
+                border: isMyBet ? '1px solid rgba(75,156,211,0.2)' : '1px solid rgba(255,255,255,0.08)', boxShadow: isMyBet ? '0 2px 10px rgba(75,156,211,0.15)' : '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', justifyContent: 'space-between',
+                borderLeft: isMyBet ? '5px solid #4B9CD3' : `3px solid ${r.result === 'W' ? '#34D399' : r.result === 'L' ? '#F87171' : '#64748B'}`
               }}>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 1 }}>
-                    {isMyBet && <span style={{ fontSize: 8, fontWeight: 700, color: '#C4B5FD', background: 'rgba(139,92,246,0.25)', padding: '1px 4px', borderRadius: 3 }}>MY BET</span>}
-                    <span style={{ background: LEAGUE_COLORS[r.league], color: 'white', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{r.league}</span>
+                    {isMyBet && <span style={{ fontSize: 8, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 4px', borderRadius: 3 }}>MY BET</span>}
+                    <span style={{ background: LEAGUE_COLORS[r.league], color: LEAGUE_TEXT[r.league] || 'white', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{r.league}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: '#64748B', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: 3, textTransform: 'uppercase' }}>{r.betType || r.market}</span>
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#F1F5F9' }}>{r.pick} <span style={{ color: '#64748B', fontWeight: 400 }}>{fmt(r.odds)}</span></div>
@@ -1783,7 +1784,7 @@ function SettingsTab() {
       <div style={cardStyle}>
         <button onClick={() => { if (reviewStatus === "sent") { setReviewStatus(null); return; } setConfirmReview(true); }} disabled={!tokenSaved || reviewStatus === "sending"} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", background: "none", border: "none", cursor: tokenSaved ? "pointer" : "default", opacity: tokenSaved ? 1 : 0.4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(139,92,246,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔍</span>
+            <span style={{ width: 36, height: 36, borderRadius: 10, background: "rgba(75,156,211,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>🔍</span>
             <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: "#F1F5F9" }}>System Review</div>
               <div style={{ fontSize: 12, color: "#64748B" }}>Health check + performance report via email</div>
@@ -2183,7 +2184,7 @@ export default function App() {
               <span style={{ position: 'absolute', top: 0, right: 8, background: '#F59E0B', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{closeCount}</span>
             )}
             {t.id === 'scores' && betCount > 0 && closeCount === 0 && (
-              <span style={{ position: 'absolute', top: 0, right: 8, background: '#8B5CF6', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{betCount}</span>
+              <span style={{ position: 'absolute', top: 0, right: 8, background: '#4B9CD3', color: 'white', fontSize: 8, fontWeight: 800, width: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{betCount}</span>
             )}
           </button>
         ))}
