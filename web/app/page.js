@@ -1824,10 +1824,14 @@ function SettingsTab() {
 }
 
 export default function App() {
-  // Smart default: Picks before 6PM ET, Scores after
+  // Default tab: Picks in the early morning, Scores from 9am PT onward.
+  // Computed in PT explicitly (matching the backend's America/Los_Angeles day
+  // rollover) so it's consistent regardless of the device's timezone.
   const getDefaultTab = () => {
-    const hour = new Date().getHours();
-    return hour < 18 ? 'picks' : 'scores';
+    const ptHour = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+    ).getHours();
+    return ptHour < 9 ? 'picks' : 'scores';
   };
 
   const [tab, setTab] = useState(getDefaultTab);
