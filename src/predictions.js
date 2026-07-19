@@ -769,7 +769,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       const line = p.line || '';
 
       perfRows.push([
-        dateStr, sport, betType, game.away || '', game.home || '', game.commence || '',
+        dateStr, sport, betType, game.away || '', game.home || '', p._commence || game.commence || '',
         betType, pick, line, odds, units, `${confidence}%`, 0, 0, 0, 0, '', '',
         JSON.stringify(weights || {}),
         '',                // T: Notes (leave empty)
@@ -1039,7 +1039,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
   for (let i = 0; i < perfRows.length; i++) {
     const row = perfRows[i];
     const betType = row[6]; // G: bet_type
-    const gameKey = `${row[3]}@${row[4]}`; // D: away @ E: home
+    const gameKey = `${row[3]}@${row[4]}|${row[5] || ''}`; // D: away @ E: home | F: start_time (distinguishes doubleheader games)
     const dedupKey = `${gameKey}|${betType}`;
     const conf = parseFloat(String(row[11]).replace('%', '')) || 0; // L: confidence
     const units = parseFloat(row[10]) || 0; // K: units (tiebreaker)
@@ -1076,12 +1076,13 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       const eSport = row[1] || '';
       const eAway = row[3] || '';
       const eHome = row[4] || '';
+      const eStart = row[5] || ''; // F: start_time — keeps doubleheader Game 1 vs Game 2 distinct
       const eBetType = row[6] || '';
-      if (eSport === sport) existingKeys.add(`${eDate}|${eAway}@${eHome}|${eBetType}`);
+      if (eSport === sport) existingKeys.add(`${eDate}|${eAway}@${eHome}|${eStart}|${eBetType}`);
     }
     const finalRows = dedupedPerfRows.filter(row => {
       const rDate = String(row[0] || '').slice(0, 10);
-      const key = `${rDate}|${row[3]}@${row[4]}|${row[6]}`;
+      const key = `${rDate}|${row[3]}@${row[4]}|${row[5] || ''}|${row[6]}`;
       return !existingKeys.has(key);
     });
     const crossDupes = dedupedPerfRows.length - finalRows.length;
@@ -1109,6 +1110,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           date: String(r[0] || '').replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'), // MM/DD/YYYY → YYYY-MM-DD
           league: r[1] || '',
           game: `${r[3]} @ ${r[4]}`,
+          start_time: r[5] || null, // F: game start time (ISO); distinguishes doubleheader games + drives app display
           market: r[6] || '',
           pick: r[7] || '',
           line: parseFloat(r[8]) || null,

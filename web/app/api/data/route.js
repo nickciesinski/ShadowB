@@ -109,7 +109,7 @@ export async function GET() {
     // on error so the Sheets fallbacks below still work.
     const sbTodayQ = sb
       ? sb.from('performance_log')
-          .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
+          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result')
           .eq('date', isoToday)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
@@ -138,7 +138,7 @@ export async function GET() {
         const gp = (r.game || '').split(' @ ');
         return {
           date: todayStr, league: r.league || '', market: r.market || '',
-          away: gp[0] || '', home: gp[1] || '', startTime: '', betType: r.market || '',
+          away: gp[0] || '', home: gp[1] || '', startTime: r.start_time || '', betType: r.market || '',
           pick: r.pick || '', line: r.line != null ? String(r.line) : '',
           odds: r.odds || -110, units: r.final_units || 0,
           confidence: r.confidence != null ? String(r.confidence) : '', result: r.result || '',

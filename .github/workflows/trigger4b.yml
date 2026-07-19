@@ -1,0 +1,31 @@
+name: Trigger 4b — MLB Re-check (doubleheader nightcaps)
+
+on:
+  schedule:
+    - cron: '0 13 * * *'  # 6:00 AM PT (13:00 UTC) — after doubleheader nightcap odds post
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Re-check MLB predictions (idempotent — adds only newly-posted games)
+        run: node src/triggers.js trigger4b
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RANKINGS_SPREADSHEET_ID: ${{ secrets.RANKINGS_SPREADSHEET_ID }}
+          NODE_ENV: production

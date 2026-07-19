@@ -557,6 +557,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     pick._features = features;
     pick._homeTeam = game.home;
     pick._awayTeam = game.away;
+    pick._commence = game.commence || ''; // per-game start time; distinguishes doubleheader Game 1 vs Game 2 downstream
   }
 
   return picks;

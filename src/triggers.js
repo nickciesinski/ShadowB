@@ -56,6 +56,15 @@ const TRIGGERS = {
     await generateNFLPredictions();
   }),
 
+  // Trigger 4b: 6:00 AM PT → MLB-only re-check. Catches doubleheader nightcaps
+  // (and any other MLB games) whose odds weren't posted during the overnight
+  // run. Idempotent: generateMLBPredictions only inserts games not already
+  // logged today — keyed by matchup + market + start_time — so it never
+  // re-adds the morning's games, only the newly-available ones.
+  trigger4b: withMonitoring('trigger4b', async () => {
+    await generateMLBPredictions();
+  }),
+
   // Trigger 5: DISABLED — trigger4 already runs all 4 sports sequentially.
   // Running NHL again here caused 49 duplicate picks in the Performance Log.
   // Kept as no-op so the workflow dispatch doesn't error.
