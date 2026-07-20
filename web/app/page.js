@@ -150,10 +150,96 @@ function getTrend(picks, game) {
   if (!picks.length || !game || game.status === 'pre') return null;
   let score = 0;
   for (const p of picks) {
-    const s = getPickStatus(p, game);
+    const s = getEffectiveStatus(p, game);
     score += s === 'winning' ? 1 : s === 'losing' ? -1 : 0;
   }
   return score / picks.length;
+}
+
+// Pace-aware LIVE read (only meaningful when game.status === 'in').
+// Returns: 'clinched-win' | 'good' | 'neutral' | 'bad' | 'clinched-loss'.
+// Moneyline/spread read directly off the current margin (meaningful even early).
+// Totals project the finish from pace and stay 'neutral' until enough of the
+// game has elapsed — so a total isn't called a miss just because the score is
+// low early (e.g. Over 8.5 at 1-0 in the 1st reads "too early", not a loss).
+function getLiveState(pick, game) {
+  if (!game || game.awayScore == null || game.homeScore == null) return 'neutral';
+  const aS = game.awayScore, hS = game.homeScore;
+  const bt = (pick.betType || pick.market || '').toLowerCase();
+  const pickTeam = (pick.pick || '').toLowerCase();
+  const home = (game.home || '').toLowerCase();
+  const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
+
+  if (bt === 'moneyline') {
+    if (aS === hS) return 'neutral';
+    const leadOwn = pickedHome ? hS - aS : aS - hS;
+    return leadOwn > 0 ? 'good' : 'bad';
+  }
+  if (bt === 'spread') {
+    const line = parseFloat(pick.line) || 0;
+    const margin = pickedHome ? (hS + line) - aS : (aS + line) - hS; // >0 = covering
+    if (Math.abs(margin) < 0.5) return 'neutral';
+    return margin > 0 ? 'good' : 'bad';
+  }
+  if (bt === 'total') {
+    const total = aS + hS;
+    const line = parseFloat(pick.line) || 0;
+    const isOver = pickTeam.includes('over');
+    // Mathematical clinch — the score only goes up, so once past the line it's settled.
+    if (isOver && total > line) return 'clinched-win';
+    if (!isOver && total >= line) return 'clinched-loss';
+    const elapsed = getGameProgress(game); // 0..~0.98
+    const MIN_READ = 0.25; // no confident call before ~25% of the game
+    if (elapsed < MIN_READ) return 'neutral';
+    const projected = total / elapsed; // linear pace projection
+    const cushion = 0.10;               // 10% buffer to avoid flip-flopping
+    if (isOver) {
+      if (projected >= line * (1 + cushion)) return 'good';
+      if (projected <= line * (1 - cushion) && elapsed >= 0.4) return 'bad';
+      return 'neutral';
+    }
+    if (projected <= line * (1 - cushion)) return 'good';
+    if (projected >= line * (1 + cushion) && elapsed >= 0.4) return 'bad';
+    return 'neutral';
+  }
+  return 'neutral';
+}
+
+// Unified status for tallies/counters: pace-aware while live, definitive when final.
+function getEffectiveStatus(pick, game) {
+  if (game && game.status === 'in') {
+    const s = getLiveState(pick, game);
+    if (s === 'good' || s === 'clinched-win') return 'winning';
+    if (s === 'bad' || s === 'clinched-loss') return 'losing';
+    return 'even'; // neutral / too early
+  }
+  return getPickStatus(pick, game);
+}
+
+// Dot/accent color for a pick: green/red/amber while live, green/red/gray when final.
+function pickColor(pick, game) {
+  if (game && game.status === 'in') {
+    const s = getLiveState(pick, game);
+    if (s === 'good' || s === 'clinched-win') return '#34D399';
+    if (s === 'bad' || s === 'clinched-loss') return '#F87171';
+    return '#F59E0B'; // neutral / too early
+  }
+  const r = getPickStatus(pick, game);
+  return r === 'winning' ? '#34D399' : r === 'losing' ? '#F87171' : '#64748B';
+}
+
+// Icon node next to a pick: colored circle while live (✓/✗ once clinched),
+// emoji only once the game is final.
+function statusIcon(pick, game) {
+  if (game && game.status === 'in') {
+    const s = getLiveState(pick, game);
+    if (s === 'clinched-win') return <span style={{ color: '#34D399', fontWeight: 900 }}>✓</span>;
+    if (s === 'clinched-loss') return <span style={{ color: '#F87171', fontWeight: 900 }}>✗</span>;
+    const c = s === 'good' ? '#34D399' : s === 'bad' ? '#F87171' : '#F59E0B';
+    return <span style={{ display: 'inline-block', width: 11, height: 11, borderRadius: '50%', background: c }} />;
+  }
+  const r = getPickStatus(pick, game);
+  return r === 'winning' ? '✅' : r === 'losing' ? '❌' : '➖';
 }
 
 function sortGames(games) {
@@ -600,7 +686,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
       const origPick = d.gamePicks[di];
       // When My Bets filter active, only count user's actual bets
       if (sf === 'My Bets' && origPick && !isBet(origPick)) continue;
-      const st = getPickStatus(dp, d.game);
+      const st = getEffectiveStatus(dp, d.game);
       // For unit calc, use the real opposite odds for fades
       const isFaded = origPick && isFade(origPick);
       const betOdds = isFaded ? findOppositePick(origPick, picks).odds : origPick?.odds;
@@ -668,8 +754,8 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
         {gamePicks.map((p, j) => {
           const faded = isFade(p);
           const displayPick = faded ? flipPick(p) : p;
-          const status = getPickStatus(displayPick, game);
-          const icon = status === 'winning' ? '✅' : status === 'losing' ? '❌' : '➖';
+          const status = getEffectiveStatus(displayPick, game);
+          const icon = statusIcon(displayPick, game);
           const selected = isBet(p);
           let rowBg = 'transparent';
           if (selected) rowBg = status === 'winning' ? 'rgba(16,185,129,0.15)' : status === 'losing' ? 'rgba(220,38,38,0.15)' : (faded ? 'rgba(255,199,44,0.12)' : 'rgba(75,156,211,0.12)');
@@ -823,17 +909,15 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
             <div style={{ display: 'flex', justifyContent: 'center', gap: 3, marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
               {displayPicks.map((dp, di) => {
                 const origPick = gamePicks[di];
-                const st = getPickStatus(dp, game);
+                const st = getEffectiveStatus(dp, game);
                 const isInProgress = game.status === 'in';
                 const betted = origPick && isBet(origPick);
                 const faded = origPick && isFade(origPick);
                 const selected = betted || faded;
-                let dotColor = '#475569';
+                let dotColor = pickColor(dp, game); // green/red/amber live, green/red/gray final
                 let anim = 'none';
-                if (st === 'winning') { dotColor = '#10B981'; if (isInProgress) anim = 'flashGreen 1.5s ease-in-out infinite'; }
-                else if (st === 'losing') { dotColor = '#EF4444'; if (isInProgress) anim = 'flashRed 1.5s ease-in-out infinite'; }
-                else if (st === 'even') { dotColor = '#6B7280'; }
-                else if (st === 'pending') { dotColor = '#475569'; }
+                if (isInProgress && st === 'winning') anim = 'flashGreen 1.5s ease-in-out infinite';
+                else if (isInProgress && st === 'losing') anim = 'flashRed 1.5s ease-in-out infinite';
                 const bt = (dp.betType || dp.market || '').toLowerCase();
                 const label = bt === 'moneyline' ? 'M' : bt === 'spread' ? 'S' : bt === 'total' ? 'T' : '?';
                 const ringColor = faded ? '#FFC72C' : betted ? '#4B9CD3' : 'transparent';
