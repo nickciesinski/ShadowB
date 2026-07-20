@@ -511,10 +511,10 @@ function computeSafeWeightUpdates(currentWeights, winnerMods) {
   return { proposed, changes, clamped };
 }
 
-function updateCsvFile(league, currentWeights, proposedWeights) {
-  const csvPath = path.join(__dirname, '..', 'weights', `Weights_${league}.csv`);
-  if (!fs.existsSync(csvPath)) return false;
-
+function persistWeights(league, currentWeights, proposedWeights) {
+  // Persist tuned weights to config/model-params.<LEAGUE>.json — the runtime
+  // source of truth. The legacy weights/Weights_*.csv mirror was retired
+  // (R5.2): nothing at runtime read it and this write duplicated the JSON.
   const rows = [['market', 'key', 'weight']];
 
   // Params first (unchanged)
@@ -530,9 +530,6 @@ function updateCsvFile(league, currentWeights, proposedWeights) {
     }
   }
 
-  const csv = rows.map(r => r.join(',')).join('\n') + '\n';
-  fs.writeFileSync(csvPath, csv);
-  // Source of truth is the JSON param store; keep it in sync (runtime reads this).
   paramStore.setRows(league, rows);
   return true;
 }
@@ -829,10 +826,10 @@ async function main() {
       report.changesByLeague[league] = changes;
 
       if (!DRY_RUN) {
-        updateCsvFile(league, current, proposed);
-        console.log(`  ${league}: CSV updated`);
+        persistWeights(league, current, proposed);
+        console.log(`  ${league}: params updated`);
       } else {
-        console.log(`  ${league}: [DRY RUN] would update CSV`);
+        console.log(`  ${league}: [DRY RUN] would update params`);
       }
     }
 

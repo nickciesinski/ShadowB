@@ -18,7 +18,7 @@
  * Cowork loop:
  *   1. Sunday morning scheduled task runs this script
  *   2. Task reads the .md + .json, decides weight changes
- *   3. Task edits weights/Weights_<LEAGUE>.csv with proposed values
+ *   3. Task edits config/model-params.<LEAGUE>.json with proposed values
  *   4. Task pings user to review diff + run apply-weights workflow
  *
  * Usage:
@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const db = require('../src/db');
+const weightsSource = require('../src/weights-source');
 
 const LEAGUES = ['MLB', 'NBA', 'NHL', 'NFL'];
 const OUT_DIR = path.join(__dirname, '..', 'weight-reviews');
@@ -42,18 +43,9 @@ function dateNDaysAgo(n) {
   return d.toISOString().slice(0, 10);
 }
 
-/** Read a weights CSV from the repo (source of truth for Weights_* sheets). */
-function readWeightsCsv(league) {
-  const p = path.join(__dirname, '..', 'weights', `Weights_${league}.csv`);
-  if (!fs.existsSync(p)) return null;
-  const text = fs.readFileSync(p, 'utf8');
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  const [header, ...rest] = lines;
-  const rows = rest.map(l => {
-    const [market, key, weight] = l.split(',');
-    return { market: (market || '').trim(), key: (key || '').trim(), weight: parseFloat(weight) };
-  });
-  return { header, rows };
+/** Read a league's weights from the JSON param store (runtime source of truth). */
+function readWeights(league) {
+  return weightsSource.readWeights(league);
 }
 
 /** Query Supabase for league|market performance in a rolling window. */
@@ -147,9 +139,9 @@ function renderPerfTable(title, perf) {
 }
 
 function renderWeightsBlock(league) {
-  const csv = readWeightsCsv(league);
-  if (!csv) return `### ${league}\n\n_weights/Weights_${league}.csv not found_\n`;
-  let out = `### ${league} — current weights (\`weights/Weights_${league}.csv\`)\n\n`;
+  const csv = readWeights(league);
+  if (!csv) return `### ${league}\n\n_config/model-params.${league}.json not found_\n`;
+  let out = `### ${league} — current weights (\`config/model-params.${league}.json\`)\n\n`;
   out += '```csv\n' + csv.header + '\n';
   for (const r of csv.rows) {
     const market = r.market || '';
@@ -180,11 +172,10 @@ async function main() {
   md += `# Shadow Bets — Weekly Weight Analysis\n\n`;
   md += `**Generated:** ${new Date().toISOString()}\n`;
   md += `**Window:** last ${customDays || 7} days (primary) and 30 days (trend)\n\n`;
-  md += `This report is the input for the weekly Cowork weight-tuning task. Each league has current weight coefficients (from \`weights/Weights_<LEAGUE>.csv\`) followed by recent performance. Use the "Suggestion" column as a starting point — decisions should consider sample size, variance, and trend (7d vs 30d).\n\n`;
+  md += `This report is the input for the weekly Cowork weight-tuning task. Each league has current weight coefficients (from \`config/model-params.<LEAGUE>.json\`) followed by recent performance. Use the "Suggestion" column as a starting point — decisions should consider sample size, variance, and trend (7d vs 30d).\n\n`;
   md += `## How to apply proposed changes\n\n`;
-  md += `1. Edit \`weights/Weights_<LEAGUE>.csv\` directly with new values\n`;
+  md += `1. Edit \`config/model-params.<LEAGUE>.json\` directly with new values (the runtime source of truth), or let the optimizer tune it\n`;
   md += `2. Commit to main — GitHub will diff it for review\n`;
-  md += `3. Run workflow \`apply-weights.yml\` (or \`node scripts/apply-weights.js\` locally) to push to Google Sheets\n`;
   md += `4. For \`PERFORMANCE_MODIFIERS\` changes, edit \`src/predictions.js\` directly (hardcoded map near line 100)\n\n`;
 
   md += `## Tuning guardrails\n\n`;
@@ -220,7 +211,7 @@ async function main() {
     performance_modifiers: modifiers,
     performance_7d: perf7 || {},
     performance_30d: perf30 || {},
-    weights: Object.fromEntries(LEAGUES.map(L => [L, readWeightsCsv(L)])),
+    weights: Object.fromEntries(LEAGUES.map(L => [L, readWeights(L)])),
     guardrails: {
       weight_min: 0.0, weight_max: 5.0,
       modifier_min: 0.3, modifier_max: 1.5,

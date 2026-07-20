@@ -70,7 +70,7 @@ jobs:
           # streak must persist across weeks. Weights only change on applies.
           git add config/weight-promotion-state.json weight-reviews/auto-apply-*.json
           if [ "${{ steps.sweep.outputs.applied }}" = "true" ]; then
-            git add weights/Weights_*.csv config/model-params.*.json
+            git add config/model-params.*.json
           fi
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           if [ "${{ steps.sweep.outputs.applied }}" = "true" ]; then
