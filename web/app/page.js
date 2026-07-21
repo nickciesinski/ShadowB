@@ -1563,10 +1563,12 @@ function ResultsTab({ results, gradedProps, sf, bf, dateFilter, resultType, isBe
 // ── Live Scores Fetcher (ESPN) ──────────────────────────────────────
 async function fetchLiveScores() {
   const games = [];
-  for (const [league, cfg] of Object.entries(ESPN_SPORTS)) {
+  // Fetch all four leagues in PARALLEL (was sequential await-in-loop, which
+  // made the Scores tab wait on 4 round-trips in series).
+  await Promise.all(Object.entries(ESPN_SPORTS).map(async ([league, cfg]) => {
     try {
       const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${cfg.key}/${cfg.league}/scoreboard`);
-      if (!res.ok) continue;
+      if (!res.ok) return;
       const data = await res.json();
       for (const event of (data.events || [])) {
         const comp = event.competitions?.[0];
@@ -1690,7 +1692,7 @@ async function fetchLiveScores() {
         });
       }
     } catch (e) { /* skip */ }
-  }
+  }));
   return games;
 }
 
@@ -1906,6 +1908,37 @@ function SettingsTab() {
       </div>
     </div>
   );
+}
+
+// Placeholder card grid shown while data/scores load — gives instant structure
+// instead of a blank "Loading..." so the app feels responsive immediately.
+function LoadingSkeleton() {
+  const bar = (w, h, o) => ({ width: w, height: h, borderRadius: 4, background: `rgba(255,255,255,${o})` });
+  const cards = [0, 1, 2, 3, 4, 5].map(i => (
+    <div key={i} style={{
+      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 12, padding: 12, animation: 'shimmer 1.4s ease-in-out infinite', animationDelay: `${i * 0.08}s`,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={bar(34, 12, 0.08)} />
+        <div style={bar(44, 10, 0.06)} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={bar(88, 12, 0.09)} />
+        <div style={bar(18, 14, 0.09)} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={bar(76, 12, 0.09)} />
+        <div style={bar(18, 14, 0.09)} />
+      </div>
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+        <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(255,255,255,0.07)' }} />
+      </div>
+    </div>
+  ));
+  return <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 4 }}>{cards}</div>;
 }
 
 export default function App() {
@@ -2227,7 +2260,7 @@ export default function App() {
 
       {/* Content */}
       <div style={{ padding: '8px 12px 90px' }}>
-        {loading && <div style={{ textAlign: 'center', padding: 60, color: '#64748B' }}>Loading...</div>}
+        {loading && <LoadingSkeleton />}
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
         {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} liveGames={liveGames} lockAll={lockAll} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames.filter(g => {
