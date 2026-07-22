@@ -618,22 +618,12 @@ function flipPick(p) {
 function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
   const [expanded, setExpanded] = useState({});
   const [expandAll, setExpandAll] = useState(false);
-  const sportFiltered = liveGames.filter(g => {
-    if (sf === 'My Bets') {
-      return picks.some(p => p.league === g.league && p.away === g.away && p.home === g.home && isBet(p));
-    }
-    return sf === 'All' ? true : sf === 'Live' ? g.status === 'in' : g.league === sf;
-  });
-  const sorted = sortGames(sportFiltered);
-
-  // Abbreviate team names: use last word (e.g. "Golden State Warriors" → "Warriors")
-  const abbr = (name) => (name || '').split(' ').pop();
 
   // Doubleheader support: group games by matchup so picks can be assigned to the
-  // correct game. Without this, both games of a doubleheader match on
-  // league+away+home and every pick shows up on BOTH cards.
+  // correct game. Built from the FULL game list (not the filtered one) so a
+  // game's sibling set doesn't change with the active sport filter.
   const matchupGames = {};
-  for (const g of sorted) {
+  for (const g of liveGames) {
     const mk = `${g.league}|${g.away}@${g.home}`;
     if (!matchupGames[mk]) matchupGames[mk] = [];
     matchupGames[mk].push(g);
@@ -665,6 +655,21 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
     }
     return target === game;
   };
+
+  const sportFiltered = liveGames.filter(g => {
+    if (sf === 'My Bets') {
+      // Only show the specific game of a doubleheader that has a bet on it.
+      return picks.some(p =>
+        p.league === g.league && p.away === g.away && p.home === g.home &&
+        pickBelongsToGame(p, g) && isBet(p)
+      );
+    }
+    return sf === 'All' ? true : sf === 'Live' ? g.status === 'in' : g.league === sf;
+  });
+  const sorted = sortGames(sportFiltered);
+
+  // Abbreviate team names: use last word (e.g. "Golden State Warriors" → "Warriors")
+  const abbr = (name) => (name || '').split(' ').pop();
 
   // Compute game data once for both compact and expanded views
   const gameData = sorted.map((game, i) => {
