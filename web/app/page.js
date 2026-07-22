@@ -629,10 +629,48 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
   // Abbreviate team names: use last word (e.g. "Golden State Warriors" → "Warriors")
   const abbr = (name) => (name || '').split(' ').pop();
 
+  // Doubleheader support: group games by matchup so picks can be assigned to the
+  // correct game. Without this, both games of a doubleheader match on
+  // league+away+home and every pick shows up on BOTH cards.
+  const matchupGames = {};
+  for (const g of sorted) {
+    const mk = `${g.league}|${g.away}@${g.home}`;
+    if (!matchupGames[mk]) matchupGames[mk] = [];
+    matchupGames[mk].push(g);
+  }
+  // Earliest first, so siblings[0] is Game 1.
+  for (const mk of Object.keys(matchupGames)) {
+    matchupGames[mk].sort((a, b) => (a.gameDate || '').localeCompare(b.gameDate || ''));
+  }
+
+  // For a doubleheader, a pick belongs to the game whose start time is closest
+  // to the pick's own start time. Picks with no start time (legacy rows) fall
+  // back to Game 1 so they appear exactly once rather than on every card.
+  const pickBelongsToGame = (p, game) => {
+    const siblings = matchupGames[`${game.league}|${game.away}@${game.home}`] || [];
+    if (siblings.length < 2) return true; // not a doubleheader — nothing to split
+    const t = Date.parse(p.startTime || '');
+    let target = null;
+    if (isNaN(t)) {
+      target = siblings[0];
+    } else {
+      let bestDiff = Infinity;
+      for (const s of siblings) {
+        const st = Date.parse(s.gameDate || '');
+        if (isNaN(st)) continue;
+        const diff = Math.abs(st - t);
+        if (diff < bestDiff) { bestDiff = diff; target = s; }
+      }
+      if (!target) target = siblings[0];
+    }
+    return target === game;
+  };
+
   // Compute game data once for both compact and expanded views
   const gameData = sorted.map((game, i) => {
     const gamePicks = picks.filter(p =>
       p.league === game.league && p.away === game.away && p.home === game.home &&
+      pickBelongsToGame(p, game) &&
       (bf === 'All' || (p.betType || p.market || '').toLowerCase() === bf.toLowerCase())
     );
     const displayPicks = gamePicks.map(p => isFade(p) ? flipPick(p) : p);
