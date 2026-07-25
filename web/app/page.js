@@ -15,13 +15,13 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
 }
 
 // ── Constants ───────────────────────────────────────────────────────
-const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL'];
+const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL', 'EPL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
 const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
 // PLATFORMS is built dynamically from props data (see bookPills in App)
-const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#1D4ED8', NFL: '#795548' };
-const LEAGUE_TEXT = { NBA: 'white', NHL: 'white', MLB: 'white', NFL: 'white' }; // all league badges dark enough for white text
-const LEAGUE_BG = { NBA: 'rgba(249,115,22,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(29,78,216,0.12)', NFL: 'rgba(121,85,72,0.12)' };
+const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#1D4ED8', NFL: '#795548', EPL: '#37003C' };
+const LEAGUE_TEXT = { NBA: 'white', NHL: 'white', MLB: 'white', NFL: 'white', EPL: 'white' }; // all league badges dark enough for white text
+const LEAGUE_BG = { NBA: 'rgba(249,115,22,0.12)', NHL: 'rgba(107,114,128,0.12)', MLB: 'rgba(29,78,216,0.12)', NFL: 'rgba(121,85,72,0.12)', EPL: 'rgba(55,0,60,0.12)' };
 const DATE_FILTERS = ['Today', 'Yesterday', 'Last 7 Days', 'All Time'];
 const TAB_ACCENTS = {
   picks: { gradient: 'linear-gradient(135deg, #059669 0%, #10B981 50%, #064E3B 100%)', accent: '#10B981', glow: 'rgba(16,185,129,0.3)' },
@@ -36,10 +36,18 @@ const ESPN_SPORTS = {
   NHL: { key: 'hockey', league: 'nhl' },
   MLB: { key: 'baseball', league: 'mlb' },
   NFL: { key: 'football', league: 'nfl' },
+  EPL: { key: 'soccer', league: 'eng.1' },
 };
 
 // ── Team Logos ──────────────────────────────────────────────────────
 const TEAM_CODES = {
+  // EPL (ESPN soccer numeric ids)
+  'Arsenal': '359', 'Aston Villa': '362', 'AFC Bournemouth': '349', 'Brentford': '337',
+  'Brighton & Hove Albion': '331', 'Burnley': '379', 'Chelsea': '363', 'Crystal Palace': '384',
+  'Everton': '368', 'Fulham': '370', 'Leeds United': '357', 'Liverpool': '364',
+  'Manchester City': '382', 'Manchester United': '360', 'Newcastle United': '361',
+  'Nottingham Forest': '393', 'Sunderland': '366', 'Tottenham Hotspur': '367',
+  'West Ham United': '371', 'Wolverhampton Wanderers': '380',
   // NBA
   'Atlanta Hawks': 'atl', 'Boston Celtics': 'bos', 'Brooklyn Nets': 'bkn', 'Charlotte Hornets': 'cha', 'Chicago Bulls': 'chi',
   'Cleveland Cavaliers': 'cle', 'Dallas Mavericks': 'dal', 'Denver Nuggets': 'den', 'Detroit Pistons': 'det', 'Golden State Warriors': 'gs',
@@ -80,7 +88,7 @@ const confBg = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? 'rgba(16,1
 function teamLogo(teamName, league) {
   const code = TEAM_CODES[teamName];
   if (!code) return null;
-  const sport = { NBA: 'nba', NHL: 'nhl', MLB: 'mlb', NFL: 'nfl' }[league] || 'nba';
+  const sport = { NBA: 'nba', NHL: 'nhl', MLB: 'mlb', NFL: 'nfl', EPL: 'soccer' }[league] || 'nba';
   return `https://a.espncdn.com/i/teamlogos/${sport}/500/${code}.png`;
 }
 
@@ -123,6 +131,14 @@ function getPickStatus(pick, game) {
     const pickTeam = (pick.pick || '').toLowerCase();
     const home = (game.home || '').toLowerCase();
     const away = (game.away || '').toLowerCase();
+    if (pick.league === 'EPL') {
+      // 3-way: Draw is a real outcome, not a push.
+      const level = aS === hS;
+      if (pickTeam === 'draw') return level ? 'winning' : 'losing';
+      const pickedHomeE = pickTeam.includes(home) || home.includes(pickTeam);
+      if (level) return 'losing';
+      return pickedHomeE ? (hS > aS ? 'winning' : 'losing') : (aS > hS ? 'winning' : 'losing');
+    }
     if (aS === hS) return 'even';
     const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
     if (pickedHome) return hS > aS ? 'winning' : 'losing';
