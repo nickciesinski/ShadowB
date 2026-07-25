@@ -187,6 +187,8 @@ function getLiveState(pick, game) {
   const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
 
   if (bt === 'moneyline') {
+    // EPL is 3-way: a "Draw" pick trends well while level, poorly once someone leads.
+    if (pick.league === 'EPL' && pickTeam === 'draw') return aS === hS ? 'good' : 'bad';
     if (aS === hS) return 'neutral';
     const leadOwn = pickedHome ? hS - aS : aS - hS;
     return leadOwn > 0 ? 'good' : 'bad';
@@ -260,7 +262,7 @@ function statusIcon(pick, game) {
 
 function sortGames(games) {
   const stateOrder = { in: 0, post: 2, pre: 3 };
-  const leagueOrder = { NBA: 0, NHL: 1, MLB: 2, NFL: 3 };
+  const leagueOrder = { NBA: 0, NHL: 1, MLB: 2, NFL: 3, EPL: 4 };
   return [...games].sort((a, b) => {
     // Close games always first
     const aClose = a.status === 'in' && a.isLate && Math.abs(a.awayScore - a.homeScore) <= 5;
@@ -288,7 +290,7 @@ function getGameProgress(game) {
   if (!game || game.status === 'pre') return 0;
   if (game.status === 'post' || game.status === 'postponed') return 1;
   const pNum = game.periodNum || 0;
-  const totalPeriods = { NBA: 4, NHL: 3, NFL: 4, MLB: 9 }[game.league] || 4;
+  const totalPeriods = { NBA: 4, NHL: 3, NFL: 4, MLB: 9, EPL: 2 }[game.league] || 4;
   // pNum is 1-indexed current period; for MLB "Top 5th" = period 5
   // Base progress = completed periods / total
   const base = Math.max(0, (pNum - 1)) / totalPeriods;
@@ -1644,6 +1646,7 @@ async function fetchLiveScores() {
         if (league === 'NHL' && periodNum >= 3) isLate = true;
         if (league === 'NFL' && periodNum >= 4) isLate = true;
         if (league === 'MLB' && periodNum >= 7) isLate = true;
+        if (league === 'EPL' && periodNum >= 2) isLate = true;
 
         // Detect postponed/canceled/suspended
         const statusName = event.status?.type?.name || '';  // e.g. 'STATUS_POSTPONED', 'STATUS_CANCELED'
@@ -2236,13 +2239,13 @@ export default function App() {
     catch { return false; }
   });
   const activeLeagues = [...new Set(realGames.map(g => g.league))];
-  const activeLeaguePills = ['NBA', 'NHL', 'MLB', 'NFL'].filter(l => activeLeagues.includes(l));
+  const activeLeaguePills = ['NBA', 'NHL', 'MLB', 'NFL', 'EPL'].filter(l => activeLeagues.includes(l));
   // For picks/props, also include leagues from data even if no ESPN games yet
   const dataLeagues = data ? [...new Set([
     ...(data.todayPicks || []).map(p => p.league),
     ...(data.props || []).map(p => p.league),
   ])].filter(Boolean) : [];
-  const allActiveLeagues = [...new Set([...activeLeaguePills, ...dataLeagues])].filter(l => ['NBA', 'NHL', 'MLB', 'NFL'].includes(l));
+  const allActiveLeagues = [...new Set([...activeLeaguePills, ...dataLeagues])].filter(l => ['NBA', 'NHL', 'MLB', 'NFL', 'EPL'].includes(l));
 
   const propBetCount = [...myBets.entries()].filter(([k]) => k.startsWith('prop|')).length;
   const sportPills = tab === 'scores'
