@@ -975,33 +975,41 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
               {isPre && <span style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>vs</span>}
             </div>
           </div>
-          {/* Bottom: pick status dots with M/S/T labels */}
+          {/* Bottom: pick dots — team logo (ML/spread) or over/under arrow (total).
+              Ring color = live/final status; solid ring = your bet, dashed = model pick.
+              Fixed Moneyline→Spread→Total order so position tells you the market. */}
           {displayPicks.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 3, marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              {displayPicks.map((dp, di) => {
-                const origPick = gamePicks[di];
-                const st = getEffectiveStatus(dp, game);
-                const isInProgress = game.status === 'in';
-                const betted = origPick && isBet(origPick);
-                const faded = origPick && isFade(origPick);
-                const selected = betted || faded;
-                let dotColor = pickColor(dp, game); // green/red/amber live, green/red/gray final
-                let anim = 'none';
-                if (isInProgress && st === 'winning') anim = 'flashGreen 1.5s ease-in-out infinite';
-                else if (isInProgress && st === 'losing') anim = 'flashRed 1.5s ease-in-out infinite';
-                const bt = (dp.betType || dp.market || '').toLowerCase();
-                const label = bt === 'moneyline' ? 'M' : bt === 'spread' ? 'S' : bt === 'total' ? 'T' : '?';
-                const ringColor = faded ? '#FFC72C' : betted ? '#4B9CD3' : 'transparent';
-                return (
-                  <span key={di} style={{
-                    width: 16, height: 16, borderRadius: '50%', background: dotColor,
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 7, fontWeight: 800, color: 'white', animation: anim,
-                    boxShadow: selected ? `0 0 0 2px ${ringColor}, 0 0 6px ${ringColor}` : 'none',
-                    border: selected ? `1.5px solid ${ringColor}` : '1.5px solid transparent',
-                  }}>{label}</span>
-                );
-              })}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 5, marginTop: 6, paddingTop: 4, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              {displayPicks
+                .map((dp, di) => ({ dp, orig: gamePicks[di] }))
+                .sort((a, b) => {
+                  const ord = x => ({ moneyline: 0, spread: 1, total: 2 }[(x.dp.betType || x.dp.market || '').toLowerCase()] ?? 3);
+                  return ord(a) - ord(b);
+                })
+                .map(({ dp, orig }, di) => {
+                  const mine = orig && (isBet(orig) || isFade(orig));
+                  const ringColor = pickColor(dp, game); // status: green/amber/red live, green/red/gray final
+                  const bt = (dp.betType || dp.market || '').toLowerCase();
+                  const isTotal = bt === 'total';
+                  const isOver = (dp.pick || '').toLowerCase().includes('over');
+                  const homeLast = (dp.home || '').split(' ').pop().toLowerCase();
+                  const pickedTeam = (dp.pick || '').toLowerCase().includes(homeLast) ? dp.home : dp.away;
+                  const logoUrl = !isTotal ? teamLogo(pickedTeam, dp.league || game.league) : null;
+                  const letter = bt === 'moneyline' ? 'M' : bt === 'spread' ? 'S' : 'T';
+                  return (
+                    <span key={di} title={dp.pick} style={{
+                      width: 22, height: 22, borderRadius: '50%', background: 'rgba(255,255,255,0.06)',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      border: `2px ${mine ? 'solid' : 'dashed'} ${ringColor}`, overflow: 'hidden', flexShrink: 0,
+                    }}>
+                      {isTotal
+                        ? <span style={{ fontSize: 12, fontWeight: 900, color: ringColor, lineHeight: 1 }}>{isOver ? '↑' : '↓'}</span>
+                        : logoUrl
+                          ? <img src={logoUrl} alt="" style={{ width: 15, height: 15, objectFit: 'contain' }} />
+                          : <span style={{ fontSize: 8, fontWeight: 800, color: ringColor }}>{letter}</span>}
+                    </span>
+                  );
+                })}
             </div>
           )}
         </div>
