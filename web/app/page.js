@@ -1005,7 +1005,7 @@ function ScoresTab({ liveGames, picks, sf, bf, isBet, isFade }) {
                       {isTotal
                         ? <span style={{ fontSize: 12, fontWeight: 900, color: ringColor, lineHeight: 1 }}>{isOver ? '↑' : '↓'}</span>
                         : logoUrl
-                          ? <img src={logoUrl} alt="" style={{ width: 15, height: 15, objectFit: 'contain' }} />
+                          ? <img src={logoUrl} alt="" style={{ width: 16, height: 16, objectFit: 'contain', filter: 'drop-shadow(0.6px 0 0 #fff) drop-shadow(-0.6px 0 0 #fff) drop-shadow(0 0.6px 0 #fff) drop-shadow(0 -0.6px 0 #fff)' }} />
                           : <span style={{ fontSize: 8, fontWeight: 800, color: ringColor }}>{letter}</span>}
                     </span>
                   );
