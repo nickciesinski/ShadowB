@@ -17,7 +17,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
 // ── Constants ───────────────────────────────────────────────────────
 const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL', 'EPL'];
 const BET_TYPES = ['All', 'Spread', 'Moneyline', 'Total'];
-const CONFIDENCE_FILTERS = ['All Bets', '0.2u+'];
+const CONFIDENCE_FILTERS = ['All Bets', '0.2u+', 'Ranked'];
 // PLATFORMS is built dynamically from props data (see bookPills in App)
 const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#1D4ED8', NFL: '#795548', EPL: '#37003C' };
 const LEAGUE_TEXT = { NBA: 'white', NHL: 'white', MLB: 'white', NFL: 'white', EPL: 'white' }; // all league badges dark enough for white text
@@ -496,13 +496,23 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
     }
   }
 
-  if (!Object.keys(games).length) return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>No picks match filters</div>;
+  // Ranked mode: order games (and the picks within each) by unit size, largest
+  // first. Respects the active sport/bet-type filters (they run above).
+  const gameList = Object.values(games);
+  if (cf === 'Ranked') {
+    for (const g of gameList) g.picks.sort((a, b) => (b.units || 0) - (a.units || 0));
+    gameList.sort((a, b) =>
+      Math.max(...b.picks.map(p => p.units || 0)) - Math.max(...a.picks.map(p => p.units || 0))
+    );
+  }
+
+  if (!gameList.length) return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>No picks match filters</div>;
 
   return (
     <>
-      {cf !== '0.2u+' && sf === 'All' && bf === 'All' && <MorningSummary picks={dedupedPicks} isBet={isBet} isFade={isFade} onLockAll={lockAll} />}
-      {cf !== '0.2u+' && sf === 'All' && bf === 'All' && <BestBets picks={dedupedPicks} />}
-      {Object.values(games).map((g, i) => (
+      {cf === 'All Bets' && sf === 'All' && bf === 'All' && <MorningSummary picks={dedupedPicks} isBet={isBet} isFade={isFade} onLockAll={lockAll} />}
+      {cf === 'All Bets' && sf === 'All' && bf === 'All' && <BestBets picks={dedupedPicks} />}
+      {gameList.map((g, i) => (
         <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: LEAGUE_BG[g.league] || 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
