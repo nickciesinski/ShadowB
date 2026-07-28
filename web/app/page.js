@@ -67,7 +67,7 @@ const TEAM_CODES = {
   'Arizona Diamondbacks': 'ari', 'Atlanta Braves': 'atl', 'Baltimore Orioles': 'bal', 'Boston Red Sox': 'bos', 'Chicago Cubs': 'chc',
   'Chicago White Sox': 'cws', 'Cincinnati Reds': 'cin', 'Cleveland Guardians': 'cle', 'Colorado Rockies': 'col', 'Detroit Tigers': 'det',
   'Houston Astros': 'hou', 'Kansas City Royals': 'kc', 'Los Angeles Angels': 'laa', 'Los Angeles Dodgers': 'lad', 'Miami Marlins': 'mia',
-  'Milwaukee Brewers': 'mil', 'Minnesota Twins': 'min', 'New York Mets': 'nym', 'New York Yankees': 'nyy', 'Oakland Athletics': 'oak',
+  'Milwaukee Brewers': 'mil', 'Minnesota Twins': 'min', 'New York Mets': 'nym', 'New York Yankees': 'nyy', 'Oakland Athletics': 'ath', 'Athletics': 'ath',
   'Philadelphia Phillies': 'phi', 'Pittsburgh Pirates': 'pit', 'San Diego Padres': 'sd', 'San Francisco Giants': 'sf', 'Seattle Mariners': 'sea',
   'St. Louis Cardinals': 'stl', 'Tampa Bay Rays': 'tb', 'Texas Rangers': 'tex', 'Toronto Blue Jays': 'tor', 'Washington Nationals': 'wsh',
   // NFL
@@ -496,15 +496,12 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
     }
   }
 
-  // Ranked mode: order games (and the picks within each) by unit size, largest
-  // first. Respects the active sport/bet-type filters (they run above).
+  // Ranked mode: a flat list of every filtered pick, ordered by unit size
+  // (largest first) so top-5 / top-10 reads at a glance — not grouped by game.
   const gameList = Object.values(games);
-  if (cf === 'Ranked') {
-    for (const g of gameList) g.picks.sort((a, b) => (b.units || 0) - (a.units || 0));
-    gameList.sort((a, b) =>
-      Math.max(...b.picks.map(p => p.units || 0)) - Math.max(...a.picks.map(p => p.units || 0))
-    );
-  }
+  const rankedPicks = cf === 'Ranked'
+    ? gameList.flatMap(g => g.picks).sort((a, b) => (b.units || 0) - (a.units || 0))
+    : [];
 
   if (!gameList.length) return <div style={{ textAlign: 'center', color: '#64748B', padding: 40, fontSize: 14 }}>No picks match filters</div>;
 
@@ -512,7 +509,47 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
     <>
       {cf === 'All Bets' && sf === 'All' && bf === 'All' && <MorningSummary picks={dedupedPicks} isBet={isBet} isFade={isFade} onLockAll={lockAll} />}
       {cf === 'All Bets' && sf === 'All' && bf === 'All' && <BestBets picks={dedupedPicks} />}
-      {gameList.map((g, i) => (
+      {cf === 'Ranked' && rankedPicks.map((p, idx) => {
+        const selected = isBet(p);
+        const faded = isFade(p);
+        const display = faded ? findOppositePick(p, dedupedPicks) : p;
+        const bt = (p.betType || p.market || '').toLowerCase();
+        const isTotal = bt === 'total';
+        const displayIsOver = isTotal && (display.pick || '').toLowerCase().includes('over');
+        const displayLogoUrl = !isTotal ? teamLogo(display.pick, p.league) : null;
+        return (
+          <div key={idx} onClick={() => toggleBet(p)} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 5, cursor: 'pointer',
+            background: faded ? 'rgba(255,199,44,0.12)' : selected ? 'rgba(75,156,211,0.12)' : 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderLeft: faded ? '4px solid #FFC72C' : selected ? '4px solid #4B9CD3' : '4px solid transparent',
+            borderRadius: 10,
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#64748B', width: 20, textAlign: 'center', flexShrink: 0 }}>{idx + 1}</span>
+            <div style={{ width: 30, height: 30, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isTotal ? 'transparent' : 'rgba(255,255,255,0.08)', border: isTotal ? 'none' : '1px solid rgba(255,255,255,0.1)' }}>
+              {isTotal
+                ? <span style={{ fontSize: 18, fontWeight: 900, color: displayIsOver ? '#34D399' : '#F87171', lineHeight: 1 }}>{displayIsOver ? '▲' : '▼'}</span>
+                : displayLogoUrl
+                  ? <img src={displayLogoUrl} alt="" style={{ width: 22, height: 22, objectFit: 'contain' }} />
+                  : null}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: 9, fontWeight: 700, color: LEAGUE_TEXT[p.league] || 'white', background: LEAGUE_COLORS[p.league] || '#6B7280', padding: '1px 5px', borderRadius: 3 }}>{p.league}</span>
+                {faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#FFE08A', background: 'rgba(255,199,44,0.25)', padding: '1px 5px', borderRadius: 3 }}>FADE</span>}
+                {selected && !faded && <span style={{ fontSize: 9, fontWeight: 700, color: '#BAE0F5', background: 'rgba(75,156,211,0.25)', padding: '1px 5px', borderRadius: 3 }}>MY BET</span>}
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{display.pick}{display.line ? ` ${display.line}` : ''}</span>
+              </div>
+              <div style={{ fontSize: 10, color: '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(p.betType || p.market || '').toUpperCase()} · {p.away} @ {p.home}</div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#F1F5F9' }}>{p.units}u</div>
+              <div style={{ fontSize: 11, color: '#64748B' }}>{fmt(display.odds)}</div>
+            </div>
+          </div>
+        );
+      })}
+      {cf !== 'Ranked' && gameList.map((g, i) => (
         <div key={i} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 12, marginBottom: 8, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: LEAGUE_BG[g.league] || 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
