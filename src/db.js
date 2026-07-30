@@ -31,17 +31,38 @@ function isEnabled() {
 async function insertPerformanceRows(rows) {
   const sb = getClient();
   if (!sb) return { ok: false, inserted: 0, reason: 'supabase_not_configured' };
-  const { error } = await sb.from('performance_log').insert(rows);
-  if (error) {
-    // 2026-06-03: previously this only logged a warning and returned undefined,
-    // which let callers print "Dual-wrote N picks" while inserts silently failed
-    // for 41 days (missing approval_status column). Now we return an explicit
-    // failure object the caller can check, and log an alarming message so the
-    // failure is visible at glance.
-    console.error(`[db] insertPerformanceRows FAILED for ${rows.length} rows:`, error.message);
-    return { ok: false, inserted: 0, reason: error.message };
+
+  // Exactly-once locking is enforced by the DB: onConflict(pick_id) DO NOTHING.
+  // ignoreDuplicates:true = DO NOTHING (never DO UPDATE — that would let a later
+  // run overwrite an already-locked side/price, the exact failure we're killing).
+  // Rows lacking a pick_id (shouldn't happen in v2) fall back to a plain insert.
+  const withId = rows.filter(r => r && r.pick_id);
+  const withoutId = rows.filter(r => !r || !r.pick_id);
+  let inserted = 0;
+  const insertedPickIds = [];
+
+  if (withId.length) {
+    const { data, error } = await sb.from('performance_log')
+      .upsert(withId, { onConflict: 'pick_id', ignoreDuplicates: true })
+      .select('pick_id');
+    if (error) {
+      console.error(`[db] insertPerformanceRows UPSERT FAILED for ${withId.length} rows:`, error.message);
+      return { ok: false, inserted: 0, reason: error.message };
+    }
+    inserted += data ? data.length : 0;
+    if (data) for (const d of data) insertedPickIds.push(d.pick_id);
   }
-  return { ok: true, inserted: rows.length };
+
+  if (withoutId.length) {
+    const { error } = await sb.from('performance_log').insert(withoutId);
+    if (error) {
+      console.error(`[db] insertPerformanceRows FAILED (no pick_id) for ${withoutId.length} rows:`, error.message);
+      return { ok: false, inserted, reason: error.message };
+    }
+    inserted += withoutId.length;
+  }
+
+  return { ok: true, inserted, insertedPickIds };
 }
 
 async function getPerformanceStats({ days = 30, league, market } = {}) {

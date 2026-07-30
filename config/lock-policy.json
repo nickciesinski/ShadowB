@@ -1,0 +1,8 @@
+{
+  "_comment": "Eligibility window per league. max_days_out doubles as the commenceTimeTo bound on the odds fetch (one knob fixes volatility + volume). requires = data-readiness gate (lock only when the signal is present). edge_scale_per_day: effective_threshold = base * (1 + edge_scale_per_day * days_to_game), so far-out locks must clear a higher bar. Starting values per architecture proposal; §11.3 monthly job replaces these with measurement.",
+  "NFL": { "max_days_out": 7, "requires": ["injury_report"],    "edge_scale_per_day": 0.04 },
+  "NBA": { "max_days_out": 4, "requires": ["schedule_context"], "edge_scale_per_day": 0.08 },
+  "NHL": { "max_days_out": 3, "requires": ["goalie_projected"], "edge_scale_per_day": 0.10 },
+  "MLB": { "max_days_out": 2, "requires": ["probable_pitcher"], "edge_scale_per_day": 0.15 },
+  "EPL": { "max_days_out": 5, "requires": [],                   "edge_scale_per_day": 0.06 }
+}

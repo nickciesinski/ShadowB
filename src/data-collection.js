@@ -14,6 +14,7 @@ const { getValues, setValues, appendRows, clearSheet, ensureSheet } = require('.
 const { logApiCall } = require('./monitoring');
 const { persistGameOdds } = require('./odds-sink');
 const { persistSnapshotFirst } = require('./snapshot-sink');
+const LOCK_POLICY = require('../config/lock-policy.json');
 
 // Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
 // We log a flat $0.001/call placeholder so the API_Usage_Log has a signal to sum.
@@ -698,16 +699,24 @@ async function fetchOddsAndGrade() {
   console.log('[data-collection] Fetching odds + grading yesterday...');
 
   const allOddsRows = [['Timestamp', 'Sport', 'HomeTeam', 'AwayTeam', 'CommenceTime',
-    'Market', 'Outcome', 'Price', 'Point', 'BookmakerKey']];
+    'Market', 'Outcome', 'Price', 'Point', 'BookmakerKey', 'EventId']];
   const ts = new Date().toISOString();
 
   for (const [sportName, sportConfig] of Object.entries(SPORTS)) {
     try {
+      // Bound the fetch to the league's eligibility window. This is the single
+      // change that stops pricing the entire NFL/NHL season every day: we only
+      // ever see games close enough to matter. max_days_out comes from lock-policy.
+      const horizonDays = (LOCK_POLICY[sportName] && LOCK_POLICY[sportName].max_days_out) || 7;
+      const nowIso = new Date().toISOString().slice(0, 19) + 'Z';
+      const toIso = new Date(Date.now() + horizonDays * 864e5).toISOString().slice(0, 19) + 'Z';
       const params = new URLSearchParams({
         apiKey: ODDS_API_KEY,
         regions: 'us',
         markets: MARKETS.join(','),
         oddsFormat: 'american',
+        commenceTimeFrom: nowIso,
+        commenceTimeTo: toIso,
       });
       const url = `${ODDS_API_BASE}/sports/${sportConfig.key}/odds?${params}`;
       const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
@@ -734,6 +743,7 @@ async function fetchOddsAndGrade() {
                 outcome.price,
                 outcome.point || '',
                 bookmaker.key,
+                event.id || '',
               ]);
             }
           }

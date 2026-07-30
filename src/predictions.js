@@ -21,6 +21,7 @@ const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb, roundUnits } = require('./market-pricing');
 const { priceStats, selectGradedPrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const { applyApprovalFilters } = require('./approval-engine');
+const { gameKey: makeGameKey, pickId: makePickId, seasonOf } = require('./norm');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
 const { fetchProbablePitchers, remapStarterMapToGames } = require('./pitcher-data');
@@ -1103,9 +1104,39 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     // Dual-write to Supabase (non-blocking — log errors but don't fail the trigger)
     if (db.isEnabled() && finalRows && finalRows.length > 0) {
       try {
+        // Identity lookup from the odds feed (now carries event.id at col 10).
+        // Keyed away@home|commence. game_number derived from doubleheader grouping.
+        const eventIdByGame = {};      // "away@home|commence" -> event_id
+        const commencesByMatchup = {}; // "away@home" -> Set(commence)
+        for (const orow of (oddsRows || []).slice(1)) {
+          if (orow[1] !== sport) continue;
+          const oAway = orow[3], oHome = orow[2], oComm = orow[4] || '', oEvt = orow[10] || '';
+          const gk = `${oAway}@${oHome}|${oComm}`;
+          if (!eventIdByGame[gk] && oEvt) eventIdByGame[gk] = oEvt;
+          const mkk = `${oAway}@${oHome}`;
+          (commencesByMatchup[mkk] = commencesByMatchup[mkk] || new Set()).add(oComm);
+        }
+        const gameNumberOf = (away, home, commence) => {
+          const arr = [...(commencesByMatchup[`${away}@${home}`] || [])].sort();
+          const idx = arr.indexOf(commence);
+          return idx >= 0 ? idx + 1 : 1;
+        };
+        const nowIso = new Date().toISOString();
+
         const dbRows = finalRows.map((r) => {
         const mk = `${r[0]}|${r[3]}@${r[4]}|${r[6]}`;
         const meta = pickMetaMap[mk] || {};
+        // --- identity (v2 CLV lifecycle) ---
+        const away = r[3] || '', home = r[4] || '', commence = r[5] || '';
+        const market = r[6] || '';
+        const eventId = eventIdByGame[`${away}@${home}|${commence}`] || '';
+        const gameNumber = gameNumberOf(away, home, commence);
+        const gameDate = commence ? commence.slice(0, 10)
+          : String(r[0] || '').replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2');
+        const gKey = makeGameKey(eventId, r[1], away, home, gameDate, gameNumber);
+        const daysToGame = commence
+          ? Math.max(0, Math.round((new Date(commence).getTime() - Date.now()) / 864e5))
+          : null;
         return ({
           date: String(r[0] || '').replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2'), // MM/DD/YYYY → YYYY-MM-DD
           league: r[1] || '',
@@ -1124,6 +1155,21 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           market_prob: meta.market_prob || null,
           edge_driver: meta.edge_driver || 'base_model',
           pick_purpose: meta.pick_purpose || 'tracking',
+          // --- v2 CLV lifecycle identity + lock metadata ---
+          pick_id: makePickId(gKey, market),
+          game_key: gKey,
+          event_id: eventId || null,
+          game_number: gameNumber,
+          away_team: away,
+          home_team: home,
+          commence_time: commence || null,
+          game_date: gameDate || null,
+          locked_at: nowIso,
+          days_to_game: daysToGame,
+          season: seasonOf(r[1], gameDate),
+          status: 'open',
+          pick_regime: 'v2_clv',
+          model_prob: meta.predicted_prob || null,
         });
         });
         const dwResult = await db.insertPerformanceRows(dbRows);
