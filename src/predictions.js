@@ -1151,6 +1151,12 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           pick: r[7] || '',
           line: parseFloat(r[8]) || null,
           odds: parseInt(r[9]) || null,
+          // CLV baseline captured at lock: opening == last_seen at first write.
+          open_line: parseFloat(r[8]) || null,
+          open_odds: parseInt(r[9]) || null,
+          last_seen_line: parseFloat(r[8]) || null,
+          last_seen_odds: parseInt(r[9]) || null,
+          last_seen_at: nowIso,
           confidence: parseInt(String(r[11]).replace('%', '')) || null,
           final_units: parseFloat(r[10]) || 0,
           modifier: getPerformanceModifier(r[1], r[6]),
