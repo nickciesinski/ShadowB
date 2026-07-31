@@ -1102,7 +1102,12 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     }
 
     // Dual-write to Supabase (non-blocking — log errors but don't fail the trigger)
-    if (db.isEnabled() && finalRows && finalRows.length > 0) {
+    // The DB write is NOT gated by the sheet dedup (finalRows). Sheet dedup only
+    // decides what to prepend to the deprecated sheet; the DB gets every current
+    // pick and its onConflict(pick_id) upsert is the exactly-once arbiter. (Gating
+    // on finalRows meant a re-run whose picks were already in the sheet wrote
+    // nothing to the DB.)
+    if (db.isEnabled() && dedupedPerfRows && dedupedPerfRows.length > 0) {
       try {
         // Identity lookup from the odds feed (now carries event.id at col 10).
         // Keyed away@home|commence. game_number derived from doubleheader grouping.
@@ -1123,7 +1128,7 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         };
         const nowIso = new Date().toISOString();
 
-        const dbRows = finalRows.map((r) => {
+        const dbRows = dedupedPerfRows.map((r) => {
         const mk = `${r[0]}|${r[3]}@${r[4]}|${r[6]}`;
         const meta = pickMetaMap[mk] || {};
         // --- identity (v2 CLV lifecycle) ---
