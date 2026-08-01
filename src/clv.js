@@ -5,6 +5,13 @@
 //                           compute CLV, and mark the ticket 'closed'. No API cost.
 const db = require('./db');
 const { americanToImpliedProb } = require('./market-pricing');
+const { norm } = require('./norm');
+
+// ESPN scoreboard path per league (free, no key, no rate limit).
+const ESPN_PATH = {
+  MLB: 'baseball/mlb', NBA: 'basketball/nba', NHL: 'hockey/nhl',
+  NFL: 'football/nfl', EPL: 'soccer/eng.1',
+};
 
 // performance_log market names -> odds-feed market keys
 const MARKET_MAP = { moneyline: 'h2h', spread: 'spreads', total: 'totals' };
@@ -114,4 +121,103 @@ async function freezeClosedTickets() {
   return { frozen };
 }
 
-module.exports = { rollLastSeen, freezeClosedTickets };
+// American-odds profit for a win.
+function profit(odds, units) {
+  if (!odds || !units) return 0;
+  return odds > 0 ? units * (odds / 100) : units * (100 / Math.abs(odds));
+}
+
+// Grade a ticket against a final score. Returns 'W' | 'L' | 'P' | null.
+function gradeTicket(t, awayScore, homeScore) {
+  const market = t.market;
+  const line = t.line != null ? parseFloat(t.line) : 0;
+  const pick = t.pick || '';
+  const nPick = norm(pick), nHome = norm(t.home_team || '');
+  const pickedHome = nHome && (nPick.includes(nHome) || nHome.includes(nPick));
+
+  if (market === 'moneyline') {
+    if (awayScore === homeScore) return 'P';
+    const homeWon = homeScore > awayScore;
+    return pickedHome === homeWon ? 'W' : 'L';
+  }
+  if (market === 'spread') {
+    const margin = pickedHome ? (homeScore + line) - awayScore : (awayScore + line) - homeScore;
+    return margin > 0 ? 'W' : margin < 0 ? 'L' : 'P';
+  }
+  if (market === 'total') {
+    const total = awayScore + homeScore;
+    if (total === line) return 'P';
+    const isOver = /over/i.test(pick);
+    return isOver === (total > line) ? 'W' : 'L';
+  }
+  return null;
+}
+
+// Grade closed v2 tickets whose games have finished, by matching to ESPN finals.
+// Anchored on game_date (not pick_date), so a pick logged weeks early still grades.
+async function gradeClosedTickets() {
+  const sb = db.getClient();
+  if (!sb) return { graded: 0, reason: 'no_db' };
+
+  const cutoffIso = new Date(Date.now() - 4 * 3600e3).toISOString(); // started >4h ago ≈ final
+  const { data: tickets } = await sb.from('performance_log')
+    .select('pick_id, league, market, pick, line, odds, final_units, away_team, home_team, game_date, espn_event_id, commence_time')
+    .eq('pick_regime', 'v2_clv').eq('status', 'closed').is('graded_at', null)
+    .lt('commence_time', cutoffIso)
+    .order('commence_time', { ascending: true }).limit(500);
+  if (!tickets || !tickets.length) return { graded: 0 };
+
+  // Batch ESPN fetches by league + game_date.
+  const groups = {};
+  for (const t of tickets) (groups[`${t.league}|${t.game_date}`] = groups[`${t.league}|${t.game_date}`] || []).push(t);
+
+  let graded = 0;
+  for (const key of Object.keys(groups)) {
+    const [league, gameDate] = key.split('|');
+    const path = ESPN_PATH[league];
+    if (!path || !gameDate) continue;
+    let events = [];
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${gameDate.replace(/-/g, '')}`);
+      if (res.ok) { const j = await res.json(); events = j.events || []; }
+    } catch (e) { continue; }
+
+    const byId = {}, byTeams = {};
+    for (const e of events) {
+      const comp = e.competitions && e.competitions[0];
+      if (!comp) continue;
+      const cs = comp.competitors || [];
+      const h = cs.find(c => c.homeAway === 'home'), a = cs.find(c => c.homeAway === 'away');
+      if (!h || !a) continue;
+      const ev = {
+        id: e.id,
+        completed: !!(comp.status && comp.status.type && comp.status.type.completed),
+        awayScore: parseInt(a.score, 10), homeScore: parseInt(h.score, 10),
+        awayName: a.team && (a.team.displayName || a.team.name) || '',
+        homeName: h.team && (h.team.displayName || h.team.name) || '',
+      };
+      byId[e.id] = ev;
+      byTeams[`${norm(ev.awayName)}@${norm(ev.homeName)}`] = ev;
+    }
+
+    for (const t of groups[key]) {
+      let ev = t.espn_event_id ? byId[t.espn_event_id] : null;
+      if (!ev) ev = byTeams[`${norm(t.away_team)}@${norm(t.home_team)}`];
+      if (!ev || !ev.completed || !Number.isFinite(ev.awayScore) || !Number.isFinite(ev.homeScore)) continue;
+      const result = gradeTicket(t, ev.awayScore, ev.homeScore);
+      if (!result) continue;
+      const ur = result === 'W' ? profit(t.odds, t.final_units) : result === 'L' ? -(t.final_units || 0) : 0;
+      const { error } = await sb.from('performance_log').update({
+        result,
+        unit_return: Math.round(ur * 100) / 100,
+        away_score: ev.awayScore, home_score: ev.homeScore,
+        espn_event_id: ev.id, grade_source: 'espn',
+        graded_at: new Date().toISOString(), status: 'graded',
+      }).eq('pick_id', t.pick_id);
+      if (!error) graded++;
+    }
+  }
+  return { graded };
+}
+
+module.exports = { rollLastSeen, freezeClosedTickets, gradeClosedTickets, gradeTicket };

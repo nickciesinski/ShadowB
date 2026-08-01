@@ -56,14 +56,16 @@ const TRIGGERS = {
     await generateNFLPredictions();
   }),
 
-  // CLV freeze: hourly. Roll last_seen from the freshest odds snapshot, then
-  // freeze any open v2 ticket whose game has started (close_* := last_seen_*,
-  // compute CLV). No Odds API cost — reads the already-captured snapshot.
+  // CLV freeze: hourly. Roll last_seen from the freshest odds snapshot, freeze
+  // any open v2 ticket whose game has started (close_* := last_seen_*, compute
+  // CLV), then grade any closed ticket whose game has finished (ESPN by
+  // game_date). No Odds API cost — reads snapshot + free ESPN scoreboard.
   freeze: withMonitoring('freeze', async () => {
     const clv = require('./clv');
     const rolled = await clv.rollLastSeen();
     const frozen = await clv.freezeClosedTickets();
-    console.log(`[freeze] rolled last_seen on ${rolled.updated || 0} open tickets; froze ${frozen.frozen || 0}`);
+    const graded = await clv.gradeClosedTickets();
+    console.log(`[freeze] rolled ${rolled.updated || 0}; froze ${frozen.frozen || 0}; graded ${graded.graded || 0}`);
   }),
 
   // Trigger 4b: 6:00 AM PT → MLB-only re-check. Catches doubleheader nightcaps
