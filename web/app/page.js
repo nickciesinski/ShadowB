@@ -499,6 +499,14 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
   // Ranked mode: a flat list of every filtered pick, ordered by unit size
   // (largest first) so top-5 / top-10 reads at a glance — not grouped by game.
   const gameList = Object.values(games);
+  // Display games chronologically by first pitch (no-time games last) so the
+  // order doesn't depend on the DB/API row order.
+  gameList.sort((a, b) => {
+    const sa = a.startTime || '', sb = b.startTime || '';
+    if (!sa) return 1;
+    if (!sb) return -1;
+    return sa.localeCompare(sb);
+  });
   const rankedPicks = cf === 'Ranked'
     ? gameList.flatMap(g => g.picks).sort((a, b) => (b.units || 0) - (a.units || 0))
     : [];
