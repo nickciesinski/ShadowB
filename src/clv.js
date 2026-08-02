@@ -171,16 +171,35 @@ async function gradeClosedTickets() {
   const groups = {};
   for (const t of tickets) (groups[`${t.league}|${t.game_date}`] = groups[`${t.league}|${t.game_date}`] || []).push(t);
 
-  let graded = 0;
+  let graded = 0, unmatched = 0;
   for (const key of Object.keys(groups)) {
     const [league, gameDate] = key.split('|');
     const path = ESPN_PATH[league];
     if (!path || !gameDate) continue;
-    let events = [];
-    try {
-      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${gameDate.replace(/-/g, '')}`);
-      if (res.ok) { const j = await res.json(); events = j.events || []; }
-    } catch (e) { continue; }
+
+    // 2026-08-02: game_date is currently derived from the UTC slice of
+    // commence_time (predictions.js), so an evening ET game is stamped with the
+    // NEXT day's date. A single-date scoreboard fetch therefore missed those
+    // games entirely and they sat at status='closed' forever, silently.
+    // Fetch game_date AND the prior date and merge — ESPN is free and
+    // unlimited, and this is immune to whichever day-boundary convention ESPN
+    // uses. Keep this even after game_date is fixed: it costs one free call and
+    // permanently closes the boundary failure mode.
+    const dayMs = 864e5;
+    const d0 = new Date(`${gameDate}T00:00:00Z`).getTime();
+    const dates = [
+      new Date(d0 - dayMs).toISOString().slice(0, 10).replace(/-/g, ''),
+      gameDate.replace(/-/g, ''),
+    ];
+
+    const events = [];
+    for (const ds of dates) {
+      try {
+        const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${ds}`);
+        if (res.ok) { const j = await res.json(); if (j.events) events.push(...j.events); }
+      } catch (e) { /* try the other date */ }
+    }
+    if (!events.length) continue;
 
     const byId = {}, byTeams = {};
     for (const e of events) {
@@ -196,16 +215,19 @@ async function gradeClosedTickets() {
         awayName: a.team && (a.team.displayName || a.team.name) || '',
         homeName: h.team && (h.team.displayName || h.team.name) || '',
       };
-      byId[e.id] = ev;
-      byTeams[`${norm(ev.awayName)}@${norm(ev.homeName)}`] = ev;
+      // Merging two dates can surface the same event twice; a completed record
+      // always wins over a scheduled one.
+      const tk = `${norm(ev.awayName)}@${norm(ev.homeName)}`;
+      if (!byId[ev.id] || ev.completed) byId[ev.id] = ev;
+      if (!byTeams[tk] || ev.completed) byTeams[tk] = ev;
     }
 
     for (const t of groups[key]) {
       let ev = t.espn_event_id ? byId[t.espn_event_id] : null;
       if (!ev) ev = byTeams[`${norm(t.away_team)}@${norm(t.home_team)}`];
-      if (!ev || !ev.completed || !Number.isFinite(ev.awayScore) || !Number.isFinite(ev.homeScore)) continue;
+      if (!ev || !ev.completed || !Number.isFinite(ev.awayScore) || !Number.isFinite(ev.homeScore)) { unmatched++; continue; }
       const result = gradeTicket(t, ev.awayScore, ev.homeScore);
-      if (!result) continue;
+      if (!result) { unmatched++; continue; }
       const ur = result === 'W' ? profit(t.odds, t.final_units) : result === 'L' ? -(t.final_units || 0) : 0;
       const { error } = await sb.from('performance_log').update({
         result,
@@ -217,7 +239,10 @@ async function gradeClosedTickets() {
       if (!error) graded++;
     }
   }
-  return { graded };
+  // Surfaced so a silent match failure shows up in the run log instead of six
+  // months later — this is the §13 "unmatched ESPN id" tripwire in embryo.
+  if (unmatched) console.warn(`[clv] gradeClosedTickets: ${unmatched} closed ticket(s) had no completed ESPN match`);
+  return { graded, unmatched };
 }
 
 module.exports = { rollLastSeen, freezeClosedTickets, gradeClosedTickets, gradeTicket };

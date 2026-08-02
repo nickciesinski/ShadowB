@@ -174,6 +174,7 @@ async function updatePerformanceResults(gradedRows) {
 
   let updated = 0;
   let failed = 0;
+  let skippedV2 = 0;
   for (const row of gradedRows) {
     const update = {
       result: row.result,
@@ -184,22 +185,33 @@ async function updatePerformanceResults(gradedRows) {
     // any ROI calc reading performance_log directly (not the Sheet) silently
     // saw 0% ROI regardless of actual performance. Write it when present.
     if (row.unit_return != null) update.unit_return = row.unit_return;
-    const { error } = await sb.from('performance_log')
-      .update(update)
+
+    // 2026-08-02: FENCE. The legacy grader (gradePerformanceLog) shares
+    // performance_log with the v2 CLV lifecycle. It writes result/unit_return
+    // with no scores, no graded_at, no grade_source, and never advances status —
+    // so a v2 ticket it touched looked graded but stayed 'closed' with no
+    // provenance, and it mis-graded pushes as 'L' with 0 return. v2 tickets are
+    // owned exclusively by gradeClosedTickets() in src/clv.js. Legacy grading
+    // may only ever touch v1 history.
+    const { error, count } = await sb.from('performance_log')
+      .update(update, { count: 'exact' })
       .eq('date', row.date)
       .eq('league', row.league)
       .eq('game', row.game)
       .eq('market', row.market)
-      .eq('pick', row.pick);
+      .eq('pick', row.pick)
+      .neq('pick_regime', 'v2_clv');
 
     if (error) {
       failed++;
       if (failed <= 3) console.warn(`[db] updatePerformanceResults: ${error.message}`);
+    } else if (count === 0) {
+      skippedV2++;
     } else {
       updated++;
     }
   }
-  console.log(`[db] Performance grading sync: ${updated} updated, ${failed} failed`);
+  console.log(`[db] Performance grading sync: ${updated} updated, ${failed} failed, ${skippedV2} skipped (v2-owned or no match)`);
 }
 
 // ── Trigger Log ─────────────────────────────────────────────────
