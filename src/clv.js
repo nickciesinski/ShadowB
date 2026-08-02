@@ -4,7 +4,7 @@
 //   freezeClosedTickets() : once a game has started, freeze close_* := last_seen_*,
 //                           compute CLV, and mark the ticket 'closed'. No API cost.
 const db = require('./db');
-const { americanToImpliedProb } = require('./market-pricing');
+const { americanToImpliedProb, removeVig } = require('./market-pricing');
 const { norm } = require('./norm');
 
 // ESPN scoreboard path per league (free, no key, no rate limit).
@@ -26,6 +26,19 @@ function median(arr) {
 function sideOutcome(market, pick) {
   if (market === 'total') return /over/i.test(pick || '') ? 'Over' : 'Under';
   return pick; // moneyline/spread: outcome is the team name
+}
+
+// The odds-feed outcome label for the OTHER side of the same market. Needed to
+// de-vig the close: a single side's implied price carries the full 4-5% hold,
+// so a raw implied-to-implied delta measures the book's margin as much as the
+// line move. removeVig() needs both outcomes.
+function oppositeOutcome(market, pick, awayTeam, homeTeam) {
+  if (market === 'total') return /over/i.test(pick || '') ? 'Under' : 'Over';
+  if (!awayTeam || !homeTeam) return null;
+  const p = norm(pick), a = norm(awayTeam), h = norm(homeTeam);
+  if (p && h && (p === h || p.includes(h) || h.includes(p))) return awayTeam;
+  if (p && a && (p === a || p.includes(a) || a.includes(p))) return homeTeam;
+  return null;
 }
 
 // Roll last_seen on every open v2 ticket from the freshest gameOdds snapshot.
@@ -55,12 +68,12 @@ async function rollLastSeen() {
   }
 
   const { data: tickets } = await sb.from('performance_log')
-    .select('pick_id, event_id, market, pick, line')
+    .select('pick_id, event_id, market, pick, line, away_team, home_team')
     .eq('pick_regime', 'v2_clv').eq('status', 'open');
   if (!tickets || !tickets.length) return { updated: 0, reason: 'no_open_tickets' };
 
   const nowIso = new Date().toISOString();
-  let updated = 0;
+  let updated = 0, withOpp = 0;
   for (const t of tickets) {
     if (!t.event_id) continue;
     const oddsMarket = MARKET_MAP[t.market] || t.market;
@@ -68,12 +81,22 @@ async function rollLastSeen() {
     const entry = priceMap[`${t.event_id}|${oddsMarket}|${outcome}`];
     if (!entry || !entry.prices.length) continue;
     const point = entry.point !== '' && entry.point != null ? parseFloat(entry.point) : t.line;
+
+    // Opposite side, same event + market, from the same snapshot — free, and
+    // it's what lets freeze compute a de-vigged close.
+    const oppName = oppositeOutcome(t.market, t.pick, t.away_team, t.home_team);
+    const oppEntry = oppName ? priceMap[`${t.event_id}|${oddsMarket}|${oppName}`] : null;
+    const oppOdds = (oppEntry && oppEntry.prices.length) ? Math.round(median(oppEntry.prices)) : null;
+    if (oppOdds != null) withOpp++;
+
+    const patch = { last_seen_odds: Math.round(median(entry.prices)), last_seen_line: point, last_seen_at: capturedAt };
+    if (oppOdds != null) patch.last_seen_opp_odds = oppOdds;
     const { error } = await sb.from('performance_log')
-      .update({ last_seen_odds: Math.round(median(entry.prices)), last_seen_line: point, last_seen_at: capturedAt })
+      .update(patch)
       .eq('pick_id', t.pick_id);
     if (!error) updated++;
   }
-  return { updated, open: tickets.length };
+  return { updated, open: tickets.length, withOpp };
 }
 
 // Freeze open tickets whose game has started; compute CLV from open vs close.
@@ -83,21 +106,48 @@ async function freezeClosedTickets() {
 
   const nowIso = new Date().toISOString();
   const { data: tickets } = await sb.from('performance_log')
-    .select('pick_id, open_odds, open_line, last_seen_odds, last_seen_line, last_seen_at, commence_time')
+    .select('pick_id, open_odds, open_line, placed_novig_prob, last_seen_odds, last_seen_line, last_seen_opp_odds, last_seen_at, commence_time')
     .eq('pick_regime', 'v2_clv').eq('status', 'open')
     .lte('commence_time', nowIso);
   if (!tickets || !tickets.length) return { frozen: 0 };
 
-  let frozen = 0;
+  let frozen = 0, novig = 0;
   for (const t of tickets) {
     const closeOdds = t.last_seen_odds != null ? t.last_seen_odds : t.open_odds;
     const closeLine = t.last_seen_line != null ? t.last_seen_line : t.open_line;
+    const closeOppOdds = t.last_seen_opp_odds != null ? t.last_seen_opp_odds : null;
+
+    // De-vig the close when we have both sides. A single side's implied price
+    // includes the whole hold, so implied-minus-implied conflates line movement
+    // with the book's margin and can't be pooled across markets whose holds
+    // differ (totals ~4%, MLB moneylines ~6%+).
+    let closeNovig = null;
+    if (closeOdds != null && closeOppOdds != null) {
+      const [sideNoVig] = removeVig(americanToImpliedProb(closeOdds), americanToImpliedProb(closeOppOdds));
+      if (Number.isFinite(sideNoVig) && sideNoVig > 0 && sideNoVig < 1) {
+        closeNovig = Math.round(sideNoVig * 1e4) / 1e4;
+      }
+    }
+
     const openImplied = t.open_odds != null ? americanToImpliedProb(t.open_odds) : null;
     const closeImplied = closeOdds != null ? americanToImpliedProb(closeOdds) : null;
+
+    // Prefer the no-vig basis; fall back to single-side implied so a missing
+    // opposite quote degrades the measurement instead of dropping the ticket.
+    // clv_basis records which was used so the two are never pooled blindly —
+    // the Phase 7 optimizer must filter on clv_basis='novig'.
+    let clvProbDelta = null, clvBasis = null;
+    if (closeNovig != null && t.placed_novig_prob != null) {
+      clvProbDelta = Math.round((closeNovig - Number(t.placed_novig_prob)) * 1e4) / 1e4;
+      clvBasis = 'novig';
+      novig++;
+    } else if (openImplied != null && closeImplied != null) {
+      clvProbDelta = Math.round((closeImplied - openImplied) * 1e4) / 1e4;
+      clvBasis = 'implied';
+    }
+
     // "Beat the close" = your locked price implied a LOWER probability than the
     // close (you got a longer/better price). Positive delta = positive CLV.
-    const clvProbDelta = (openImplied != null && closeImplied != null)
-      ? Math.round((closeImplied - openImplied) * 1e4) / 1e4 : null;
     const clvLineDelta = (t.open_line != null && closeLine != null)
       ? Math.round((closeLine - t.open_line) * 100) / 100 : null;
     const beatClose = clvProbDelta != null ? clvProbDelta > 0 : null;
@@ -108,17 +158,20 @@ async function freezeClosedTickets() {
     const { error } = await sb.from('performance_log').update({
       close_odds: closeOdds,
       close_line: closeLine,
+      close_opp_odds: closeOppOdds,
+      close_novig_prob: closeNovig,
       close_captured_at: t.last_seen_at || nowIso,
       close_lag_hours: lagHours,
       clv_prob_delta: clvProbDelta,
       clv_line_delta: clvLineDelta,
       clv_beat_close: beatClose,
+      clv_basis: clvBasis,
       close_source: 'last_seen',
       status: 'closed',
     }).eq('pick_id', t.pick_id);
     if (!error) frozen++;
   }
-  return { frozen };
+  return { frozen, novig };
 }
 
 // American-odds profit for a win.

@@ -65,7 +65,7 @@ const TRIGGERS = {
     const rolled = await clv.rollLastSeen();
     const frozen = await clv.freezeClosedTickets();
     const graded = await clv.gradeClosedTickets();
-    console.log(`[freeze] rolled ${rolled.updated || 0}; froze ${frozen.frozen || 0}; graded ${graded.graded || 0}`);
+    console.log(`[freeze] rolled ${rolled.updated || 0} (opp-side ${rolled.withOpp || 0}); froze ${frozen.frozen || 0} (no-vig ${frozen.novig || 0}); graded ${graded.graded || 0}${graded.unmatched ? `, unmatched ${graded.unmatched}` : ''}`);
   }),
 
   // Trigger 4b: 6:00 AM PT → MLB-only re-check. Catches doubleheader nightcaps

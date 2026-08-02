@@ -21,7 +21,7 @@ const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb, roundUnits } = require('./market-pricing');
 const { priceStats, selectGradedPrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const { applyApprovalFilters } = require('./approval-engine');
-const { gameKey: makeGameKey, pickId: makePickId, seasonOf } = require('./norm');
+const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate } = require('./norm');
 const db = require('./db');
 const { getGameWeather } = require('./weather');
 const { fetchProbablePitchers, remapStarterMapToGames } = require('./pitcher-data');
@@ -1136,7 +1136,10 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         const market = r[6] || '';
         const eventId = eventIdByGame[`${away}@${home}|${commence}`] || '';
         const gameNumber = gameNumberOf(away, home, commence);
-        const gameDate = commence ? commence.slice(0, 10)
+        // 2026-08-02: was `commence.slice(0, 10)` — the UTC date, which stamps
+        // any game starting after 8pm ET with the NEXT day's date. See
+        // localGameDate() in norm.js for the full failure this caused.
+        const gameDate = commence ? localGameDate(r[1], commence)
           : String(r[0] || '').replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2');
         const gKey = makeGameKey(eventId, r[1], away, home, gameDate, gameNumber);
         const daysToGame = commence
@@ -1164,6 +1167,15 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           approval_status: r[21] || 'tracking_only',  // Sprint 3 (col V)
           predicted_prob: meta.predicted_prob || null,
           market_prob: meta.market_prob || null,
+          // 2026-08-02: meta.market_prob is ALREADY the no-vig consensus
+          // probability of the side we took (game-model.js runs removeVig() on
+          // both outcomes before choosing). Persisting it here gives CLV a
+          // de-vigged baseline at lock, so clv_prob_delta can be computed
+          // no-vig-to-no-vig instead of on single-side implied prices that
+          // carry 4-5% hold. 0.5 is game-model's "no h2h market" sentinel, not
+          // a real price — reject it rather than seed a fake baseline.
+          placed_novig_prob: (meta.market_prob && meta.market_prob > 0 && meta.market_prob < 1
+            && meta.market_prob !== 0.5) ? meta.market_prob : null,
           edge_driver: meta.edge_driver || 'base_model',
           pick_purpose: meta.pick_purpose || 'tracking',
           // --- v2 CLV lifecycle identity + lock metadata ---
