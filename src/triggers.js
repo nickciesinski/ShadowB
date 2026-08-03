@@ -22,6 +22,19 @@ const { updateAllPlayerRankings } = require('./player-rankings');
 /** Small delay to spread Sheets writes across the quota window. */
 const pause = (ms) => new Promise(r => setTimeout(r, ms));
 
+// Roll last_seen_* on open v2 tickets from the snapshot that was just written.
+// Isolated in try/catch: the odds pipeline must never fail because CLV tracking
+// hit a problem. A silent no-op would be worse than a loud one, so log both.
+async function rollAfterOdds(label) {
+  try {
+    const clv = require('./clv');
+    const rolled = await clv.rollLastSeen();
+    console.log(`[${label}] CLV roll: ${rolled.updated || 0}/${rolled.open || 0} open tickets updated (opp-side ${rolled.withOpp || 0})${rolled.reason ? ` — ${rolled.reason}` : ''}`);
+  } catch (err) {
+    console.warn(`[${label}] CLV roll failed (non-fatal): ${err.message}`);
+  }
+}
+
 // ── Trigger Map ──────────────────────────────────────────────────
 // Maps trigger names (passed as CLI arg) to their functions.
 // Each trigger corresponds to one GitHub Actions workflow file.
@@ -42,10 +55,20 @@ const TRIGGERS = {
   }),
 
   // Trigger 3: 4:30 AM ET → Fetch odds, grade yesterday, CLV snapshot
+  // 2026-08-02: rollLastSeen() used to run ONLY inside the hourly freeze job.
+  // But the odds snapshots it reads are captured by trigger3 (06:30), trigger10
+  // (17:00) and trigger11 (23:00) UTC — and GitHub delivers the "hourly" freeze
+  // cron every 2-4h in practice. So a 23:00 snapshot, the one taken closest to a
+  // 23:05 first pitch, was usually never rolled before the ticket froze: the
+  // close fell back to the 17:00 prices and close_lag_hours ran ~5h. Rolling
+  // immediately after each fetch is free (no API call — it reads the snapshot
+  // just written) and is what §2 means by "jobs A and B share one response".
+  // Never throw from here: a roll failure must not fail the odds pipeline.
   trigger3: withMonitoring('trigger3', async () => {
     await fetchOddsAndGrade();
     await takeCLVSnapshot();
     await snapshotOdds(); // daily odds snapshot for historical accuracy
+    await rollAfterOdds('trigger3');
   }),
 
   // Trigger 4: 5:00 AM ET → All sport predictions (MLB, NBA, NHL, NFL)
@@ -119,6 +142,7 @@ const TRIGGERS = {
     await updatePlayerProps();
     await pause(5000);
     await generatePropEdges();
+    await rollAfterOdds('trigger10');
   }),
 
   // Trigger 11: 6:00 PM ET → Evening odds refresh + CLV + cache closing prop lines
@@ -126,6 +150,9 @@ const TRIGGERS = {
     await fetchOddsAndGrade();
     await takeCLVSnapshot();
     await snapClosingPropLines();  // cache prop lines before events expire from Odds API
+    // This is the pull closest to first pitch for the evening slate, so this
+    // roll is the one that actually determines close quality.
+    await rollAfterOdds('trigger11');
   }),
 
   // Trigger 12: 11:00 PM ET → Fetch yesterday's scores + grade bets + grade props + grade prop CLV
