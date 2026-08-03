@@ -44,13 +44,18 @@ jobs:
           EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: |
           ARGS=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+          # 2026-08-02: scheduled runs are dry-run by default. The v2_clv regime
+          # has only days of data, so any threshold move right now would be
+          # fitted to noise. Re-enable live scheduled runs once v2 has a
+          # meaningful settled sample (see §11.2 — expect several weeks).
+          # Manual workflow_dispatch with dry_run=false still applies.
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             ARGS="--dry-run"
           fi
           node scripts/weekly-threshold-tune.js $ARGS
 
       - name: Commit threshold changes + review
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+        if: ${{ github.event.inputs.dry_run != 'true' && github.event_name != 'schedule' }}
         run: |
           git config user.name "shadow-bets-bot"
           git config user.email "shadow-bets-bot@users.noreply.github.com"

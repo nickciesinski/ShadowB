@@ -45,9 +45,17 @@ function toISODate(d) {
  * Map Supabase performance_log rows (named columns) into the same positional
  * array shape the Sheet-based code below already expects, so buildSegments /
  * leagueApprovedClv / decideLeagueChange don't need to change at all.
- * clv_opening_prob/clv_closing_prob are probabilities (not odds), so we
- * precompute the CLV-points delta directly rather than round-tripping
- * through clvPoints(), which expects American odds.
+ *
+ * 2026-08-02: this used to read clv_opening_prob/clv_closing_prob. Those are
+ * legacy columns that were NEVER populated — 0 rows out of 897 — so CLV_PTS was
+ * always empty and the CLV guardrail in decideLeagueChange() (which blocks
+ * loosening thresholds when 30d CLV is negative) has never once fired. The
+ * tuner has silently been ROI-only this whole time.
+ *
+ * The live metric is clv_prob_delta (close no-vig prob minus placed no-vig
+ * prob; positive = we locked a better price than the close). Only accept
+ * clv_basis='novig' — 'implied' rows were computed on single-side prices
+ * carrying the full 4-6% book hold, and the two bases must never be pooled.
  */
 function supaRowsToArrayRows(rows) {
   return (rows || []).map(r => {
@@ -62,8 +70,8 @@ function supaRowsToArrayRows(rows) {
     row[COL.RESULT] = r.result || '';
     row[COL.RETURN] = r.unit_return != null ? r.unit_return : '';
     row[COL.APPROVAL] = r.approval_status || '';
-    if (r.clv_opening_prob != null && r.clv_closing_prob != null) {
-      row[COL.CLV_PTS] = (parseFloat(r.clv_closing_prob) - parseFloat(r.clv_opening_prob)) * 100;
+    if (r.clv_basis === 'novig' && r.clv_prob_delta != null) {
+      row[COL.CLV_PTS] = parseFloat(r.clv_prob_delta) * 100;
     }
     return row;
   });
@@ -296,12 +304,25 @@ async function main() {
   let rows = null;
   let source = 'sheet';
   if (db.isEnabled()) {
-    const supaRows = await db.getRecentPerformanceLog(toISODate(cut30));
+    // 2026-08-02: filter to v2_clv. v1_daily rows are from the old
+    // daily-re-picking regime — the same game was re-decided every morning and
+    // the side flipped with the line — so their ROI describes a process that no
+    // longer exists. Before this filter the tuner was reading 762 v1 rows
+    // against 135 v2 rows and calling the blend "MLB 7-day ROI".
+    const supaRows = await db.getRecentPerformanceLog(toISODate(cut30), { pickRegime: 'v2_clv' });
     if (supaRows && supaRows.length > 0) {
       rows = supaRowsToArrayRows(supaRows);
-      source = 'supabase';
+      source = 'supabase(v2_clv)';
+    } else if (supaRows) {
+      // Empty (not an error) means v2 simply hasn't accumulated data yet. Do
+      // NOT fall through to the Sheet — the Sheet is the v1 mirror, so that
+      // fallback would silently reintroduce exactly the rows we just excluded.
+      // Reporting "no data" is the honest outcome; §11.2 predicts weeks of it
+      // after the regime switch.
+      console.log('[tune] No v2_clv rows in window yet — no thresholds evaluated. This is expected while the new regime accumulates data.');
+      process.exit(0);
     } else {
-      console.warn('[tune] Supabase returned no rows, falling back to Sheet');
+      console.warn('[tune] Supabase unreachable, falling back to Sheet (v1-era data — treat output as suspect)');
     }
   }
   if (!rows) {

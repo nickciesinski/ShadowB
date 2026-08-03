@@ -271,15 +271,27 @@ async function getConfidenceCalibration() {
  * @returns {Promise<Array<Object>|null>} raw performance_log rows, or null if
  *   Supabase isn't configured / the query failed (callers should fall back).
  */
-async function getRecentPerformanceLog(sinceDateISO) {
+// `opts.pickRegime` is OPT-IN and defaults to unfiltered, deliberately.
+// Callers split into two kinds and they need opposite behavior:
+//   - Tuning/optimizing (weekly-threshold-tune): MUST filter to one regime.
+//     v1_daily rows came from the old daily-re-picking process where a game was
+//     re-decided every morning and the side flipped with the line. Their ROI
+//     describes a process that no longer exists, so pooling them with v2_clv
+//     produces a number that measures neither system.
+//   - Tripwires (game-optimizer's zero-data cross-check): must stay UNFILTERED.
+//     It only asks "are we grading anything at all", and filtering it to v2
+//     would make it false-alarm through the regime transition.
+async function getRecentPerformanceLog(sinceDateISO, opts = {}) {
   const sb = getClient();
   if (!sb) return null;
   const PAGE = 1000;
   let all = [];
   for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await sb.from('performance_log')
-      .select('date, league, game, market, pick, line, odds, confidence, final_units, result, unit_return, approval_status, clv_opening_prob, clv_closing_prob')
-      .gte('date', sinceDateISO)
+    let q = sb.from('performance_log')
+      .select('date, league, game, market, pick, line, odds, confidence, final_units, result, unit_return, approval_status, pick_regime, clv_prob_delta, clv_basis, close_lag_hours, clv_opening_prob, clv_closing_prob')
+      .gte('date', sinceDateISO);
+    if (opts.pickRegime) q = q.eq('pick_regime', opts.pickRegime);
+    const { data, error } = await q
       .order('date', { ascending: true })
       .range(offset, offset + PAGE - 1);
     if (error) {

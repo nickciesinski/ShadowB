@@ -53,6 +53,13 @@ jobs:
           # force behave as before.
           if [ "${{ github.event_name }}" = "schedule" ]; then
             ARGS="$ARGS --scheduled"
+            # 2026-08-02: also dry-run on schedule. auto-apply-weights.js and
+            # weight-sweep.js read performanceRows from the GOOGLE SHEET, which
+            # is still the un-cleaned v1 mirror — there is no pick_regime column
+            # there to filter on, so this optimizer is currently training on
+            # old-regime data with no way to exclude it. Until it's repointed at
+            # Supabase (where pick_regime exists), it must not write weights.
+            ARGS="$ARGS --dry-run"
           fi
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             ARGS="$ARGS --dry-run"
