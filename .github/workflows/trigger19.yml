@@ -1,0 +1,37 @@
+name: Trigger 19 — Pre-Close Odds Pull (CLV)
+
+# 21:45 UTC, ~55min before the bulk of the MLB slate (22:40-23:20 UTC).
+# Sole purpose: refresh odds and roll last_seen_* on open tickets so the frozen
+# close is near first pitch instead of ~4-6h stale. Runs year-round; on days
+# with no games inside the lock window the odds fetch returns nothing and the
+# roll is a no-op, which is cheap and safe.
+on:
+  schedule:
+    - cron: '45 21 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Pre-close odds pull plus CLV roll
+        run: node src/triggers.js trigger19
+        # Full env block on purpose. Every trigger loads all modules, so
+        # validateConfig() throws and the job exits 1 if any of these are
+        # missing — that's exactly how freeze.yml failed silently for its first
+        # 15 runs. Do not trim this to "just what trigger19 needs".
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_ENV: production

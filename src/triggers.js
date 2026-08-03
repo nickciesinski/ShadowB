@@ -145,6 +145,28 @@ const TRIGGERS = {
     await rollAfterOdds('trigger10');
   }),
 
+  // Trigger 19: 21:45 UTC → Pre-close odds pull, purely to tighten CLV.
+  //
+  // The other odds pulls land at 06:30, 17:00 and 23:00 UTC. The MLB slate
+  // mostly starts 22:40-23:20 UTC, so the last useful pull for most games was
+  // 17:00 — a ~5.7h gap — and the 23:00 pull arrives after the early games have
+  // already started (they're then excluded by commenceTimeFrom=now, so it can't
+  // help them). Measured close_lag_hours was 5.09h before roll-after-fetch and
+  // still 3.90h after; the remaining gap is cadence, not code.
+  //
+  // 21:45 rather than 22:00 deliberately: GitHub delivers scheduled crons late
+  // and unpredictably, so this buys ~55min of slack before first pitch. If it
+  // does drift past a game's start, that game simply drops out of the snapshot
+  // and keeps its earlier close — degraded, never wrong.
+  //
+  // Deliberately lean: odds + roll only. No props, no stats, no prop-edge
+  // generation. Its whole job is to put a fresh price on open tickets shortly
+  // before they lock, and every extra step is another way for it to fail.
+  trigger19: withMonitoring('trigger19', async () => {
+    await fetchOddsAndGrade();
+    await rollAfterOdds('trigger19');
+  }),
+
   // Trigger 11: 6:00 PM ET → Evening odds refresh + CLV + cache closing prop lines
   trigger11: withMonitoring('trigger11', async () => {
     await fetchOddsAndGrade();
