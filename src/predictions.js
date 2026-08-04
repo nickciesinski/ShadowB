@@ -1172,10 +1172,18 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           // both outcomes before choosing). Persisting it here gives CLV a
           // de-vigged baseline at lock, so clv_prob_delta can be computed
           // no-vig-to-no-vig instead of on single-side implied prices that
-          // carry 4-5% hold. 0.5 is game-model's "no h2h market" sentinel, not
-          // a real price — reject it rather than seed a fake baseline.
+          // carry 4-5% hold.
+          //
+          // 2026-08-04: the 0.5 rejection is MONEYLINE-ONLY. game-model.js:584
+          // uses 0.5 as a "No ML odds available" sentinel, but on spread and
+          // total 0.5000 is the genuine no-vig value of a -110/-110 pick-em —
+          // extremely common. Rejecting it everywhere dropped real baselines
+          // and silently demoted those tickets to the implied basis. A true
+          // +100/+100 moneyline pick-em is still excluded here; that's rare,
+          // and it degrades to implied rather than recording a wrong number.
           placed_novig_prob: (meta.market_prob && meta.market_prob > 0 && meta.market_prob < 1
-            && meta.market_prob !== 0.5) ? meta.market_prob : null,
+            && !(String(market).toLowerCase() === 'moneyline' && meta.market_prob === 0.5))
+            ? meta.market_prob : null,
           edge_driver: meta.edge_driver || 'base_model',
           pick_purpose: meta.pick_purpose || 'tracking',
           // --- v2 CLV lifecycle identity + lock metadata ---
