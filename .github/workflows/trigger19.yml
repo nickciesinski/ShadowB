@@ -24,6 +24,11 @@ on:
     # morning price at 8.8h stale.
     - cron: '30 15 * * *'
     - cron: '15 16 * * *'
+    # Mid-afternoon (18:30-20:30 UTC / 2:30-4:30pm ET — weekend and getaway-day
+    # slates). With jitter, trigger10's 17:00 run covers only to ~18:15 and the
+    # 20:15 slot starts there, leaving a ~2h hole these two fill.
+    - cron: '45 18 * * *'
+    - cron: '30 19 * * *'
     # Evening slate (bulk starts 22:36-23:20 UTC).
     - cron: '15 20 * * *'
     - cron: '0 21 * * *'
