@@ -18,6 +18,13 @@ name: Trigger 19 — Pre-Close Odds Pull (CLV)
 # freshest snapshot, so a later run strictly improves on an earlier one.
 on:
   schedule:
+    # Afternoon slate (earliest observed start 16:36-18:10 UTC). trigger10's
+    # 17:00 cron is NOT reliable cover: on 2026-08-05 it landed at 18:15, five
+    # minutes after an 18:10 first pitch, so that game froze on its 09:19
+    # morning price at 8.8h stale.
+    - cron: '30 15 * * *'
+    - cron: '15 16 * * *'
+    # Evening slate (bulk starts 22:36-23:20 UTC).
     - cron: '15 20 * * *'
     - cron: '0 21 * * *'
     - cron: '45 21 * * *'

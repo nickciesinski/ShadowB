@@ -29,7 +29,7 @@ async function rollAfterOdds(label) {
   try {
     const clv = require('./clv');
     const rolled = await clv.rollLastSeen();
-    console.log(`[${label}] CLV roll: ${rolled.updated || 0}/${rolled.open || 0} open tickets updated (opp-side ${rolled.withOpp || 0})${rolled.reason ? ` — ${rolled.reason}` : ''}`);
+    console.log(`[${label}] CLV roll: ${rolled.updated || 0}/${rolled.open || 0} open tickets updated (opp-side ${rolled.withOpp || 0})${rolled.rescheduled ? `, ${rolled.rescheduled} start time(s) moved` : ''}${rolled.reason ? ` — ${rolled.reason}` : ''}`);
   } catch (err) {
     console.warn(`[${label}] CLV roll failed (non-fatal): ${err.message}`);
   }

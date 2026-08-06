@@ -58,22 +58,31 @@ async function rollLastSeen() {
 
   // "eventId|market|outcome" -> { prices:[...], point }
   const priceMap = {};
+  // eventId -> current commence time as the odds feed reports it TODAY.
+  // 2026-08-06: commence_time was stamped once at lock and never revisited, so
+  // a rain delay or reschedule left us measuring against a stale timestamp. A
+  // Cardinals @ Yankees ticket recorded a 23:06 start, was still quoted as
+  // pre-game at 00:02, and froze with close_lag_hours = -0.9 — a negative lag
+  // is definitionally impossible and was the tell. Worse, a game that moves
+  // LATER gets frozen early, capturing a close hours before the real one.
+  const commenceMap = {};
   for (const r of rows.slice(1)) {
     const eventId = r[10], market = r[5], outcome = r[6];
     const price = parseFloat(r[7]), point = r[8];
     if (!eventId) continue;
+    if (r[4]) commenceMap[eventId] = r[4];
     const k = `${eventId}|${market}|${outcome}`;
     if (!priceMap[k]) priceMap[k] = { prices: [], point };
     if (Number.isFinite(price)) priceMap[k].prices.push(price);
   }
 
   const { data: tickets } = await sb.from('performance_log')
-    .select('pick_id, event_id, market, pick, line, away_team, home_team')
+    .select('pick_id, event_id, market, pick, line, away_team, home_team, commence_time')
     .eq('pick_regime', 'v2_clv').eq('status', 'open');
   if (!tickets || !tickets.length) return { updated: 0, reason: 'no_open_tickets' };
 
   const nowIso = new Date().toISOString();
-  let updated = 0, withOpp = 0;
+  let updated = 0, withOpp = 0, rescheduled = 0;
   for (const t of tickets) {
     if (!t.event_id) continue;
     const oddsMarket = MARKET_MAP[t.market] || t.market;
@@ -91,12 +100,27 @@ async function rollLastSeen() {
 
     const patch = { last_seen_odds: Math.round(median(entry.prices)), last_seen_line: point, last_seen_at: capturedAt };
     if (oppOdds != null) patch.last_seen_opp_odds = oppOdds;
+
+    // If the feed now reports a different start, adopt it. The ticket is
+    // untouched otherwise — side, line and price stay frozen at lock, per
+    // "rows are tickets, not opinions". Only the schedule is data, not identity
+    // (which is why game_key uses event_id and never a timestamp). 2-minute
+    // tolerance so clock skew and second-level rounding don't cause churn.
+    const feedCommence = commenceMap[t.event_id];
+    if (feedCommence && t.commence_time) {
+      const deltaMin = Math.abs(new Date(feedCommence).getTime() - new Date(t.commence_time).getTime()) / 6e4;
+      if (Number.isFinite(deltaMin) && deltaMin > 2) {
+        patch.commence_time = feedCommence;
+        rescheduled++;
+      }
+    }
+
     const { error } = await sb.from('performance_log')
       .update(patch)
       .eq('pick_id', t.pick_id);
     if (!error) updated++;
   }
-  return { updated, open: tickets.length, withOpp };
+  return { updated, open: tickets.length, withOpp, rescheduled };
 }
 
 // Freeze open tickets whose game has started; compute CLV from open vs close.
