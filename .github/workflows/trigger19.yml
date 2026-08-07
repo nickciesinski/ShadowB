@@ -1,35 +1,24 @@
 name: Trigger 19 — Pre-Close Odds Pull (CLV)
 
-# Pre-slate odds pulls, timed to land before the earliest MLB starts (~22:36 UTC).
-# Sole purpose: refresh odds and roll last_seen_* on open tickets so the frozen
-# close is near first pitch instead of ~4-6h stale. Runs year-round; on days
-# with no games inside the lock window the odds fetch returns nothing and the
-# roll is a no-op, which is cheap and safe.
-# Fires three times across the pre-slate window. GitHub delivers scheduled crons
-# late by an unpredictable 0-70min (observed: trigger19 57min late, trigger11
-# 71min late), so a single run cannot be buffered reliably. On 2026-08-04 the
-# 21:45 cron landed at 22:41 — five minutes after the first games started, so
-# those 12 tickets were excluded by commenceTimeFrom=now and kept a 4.28h stale
-# price, while the 33 later games got 0.89h. Three shots means at least one
-# lands well before the earliest start regardless of jitter.
+# Pre-slate odds pulls. Sole purpose: refresh odds and roll last_seen_* on open
+# tickets so the frozen close is near first pitch instead of hours stale. Runs
+# year-round; with no games inside the lock window the fetch returns nothing and
+# the roll is a no-op, which is cheap and safe.
 #
-# Each run costs ~3 credits per active league on a 20k/month budget, so the
-# extra pulls are immaterial. Runs are idempotent: the roll simply takes the
-# freshest snapshot, so a later run strictly improves on an earlier one.
+# 2026-08-07: KEEP THIS CRON LIST SHORT. Seven slots was tried and backfired
+# badly — GitHub put the workflow into its scheduling backlog, cancelled two
+# runs outright, and delivered the other five in a single batch 4-6h late, long
+# after every game had finished. That day averaged 6.92h close lag and 30 of 33
+# tickets were over 2h. The previous three-slot config averaged 1.07h with 42 of
+# 45 under 2h. Scheduled-run reliability DEGRADES as slot count rises, so adding
+# slots to chase a stale cluster makes the problem worse, not better. Four is
+# the ceiling. If a cluster is still stale, diagnose which games and why —
+# do not add crons.
 on:
   schedule:
-    # Afternoon slate (earliest observed start 16:36-18:10 UTC). trigger10's
-    # 17:00 cron is NOT reliable cover: on 2026-08-05 it landed at 18:15, five
-    # minutes after an 18:10 first pitch, so that game froze on its 09:19
-    # morning price at 8.8h stale.
-    - cron: '30 15 * * *'
-    - cron: '15 16 * * *'
-    # Mid-afternoon (18:30-20:30 UTC / 2:30-4:30pm ET — weekend and getaway-day
-    # slates). With jitter, trigger10's 17:00 run covers only to ~18:15 and the
-    # 20:15 slot starts there, leaving a ~2h hole these two fill.
-    - cron: '45 18 * * *'
-    - cron: '30 19 * * *'
-    # Evening slate (bulk starts 22:36-23:20 UTC).
+    # One afternoon slot (earliest observed start 16:36 UTC).
+    - cron: '0 16 * * *'
+    # Evening slate — bulk of starts land 22:36-23:20 UTC.
     - cron: '15 20 * * *'
     - cron: '0 21 * * *'
     - cron: '45 21 * * *'
