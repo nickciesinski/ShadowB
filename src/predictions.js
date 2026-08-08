@@ -81,6 +81,21 @@ function assignGameNumbers(games) {
   }
 }
 
+// 2026-08-08 — which book offered a given price. Needed to populate
+// placed_book: without it we cannot tell whether measured CLV is a real model
+// edge or just one slow book's stale line (architecture doc S11.1). Returns
+// the first book quoting that exact price; ties are arbitrary but rare and
+// only matter for diagnosis, not for the price itself.
+function bookForPrice(entries, price) {
+  if (!Array.isArray(entries) || !Number.isFinite(price)) return null;
+  for (const e of entries) {
+    if (Number.isFinite(parseFloat(e.price)) && parseFloat(e.price) === price) {
+      return e.bookmaker || null;
+    }
+  }
+  return null;
+}
+
 function buildGameObjects(oddsRows, sportFilter) {
   // ── DIAGNOSTIC: dump raw totals data per game ──
   const rawTotalsDump = {};
@@ -212,28 +227,32 @@ function buildGameObjects(oddsRows, sportFilter) {
 
         if (chosenPoint !== null) {
           // Aggregate all prices at the chosen point for median price
-          const nearPrices = [];
+          // 2026-08-08: collect {price, bookmaker} pairs, not bare prices, so
+          // the book behind bestPrice survives into placed_book.
+          const nearEntries = [];
           for (const g of groups) {
             const pv = parseFloat(g.point);
             if (!isNaN(pv) && pv === chosenPoint) {
-              for (const e of g.entries) nearPrices.push(e.price);
+              for (const e of g.entries) nearEntries.push(e);
             }
           }
-          if (nearPrices.length === 0) {
-            // Fallback: all prices
+          if (nearEntries.length === 0) {
+            // Fallback: all entries
             for (const g of groups) {
-              for (const e of g.entries) nearPrices.push(e.price);
+              for (const e of g.entries) nearEntries.push(e);
             }
           }
-          nearPrices.sort((a, b) => a - b);
+          const nearPrices = nearEntries.map((e) => e.price).sort((a, b) => a - b);
           const medianPrice = chosenPrice !== null ? chosenPrice : nearPrices[Math.floor(nearPrices.length / 2)];
           // R2.1: best-available price across books (additive — does not change
           // which side/point/price we pick; surfaces line-shopping upside).
           const bestPrice = priceStats(nearPrices).best;
+          const bestBook = bookForPrice(nearEntries, bestPrice);
           markets[market].push({
             outcome,
             price: medianPrice,
             bestPrice: bestPrice !== null ? bestPrice : medianPrice,
+            bestBook: bestBook || null,
             point: String(chosenPoint),
             impliedProb: impliedProbability(medianPrice).toFixed(3),
             bestImpliedProb: impliedProbability(bestPrice !== null ? bestPrice : medianPrice).toFixed(3),
@@ -241,20 +260,22 @@ function buildGameObjects(oddsRows, sportFilter) {
         }
       } else {
         // h2h — original logic (no point values to reconcile)
-        const allPrices = [];
+        const allEntries = [];
         let point = '';
         for (const g of groups) {
           point = g.point;
-          for (const e of g.entries) allPrices.push(e.price);
+          for (const e of g.entries) allEntries.push(e);
         }
-        allPrices.sort((a, b) => a - b);
+        const allPrices = allEntries.map((e) => e.price).sort((a, b) => a - b);
         const median = allPrices[Math.floor(allPrices.length / 2)];
         // R2.1: best-available price across books (additive — pick unchanged).
         const bestH2h = priceStats(allPrices).best;
+        const bestH2hBook = bookForPrice(allEntries, bestH2h);
         markets[market].push({
           outcome,
           price: median,
           bestPrice: bestH2h !== null ? bestH2h : median,
+          bestBook: bestH2hBook || null,
           point,
           impliedProb: impliedProbability(median).toFixed(3),
           bestImpliedProb: impliedProbability(bestH2h !== null ? bestH2h : median).toFixed(3),
@@ -784,6 +805,11 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         market_prob: p._marketImpliedProb || null,
         edge_driver: p._edgeDriver || 'base_model',
         pick_purpose: p.pick_purpose || 'tracking',
+        // 2026-08-08 — book attribution. best_book is the book that offered
+        // _bestOdds; placed_book is resolved at dbRow time by checking whether
+        // the price we actually recorded IS that best price.
+        best_odds: Number.isFinite(p._bestOdds) ? p._bestOdds : null,
+        best_book: p._bestBook || null,
       };
       continue;
     }
@@ -1186,6 +1212,18 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
             ? meta.market_prob : null,
           edge_driver: meta.edge_driver || 'base_model',
           pick_purpose: meta.pick_purpose || 'tracking',
+          // 2026-08-08 — placed_book was NULL on every row, which made the
+          // book-latency check in architecture S11.1 impossible to run: if
+          // measured CLV is concentrated at one slow book, that is a latency
+          // artifact and not a model edge. selectGradedPrice() gives the best
+          // price only to `approved` picks, so tracking_only rows genuinely do
+          // log the consensus median -- recorded honestly here rather than
+          // pretending a book offered it.
+          best_odds: meta.best_odds != null ? meta.best_odds : null,
+          best_book: meta.best_book || null,
+          placed_book: (meta.best_odds != null && parseInt(r[9]) === meta.best_odds)
+            ? (meta.best_book || null)
+            : 'consensus_median',
           // --- v2 CLV lifecycle identity + lock metadata ---
           pick_id: makePickId(gKey, market),
           game_key: gKey,

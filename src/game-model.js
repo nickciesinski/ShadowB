@@ -600,13 +600,14 @@ function generateMLPick(game, margin, league, h2hMarket, uncertainty) {
   const homeEdge = calcEdge(homeWinProb, homeNoVig);
   const awayEdge = calcEdge(awayWinProb, awayNoVig);
 
-  let pickTeam, modelProb, marketProb, odds, bestOdds, edge;
+  let pickTeam, modelProb, marketProb, odds, bestOdds, edge, bestBook;
   if (homeEdge > awayEdge) {
     pickTeam = game.home;
     modelProb = homeWinProb;
     marketProb = homeNoVig;
     odds = homeOdds ? homeOdds.price : -110;
     bestOdds = homeOdds ? homeOdds.bestPrice : undefined;
+    bestBook = homeOdds ? homeOdds.bestBook : null;
     edge = homeEdge;
   } else {
     pickTeam = game.away;
@@ -614,6 +615,7 @@ function generateMLPick(game, margin, league, h2hMarket, uncertainty) {
     marketProb = awayNoVig;
     odds = awayOdds ? awayOdds.price : -110;
     bestOdds = awayOdds ? awayOdds.bestPrice : undefined;
+    bestBook = awayOdds ? awayOdds.bestBook : null;
     edge = awayEdge;
   }
 
@@ -635,6 +637,7 @@ function generateMLPick(game, margin, league, h2hMarket, uncertainty) {
     // Selection above is UNCHANGED (still decided on median-derived edge) --
     // this only affects what gets logged/graded for staked bets.
     _bestOdds: Number.isFinite(bestOdds) ? bestOdds : odds,
+    _bestBook: bestBook || null,
     _uncertainty: uncertainty,
     _mktQuality: mktQuality,
   };
@@ -651,7 +654,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
   // Default spreads if not available
   const DEFAULT_SPREADS = { NHL: -1.5, NBA: -1.5, MLB: -1.5, NFL: -2.5 };
 
-  let pickTeam, spreadNum, odds, bestOdds, modelProb, marketProb;
+  let pickTeam, spreadNum, odds, bestOdds, modelProb, marketProb, bestBook;
 
   if (homeLine && awayLine) {
     const homeSpread = parseFloat(homeLine.point) || 0;
@@ -710,6 +713,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
         spreadNum = homeSpread;
         odds = homeLine.price;
         bestOdds = homeLine.bestPrice;
+        bestBook = homeLine.bestBook || null;
         modelProb = homeCoverProb;
         marketProb = homeNoVig;
       } else {
@@ -717,6 +721,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
         spreadNum = awaySpread;
         odds = awayLine.price;
         bestOdds = awayLine.bestPrice;
+        bestBook = awayLine.bestBook || null;
         modelProb = awayCoverProb;
         marketProb = awayNoVig;
       }
@@ -742,6 +747,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
         _odds: odds,
         // R2.1 step 2: best-available price for the side we actually picked.
         _bestOdds: Number.isFinite(bestOdds) ? bestOdds : odds,
+    _bestBook: bestBook || null,
         _uncertainty: uncertainty,
         _mktQuality: mktQuality,
       };
@@ -763,6 +769,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
       spreadNum = homeSpread;
       odds = homeLine.price;
       bestOdds = homeLine.bestPrice;
+        bestBook = homeLine.bestBook || null;
       modelProb = homeCoverProb;
       marketProb = homeNoVig;
     } else {
@@ -770,6 +777,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
       spreadNum = awaySpread;
       odds = awayLine.price;
       bestOdds = awayLine.bestPrice;
+        bestBook = awayLine.bestBook || null;
       modelProb = awayCoverProb;
       marketProb = awayNoVig;
     }
@@ -811,6 +819,7 @@ function generateSpreadPick(game, margin, league, spreadsMarket, uncertainty) {
     // undefined in the no-market-data fallback branch (nothing to shop) --
     // falls back to odds (-110) there.
     _bestOdds: Number.isFinite(bestOdds) ? bestOdds : odds,
+    _bestBook: bestBook || null,
     _uncertainty: uncertainty,
     _mktQuality: mktQuality,
   };
@@ -865,13 +874,14 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
   // 2026-05-31: strict > so an exact-tie (e.g., projTotal == marketTotal, both
   // sides equally priced) doesn't deterministically pick Over. With Over rate
   // already biased upward, the >= tiebreaker compounded the lean.
-  let direction, modelProb, marketProb, odds, bestOdds, edge;
+  let direction, modelProb, marketProb, odds, bestOdds, edge, bestBook;
   if (overEdge > underEdge) {
     direction = 'Over';
     modelProb = overProb;
     marketProb = overNoVig;
     odds = overOdds;
     bestOdds = overLine ? overLine.bestPrice : undefined;
+    bestBook = overLine ? overLine.bestBook : null;
     edge = overEdge;
   } else {
     direction = 'Under';
@@ -879,6 +889,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
     marketProb = underNoVig;
     odds = underOdds;
     bestOdds = underLine ? underLine.bestPrice : undefined;
+    bestBook = underLine ? underLine.bestBook : null;
     edge = underEdge;
   }
 
@@ -900,6 +911,7 @@ function generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncerta
     // undefined when there's no matching over/under book line (default -110
     // fallback case) -- falls back to odds there.
     _bestOdds: Number.isFinite(bestOdds) ? bestOdds : odds,
+    _bestBook: bestBook || null,
     _uncertainty: uncertainty,
     _mktQuality: mktQuality,
   };
