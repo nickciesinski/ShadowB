@@ -125,6 +125,9 @@ function extractFeatures(home, away, scheduleInfo, league) {
 
   // ── Home/away splits ──
   f.home_away_split_diff = 0.02; // slight home bias default
+  // home_ice_advantage is NHL's name for the same thing and carries weight
+  // (0.1 ML / 0.12 spread); without the alias it was silently skipped.
+  f.home_ice_advantage = league === 'NHL' ? 0.03 : 0;
   f.home_court_advantage = league === 'NBA' ? 0.15 :
                            league === 'NFL' ? 0.12 :
                            league === 'MLB' ? 0.04 :

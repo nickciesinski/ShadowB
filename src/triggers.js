@@ -235,7 +235,26 @@ const TRIGGERS = {
   // Trigger 16: Midnight ET → Daily health check email
   // Compares today's Trigger_Monitor entries against expected schedule.
   // Alerts if any triggers failed or never ran.
-  trigger16: withMonitoring('trigger16', sendTriggerHealthCheck),
+  trigger16: withMonitoring('trigger16', async () => {
+    await sendTriggerHealthCheck();
+    // 2026-08-08 — feature-health tripwire. Every bug found that day was
+    // SILENT: workflows green, picks produced, CLV logged, while MLB moneyline
+    // ran on 43% of its weight mass with one three-valued input. Nothing
+    // failed, so nothing alerted. This surfaces dead weights (a weight naming
+    // a feature extractFeatures never emits, silently skipped by scoreMarket)
+    // and duplicated weight (features correlated ~1.0, e.g. the four
+    // recent_form windows that were one number scaled). Logged rather than
+    // emailed for now so it can be watched for false positives before it is
+    // allowed to shout.
+    try {
+      const { report } = require('./feature-health');
+      const fh = report(['MLB', 'NBA', 'NFL', 'NHL']);
+      console.log('[feature-health]\n' + fh.text);
+      if (fh.alert) console.log('[feature-health] ALERT — see above');
+    } catch (err) {
+      console.warn('[feature-health] check failed:', err.message);
+    }
+  }),
 
   // Backtest: manual dispatch — runs sensitivity analysis + weight validation
   backtest: withMonitoring('backtest', async () => {
