@@ -167,6 +167,34 @@ const TRIGGERS = {
     await rollAfterOdds('trigger19');
   }),
 
+  // Trigger 20: 04:10 UTC (~9:10 PM PT) → EVENING WINDOW odds snapshot.
+  //
+  // Phase C. Nick can place bets at two times: ~6 AM PT and ~9:30 PM PT. Every
+  // v2 ticket to date locked off trigger4 (07:00 UTC + GitHub jitter, so ~2 AM
+  // PT), at days_to_game 0 or 1 — meaning the early-lock thesis this whole
+  // architecture was built on has never actually been tested. It has been a
+  // same-day picker.
+  //
+  // This trigger does NOT move the lock. It only puts an odds snapshot on disk
+  // at the evening window so we can ask the counterfactual: holding the pick
+  // fixed, what price was available at 9:30 PM vs at the 2 AM lock, and which
+  // is closer to the close? Moving the lock before measuring would be a
+  // big-bang change to the ROI write path with no evidence behind it.
+  //
+  // Lean on purpose (odds + roll only, same shape as trigger19). The roll is
+  // free — it reads the snapshot just written — and as a side benefit it puts a
+  // fresher price on any late West Coast game still open.
+  //
+  // Cron is 04:10, deliberately clear of trigger12 (04:00) and trigger14
+  // (04:30). GitHub jitter of 0-76 min means the real capture lands roughly
+  // 9:10-10:30 PM PT; sheet_snapshots.captured_at records the true time, so the
+  // analysis buckets on actual capture and jitter does not corrupt it.
+  trigger20: withMonitoring('trigger20', async () => {
+    await fetchOddsAndGrade();
+    await snapshotOdds();
+    await rollAfterOdds('trigger20');
+  }),
+
   // Trigger 11: 6:00 PM ET → Evening odds refresh + CLV + cache closing prop lines
   trigger11: withMonitoring('trigger11', async () => {
     await fetchOddsAndGrade();

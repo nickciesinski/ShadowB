@@ -103,6 +103,22 @@ function usableOnly(entries) {
   return hit.length ? hit : entries;
 }
 
+// Phase C — classify a lock timestamp into one of Nick's betting windows,
+// in Pacific time (the windows are his, not UTC's). Boundaries are generous
+// because GitHub delivers scheduled runs up to 76 minutes late.
+function lockWindowOf(iso) {
+  try {
+    const h = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false,
+    }).format(new Date(iso)));
+    if (h >= 21 || h < 1) return 'evening';   // ~9 PM - 1 AM PT
+    if (h >= 5 && h < 9) return 'morning';    // ~5 AM - 9 AM PT
+    return 'other';
+  } catch (e) {
+    return null;
+  }
+}
+
 function bookForPrice(entries, price) {
   if (!Array.isArray(entries) || !Number.isFinite(price)) return null;
   for (const e of entries) {
@@ -1257,6 +1273,15 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           commence_time: commence || null,
           game_date: gameDate || null,
           locked_at: nowIso,
+          // Phase C — which of Nick's two betting windows this ticket belongs
+          // to, derived from the actual lock time in PT (GitHub jitter of
+          // 0-76 min means the cron time is not the lock time). 'evening' =
+          // the ~9:30 PM PT window, 'morning' = the ~6 AM PT window, 'other' =
+          // anything else, which today is most rows since trigger4 fires
+          // around 2 AM PT. This is the segmentation dimension the staking
+          // gate will eventually need, and it is what makes the two-window
+          // A/B readable at all.
+          lock_window: lockWindowOf(nowIso),
           days_to_game: daysToGame,
           season: seasonOf(r[1], gameDate),
           status: 'open',

@@ -1,0 +1,51 @@
+name: Trigger 20 — Evening Window Odds Snapshot (Phase C)
+
+# Captures the price available at Nick's ~9:30 PM PT betting window.
+#
+# WHAT THIS IS FOR. Picks currently lock off trigger4 at 07:00 UTC, which with
+# GitHub jitter lands around 2 AM PT. Every v2 ticket ever written sits at
+# days_to_game 0 or 1, so the "lock early to capture CLV" premise behind this
+# whole architecture is untested — in practice the system is a same-day picker.
+#
+# This job does NOT move the lock. It only records what the market looked like
+# at the evening window, so we can compute the counterfactual with the pick held
+# fixed: would taking the SAME side at 9:30 PM have beaten the close by more
+# than taking it at 2 AM? Measured first, moved second.
+#
+# SINGLE CRON SLOT, AND IT SHOULD STAY THAT WAY. See trigger19's header: slot
+# count is inversely related to scheduled-run reliability on this repo. Seven
+# slots there caused GitHub to batch-deliver runs 4-6h late and cost a full day
+# of close-lag data. One slot here, clear of trigger12 (04:00) and trigger14
+# (04:30). Jitter of 0-76 min puts the real capture around 9:10-10:30 PM PT;
+# sheet_snapshots.captured_at records the true time, so the analysis buckets on
+# actual capture time and jitter does not corrupt the comparison.
+on:
+  schedule:
+    - cron: '10 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Evening window odds snapshot plus CLV roll
+        run: node src/triggers.js trigger20
+        # Full env block on purpose. Every trigger loads all modules, so
+        # validateConfig() throws and the job exits 1 if any of these are
+        # missing — that's exactly how freeze.yml failed silently for its first
+        # 15 runs. Do not trim this to "just what trigger20 needs".
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          NODE_ENV: production
