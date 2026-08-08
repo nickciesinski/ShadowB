@@ -41,6 +41,72 @@ function oppositeOutcome(market, pick, awayTeam, homeTeam) {
   return null;
 }
 
+// 2026-08-08 BUGFIX. Canonical string for a feed `point` so "1.50" and "1.5"
+// land in the same bucket, and moneyline (no point) gets its own stable key.
+function pointKey(point) {
+  if (point === '' || point == null) return 'na';
+  const n = parseFloat(point);
+  return Number.isFinite(n) ? String(n) : 'na';
+}
+
+// 2026-08-08 BUGFIX — the spread close-side corruption (11 of 109 spread rows).
+//
+// The old priceMap was keyed `eventId|market|outcome` with NO point. Books do
+// not agree on which side of a runline a team is on: on 2026-08-02 nine books
+// had San Francisco +1.5 while fanduel and betrivers had them -1.5. All eleven
+// prices were pooled into one median (-190, correct for the +1.5 side) and the
+// `point` was taken from whichever row happened to arrive FIRST (fanduel's
+// -1.5). The ticket froze as "-1.5 @ -190" — a price from one line wearing the
+// label of another. That produced CLV values of -0.31, which is physically
+// impossible, and dragged measured spread CLV from -0.0024 to -0.0116.
+//
+// Totals had the same defect more quietly (books quoting 8.5 vs 9 pooled
+// together); moneyline was immune only because it has no point to mismatch.
+//
+// Fix: point is part of the key, so a price and its line never separate. The
+// variant index lets the roll ask for the specific line the TICKET holds,
+// because CLV is only meaningful like-for-like.
+function buildPriceMap(rows) {
+  const priceMap = {};   // "evt|market|outcome|point" -> { prices:[], point:Number|null }
+  const variantIdx = {}; // "evt|market|outcome"       -> [pointKey, ...]
+  const commenceMap = {};
+  for (const r of rows.slice(1)) {
+    const eventId = r[10], market = r[5], outcome = r[6];
+    const price = parseFloat(r[7]), point = r[8];
+    if (!eventId) continue;
+    if (r[4]) commenceMap[eventId] = r[4];
+    const base = `${eventId}|${market}|${outcome}`;
+    const pk = pointKey(point);
+    const k = `${base}|${pk}`;
+    if (!priceMap[k]) {
+      priceMap[k] = { prices: [], point: pk === 'na' ? null : parseFloat(point) };
+      (variantIdx[base] = variantIdx[base] || []).push(pk);
+    }
+    if (Number.isFinite(price)) priceMap[k].prices.push(price);
+  }
+  return { priceMap, variantIdx, commenceMap };
+}
+
+// Choose the quote for a given side. Prefers the exact line the ticket holds;
+// falls back to the line the MOST books are quoting (the consensus line, not
+// whichever row parsed first). Returns null when nothing is quoted.
+function selectQuote(priceMap, variantIdx, eventId, market, outcome, wantPoint) {
+  const base = `${eventId}|${market}|${outcome}`;
+  const variants = variantIdx[base];
+  if (!variants || !variants.length) return null;
+
+  if (wantPoint != null && Number.isFinite(wantPoint)) {
+    const exact = priceMap[`${base}|${pointKey(wantPoint)}`];
+    if (exact && exact.prices.length) return exact;
+  }
+  let best = null;
+  for (const pk of variants) {
+    const v = priceMap[`${base}|${pk}`];
+    if (v && v.prices.length && (!best || v.prices.length > best.prices.length)) best = v;
+  }
+  return best;
+}
+
 // Roll last_seen on every open v2 ticket from the freshest gameOdds snapshot.
 async function rollLastSeen() {
   const sb = db.getClient();
@@ -56,8 +122,6 @@ async function rollLastSeen() {
   // why the near-kickoff odds pull matters — it's what shrinks that lag.
   const capturedAt = snap[0].captured_at || new Date().toISOString();
 
-  // "eventId|market|outcome" -> { prices:[...], point }
-  const priceMap = {};
   // eventId -> current commence time as the odds feed reports it TODAY.
   // 2026-08-06: commence_time was stamped once at lock and never revisited, so
   // a rain delay or reschedule left us measuring against a stale timestamp. A
@@ -65,40 +129,67 @@ async function rollLastSeen() {
   // pre-game at 00:02, and froze with close_lag_hours = -0.9 — a negative lag
   // is definitionally impossible and was the tell. Worse, a game that moves
   // LATER gets frozen early, capturing a close hours before the real one.
-  const commenceMap = {};
-  for (const r of rows.slice(1)) {
-    const eventId = r[10], market = r[5], outcome = r[6];
-    const price = parseFloat(r[7]), point = r[8];
-    if (!eventId) continue;
-    if (r[4]) commenceMap[eventId] = r[4];
-    const k = `${eventId}|${market}|${outcome}`;
-    if (!priceMap[k]) priceMap[k] = { prices: [], point };
-    if (Number.isFinite(price)) priceMap[k].prices.push(price);
-  }
+  const { priceMap, variantIdx, commenceMap } = buildPriceMap(rows);
 
   const { data: tickets } = await sb.from('performance_log')
     .select('pick_id, event_id, market, pick, line, away_team, home_team, commence_time')
     .eq('pick_regime', 'v2_clv').eq('status', 'open');
   if (!tickets || !tickets.length) return { updated: 0, reason: 'no_open_tickets' };
 
-  const nowIso = new Date().toISOString();
   let updated = 0, withOpp = 0, rescheduled = 0;
+  let sideMismatch = 0, lineMoved = 0, noQuote = 0;
+
   for (const t of tickets) {
     if (!t.event_id) continue;
     const oddsMarket = MARKET_MAP[t.market] || t.market;
     const outcome = sideOutcome(t.market, t.pick);
-    const entry = priceMap[`${t.event_id}|${oddsMarket}|${outcome}`];
-    if (!entry || !entry.prices.length) continue;
-    const point = entry.point !== '' && entry.point != null ? parseFloat(entry.point) : t.line;
+    const ticketLine = (t.market === 'moneyline' || t.line == null) ? null : Number(t.line);
 
-    // Opposite side, same event + market, from the same snapshot — free, and
-    // it's what lets freeze compute a de-vigged close.
+    const entry = selectQuote(priceMap, variantIdx, t.event_id, oddsMarket, outcome, ticketLine);
+    if (!entry || !entry.prices.length) { noQuote++; continue; }
+
+    const point = entry.point != null ? entry.point : ticketLine;
+
+    // Hard guard. On spread the two sides carry opposite-signed points, so a
+    // sign disagreement means we are about to record the other team's line.
+    // Skip rather than write a corrupt close — a missing roll degrades
+    // close_lag_hours honestly, whereas a wrong one silently poisons CLV.
+    if (t.market === 'spread' && ticketLine != null && point != null
+        && Math.sign(point) !== Math.sign(ticketLine)) {
+      sideMismatch++;
+      continue;
+    }
+    // A genuine line move (e.g. total 8.5 -> 9) is real and gets recorded, but
+    // it is counted so the weekly digest can show how often close and placed
+    // lines diverge — that is a different question from mis-capture.
+    if (ticketLine != null && point != null && point !== ticketLine) lineMoved++;
+
+    // Opposite side, SAME line, same event + market, from the same snapshot.
+    // Spread mirrors the point; totals share it; moneyline has none. Requiring
+    // the mirrored point is what keeps removeVig() comparing one real two-sided
+    // market instead of two unrelated lines.
     const oppName = oppositeOutcome(t.market, t.pick, t.away_team, t.home_team);
-    const oppEntry = oppName ? priceMap[`${t.event_id}|${oddsMarket}|${oppName}`] : null;
-    const oppOdds = (oppEntry && oppEntry.prices.length) ? Math.round(median(oppEntry.prices)) : null;
+    let oppPoint = null;
+    if (t.market === 'spread') oppPoint = point != null ? -point : null;
+    else if (t.market === 'total') oppPoint = point;
+
+    const oppEntry = oppName
+      ? selectQuote(priceMap, variantIdx, t.event_id, oddsMarket, oppName, oppPoint)
+      : null;
+    // Only accept the opposite quote if it is genuinely the mirrored line;
+    // otherwise leave it null and let freeze fall back to the implied basis.
+    const oppUsable = oppEntry && oppEntry.prices.length && (
+      t.market === 'moneyline' ||
+      (oppPoint != null && oppEntry.point != null && Number(oppEntry.point) === Number(oppPoint))
+    );
+    const oppOdds = oppUsable ? Math.round(median(oppEntry.prices)) : null;
     if (oppOdds != null) withOpp++;
 
-    const patch = { last_seen_odds: Math.round(median(entry.prices)), last_seen_line: point, last_seen_at: capturedAt };
+    const patch = {
+      last_seen_odds: Math.round(median(entry.prices)),
+      last_seen_line: point,
+      last_seen_at: capturedAt,
+    };
     if (oppOdds != null) patch.last_seen_opp_odds = oppOdds;
 
     // If the feed now reports a different start, adopt it. The ticket is
@@ -120,7 +211,7 @@ async function rollLastSeen() {
       .eq('pick_id', t.pick_id);
     if (!error) updated++;
   }
-  return { updated, open: tickets.length, withOpp, rescheduled };
+  return { updated, open: tickets.length, withOpp, rescheduled, sideMismatch, lineMoved, noQuote };
 }
 
 // Freeze open tickets whose game has started; compute CLV from open vs close.
