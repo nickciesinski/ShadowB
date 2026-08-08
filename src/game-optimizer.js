@@ -516,6 +516,9 @@ async function optimizeCSVWeights() {
                 goalsAgainst: row[13] || '', pointsFor: row[14] || '',
                 pointsAgainst: row[15] || '', recentFormPct: row[16] || '',
                 formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
+                ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
+                oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
+                redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
               };
             }
             historicalCache[`current|${league}`] = map;

@@ -305,6 +305,26 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // Unified starter adjustment fed into margin projections below.
   const starterAdj = pitcherAdj + goalieAdj;
 
+  // 2026-08-08 — starter WHIP injected here rather than in extractFeatures,
+  // because pitcherData is only in scope in this function (same reason the
+  // sp_* market features are injected downstream). pitcher_whip_diff carries
+  // weight 0.35 on moneyline and had nothing to read: extractPitcher never
+  // parsed WHIP at all.
+  //
+  // Inverted so positive favours home, matching every other feature: LOWER
+  // WHIP is better. This is additive to starterAdj rather than duplicative --
+  // starterAdj is built purely from ERA, and WHIP separates a pitcher who
+  // genuinely limits baserunners from one flattered by strand rate.
+  if (league === 'MLB' && pitcherData) {
+    const hWhip = parseFloat(pitcherData.homePitcher?.whip);
+    const aWhip = parseFloat(pitcherData.awayPitcher?.whip);
+    features.pitcher_whip_diff = (Number.isFinite(hWhip) && Number.isFinite(aWhip))
+      ? (aWhip - hWhip) / 0.15
+      : 0;
+  } else {
+    features.pitcher_whip_diff = 0;
+  }
+
   // CSV-weighted adjustment: if weights exist for moneyline/spread, blend in
   const mlWeights = (weights && weights.moneyline) || {};
   const spreadWeights = (weights && weights.spread) || {};

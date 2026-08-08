@@ -216,6 +216,25 @@ function extractFeatures(home, away, scheduleInfo, league) {
     // Same value under the name the weight vector actually uses (1.7 on
     // moneyline, 2.2 on spread -- the single largest weight in the file).
     f.run_differential_diff = f.mlb_run_diff;
+
+    // 2026-08-08 — MLB team batting/pitching, newly collected. These are
+    // genuinely NEW information, not renames: nothing in the model saw team
+    // OPS, batting average or WHIP before.
+    //
+    // Deliberately NOT adding era_diff / pitcher_era_diff / pitcher_quality_
+    // diff here. Starter ERA already reaches the model through a different
+    // door: computePitcherAdj turns the ERA gap into a runs adjustment (capped
+    // +/-2.0) added straight to the margin as starterAdj in game-model.js.
+    // Weighting ERA features on top would count the same signal twice.
+    // WHIP is not in starterAdj, so it is additive rather than duplicative.
+    const opsD = diff(h.ops, a.ops);
+    f.ops_diff = opsD !== null ? opsD / 0.1 : 0;          // ~0.1 OPS = 1 unit
+    const avgD = diff(h.battingAvg, a.battingAvg);
+    f.batting_avg_diff = avgD !== null ? avgD / 0.02 : 0; // ~20 pts of AVG
+    // WHIP inverted: LOWER is better, so away-minus-home keeps the convention
+    // that positive favours home.
+    const whipD = diff(a.whip, h.whip);
+    f.whip_diff = whipD !== null ? whipD / 0.15 : 0;
     if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {
       console.log(`[game-features][MLB] implausible mlb_run_diff ${rawRunDiff.toFixed(1)} `
         + `(runs ${hRuns}/${hRA} vs ${aRuns}/${aRA}) — zeroed`);
@@ -227,6 +246,9 @@ function extractFeatures(home, away, scheduleInfo, league) {
     // For non-MLB leagues the generic point differential is the right stand-in.
     f.run_differential_diff = Number.isFinite(f.point_differential_diff)
       ? f.point_differential_diff : 0;
+    f.ops_diff = 0;
+    f.batting_avg_diff = 0;
+    f.whip_diff = 0;
   }
 
   if (league === 'NFL') {
@@ -242,9 +264,56 @@ function extractFeatures(home, away, scheduleInfo, league) {
     // genuinely uncollected data, not a naming problem -- see the audit note
     // in the commit. Those need new stat collection and are NOT faked here.
     f.opp_points_diff = f.defense_papg_diff;
+
+    // 2026-08-08 — NFL carried the largest dead weight of any league:
+    // turnover_impact 1.8 (the single biggest missing weight anywhere),
+    // yards_diff 0.45, red_zone_diff 0.35, third_down_diff 0.3,
+    // opp_yards_diff 0.3, pass/rush_yards_diff. All weighted, none collected.
+    // Normalisers below put each roughly on a +/-1 scale so no single one
+    // dominates the unbounded sum in scoreMarket().
+    const ydsD = diff(h.yardsPerGame, a.yardsPerGame);
+    f.yards_diff = ydsD !== null ? ydsD / 50 : 0;
+    // Opponent yards inverted: fewer allowed is better.
+    const oppYdsD = diff(a.oppYardsPerGame, h.oppYardsPerGame);
+    f.opp_yards_diff = oppYdsD !== null ? oppYdsD / 50 : 0;
+    const passD = diff(h.passYardsPerGame, a.passYardsPerGame);
+    f.pass_yards_diff = passD !== null ? passD / 40 : 0;
+    const rushD = diff(h.rushYardsPerGame, a.rushYardsPerGame);
+    f.rush_yards_diff = rushD !== null ? rushD / 30 : 0;
+    const thirdD = diff(h.thirdDownPct, a.thirdDownPct);
+    f.third_down_diff = thirdD !== null ? thirdD / 8 : 0;   // pct points
+    const rzD = diff(h.redZonePct, a.redZonePct);
+    f.red_zone_diff = rzD !== null ? rzD / 12 : 0;          // pct points
+
+    // Turnover margin: takeaways minus giveaways, home vs away. This is what
+    // turnover_impact (1.8) is asking for and it is the classic NFL margin
+    // stat.
+    //
+    // Divisor 15 is calibrated, not arbitrary. Every other NFL feature lands
+    // near ~0.9 for a good-vs-average matchup (nfl_points_margin 0.94,
+    // yards_diff 0.68, third_down_diff 0.75), and features have to share a
+    // scale because scoreMarket() is an unbounded linear sum. At /10 a routine
+    // 14-turnover season gap produced 1.4, which against weight 1.8 was 2.52 --
+    // more than the ENTIRE pre-existing score for that game, pushing model_prob
+    // to 0.96. Turnover margin deserves to be the largest single input here;
+    // it does not deserve to be the only one.
+    const hTO = parseFloat(h.takeaways) - parseFloat(h.giveaways);
+    const aTO = parseFloat(a.takeaways) - parseFloat(a.giveaways);
+    f.turnover_impact = (Number.isFinite(hTO) && Number.isFinite(aTO))
+      ? (hTO - aTO) / 15 : 0;
+
+    // efficiency_diff (0.8) is deliberately left at 0. Unlike the above its
+    // intended meaning is not recoverable -- it could be yards/play,
+    // points/yard, or DVOA-style. Inventing a definition for an existing
+    // weight would silently change what that 0.8 multiplies. Needs a decision,
+    // not a guess.
+    f.efficiency_diff = 0;
   } else {
     f.nfl_points_margin = 0;
     f.opp_points_diff = 0;
+    f.yards_diff = 0; f.opp_yards_diff = 0; f.pass_yards_diff = 0;
+    f.rush_yards_diff = 0; f.third_down_diff = 0; f.red_zone_diff = 0;
+    f.turnover_impact = 0; f.efficiency_diff = 0;
   }
 
   if (league === 'NHL') {

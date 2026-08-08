@@ -251,6 +251,10 @@ async function updateTeamStats() {
     // real columns sitting under no heading, which is invisible in the sheet
     // and exactly the silent-failure class this system keeps hitting.
     'FormL1', 'FormL3', 'FormL5',
+    // 2026-08-08 — indices 22-32. MLB team batting/pitching + NFL yardage,
+    // efficiency and turnovers, all of which carried weight but were never
+    // collected. Sparse by design: MLB fills 22-24, NFL fills 25-32.
+    'OPS', 'BattingAvg', 'WHIP', 'YardsPerGame', 'OppYardsPerGame', 'PassYardsPerGame', 'RushYardsPerGame', 'ThirdDownPct', 'RedZonePct', 'Takeaways', 'Giveaways',
   ];
   const allRows = [HEADER];
   const ts = new Date().toISOString();
@@ -286,6 +290,7 @@ async function updateTeamStats() {
           pointsFor: '', pointsAgainst: '',
           recentFormPct: '', last10W: '', last10L: '',
           formL1: '', formL3: '', formL5: '',
+          ops: '', battingAvg: '', whip: '', yardsPerGame: '', oppYardsPerGame: '', passYardsPerGame: '', rushYardsPerGame: '', thirdDownPct: '', redZonePct: '', takeaways: '', giveaways: '',
         };
       }
 
@@ -308,6 +313,7 @@ async function updateTeamStats() {
           // Appended 2026-08-08 at indices 19-21. Additive: every existing
           // reader indexes 0-18 and is unaffected.
           t.formL1, t.formL3, t.formL5,
+          t.ops, t.battingAvg, t.whip, t.yardsPerGame, t.oppYardsPerGame, t.passYardsPerGame, t.rushYardsPerGame, t.thirdDownPct, t.redZonePct, t.takeaways, t.giveaways,
         ]);
       }
 
@@ -437,22 +443,47 @@ async function enrichNBA(espn, teamMap) {
 const MLB_RATE_MIN = 0.5;   // no team scores under half a run a game
 const MLB_RATE_MAX = 15;    // nor over fifteen
 
-function mlbPerGame(stats, avgKeys, totalKeys) {
-  for (const k of avgKeys) {
+// 2026-08-08 — generalised from mlbPerGame. Resolves a stat, preferring an
+// explicit per-game average, then deriving total/gamesPlayed, then REJECTING
+// anything outside a plausible range instead of passing it downstream.
+//
+// The range check is the important part and it is not paranoia: ESPN returns
+// season totals and per-game rates under confusingly similar names, and
+// picking the wrong one is silent. That is exactly how mlb_run_diff ran at
+// -5825 for months. scoreMarket() is an unbounded linear sum with no clamping,
+// so one bad stat can dominate every other feature. Returning '' degrades the
+// feature to 0, which is honest; returning a five-figure number is not.
+//
+// `range` is [min, max] for the PER-GAME value. Pass rate:false for stats that
+// are already percentages/ratios and must not be divided by games played.
+function perGameStat(stats, keys, opts = {}) {
+  const [lo, hi] = opts.range || [0, Infinity];
+  const label = opts.label || keys[0];
+  for (const k of keys) {
     const v = parseFloat(stats[k]);
-    if (Number.isFinite(v) && v >= MLB_RATE_MIN && v <= MLB_RATE_MAX) return v;
+    if (Number.isFinite(v) && v >= lo && v <= hi) return v;
   }
-  const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
-  if (Number.isFinite(gp) && gp > 0) {
-    for (const k of totalKeys) {
-      const v = parseFloat(stats[k]);
-      if (!Number.isFinite(v)) continue;
-      const rate = v / gp;
-      if (rate >= MLB_RATE_MIN && rate <= MLB_RATE_MAX) return rate;
+  if (opts.totalKeys) {
+    const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
+    if (Number.isFinite(gp) && gp > 0) {
+      for (const k of opts.totalKeys) {
+        const v = parseFloat(stats[k]);
+        if (!Number.isFinite(v)) continue;
+        const rate = v / gp;
+        if (rate >= lo && rate <= hi) return rate;
+      }
     }
   }
-  console.log(`[data-collection][MLB] no plausible per-game rate for ${avgKeys[0]} — feature degraded to 0`);
+  if (opts.quiet !== true) {
+    console.log(`[data-collection] no plausible value for ${label} — feature degraded to 0`);
+  }
   return '';
+}
+
+function mlbPerGame(stats, avgKeys, totalKeys) {
+  return perGameStat(stats, avgKeys, {
+    totalKeys, range: [MLB_RATE_MIN, MLB_RATE_MAX], label: avgKeys[0],
+  });
 }
 
 async function enrichMLB(espn, teamMap) {
@@ -477,6 +508,20 @@ async function enrichMLB(espn, teamMap) {
       teamMap[abbr].runsAllowedPerGame = mlbPerGame(
         stats, ['pitching.avgRunsAllowed', 'avgRunsAllowed', 'runsAllowedPerGame'],
         ['pitching.runs', 'runsAllowed']);
+      // 2026-08-08 — team batting/pitching detail. model-params.MLB.json
+      // weights ops_diff (0.4), whip_diff (0.45) and batting_avg_diff (0.25)
+      // but none were ever collected, so scoreMarket skipped them silently.
+      // These are ratios, not counts: no totalKeys, and tight ranges so a
+      // wrong ESPN key name degrades to 0 rather than injecting nonsense.
+      teamMap[abbr].ops = perGameStat(stats,
+        ['batting.OPS', 'batting.onBasePlusSlugging', 'OPS', 'onBasePlusSlugging'],
+        { range: [0.4, 1.2], label: 'MLB team OPS', quiet: true });
+      teamMap[abbr].battingAvg = perGameStat(stats,
+        ['batting.avg', 'batting.battingAverage', 'avg', 'battingAverage'],
+        { range: [0.15, 0.35], label: 'MLB team AVG', quiet: true });
+      teamMap[abbr].whip = perGameStat(stats,
+        ['pitching.WHIP', 'pitching.whip', 'WHIP', 'whip'],
+        { range: [0.7, 2.0], label: 'MLB team WHIP', quiet: true });
     } catch (err) {
       // Skip
     }
@@ -515,8 +560,46 @@ async function enrichNFL(espn, teamMap) {
       if (!res.ok) continue;
       const data = await res.json();
       const stats = flattenESPNStats(data);
-      teamMap[abbr].pointsFor = stats['totalPointsPerGame'] || stats['avgPoints'] || stats['points'] || '';
-      teamMap[abbr].pointsAgainst = stats['pointsAgainst'] || stats['avgPointsAgainst'] || '';
+      // 2026-08-08 — `points` (a season total) used to be a fallback here, the
+      // same trap that broke MLB run differential. Range-guarded now.
+      teamMap[abbr].pointsFor = perGameStat(stats,
+        ['totalPointsPerGame', 'avgPoints'], { totalKeys: ['points', 'totalPoints'],
+        range: [5, 45], label: 'NFL points/game', quiet: true });
+      teamMap[abbr].pointsAgainst = perGameStat(stats,
+        ['avgPointsAgainst', 'pointsAgainstPerGame'],
+        { totalKeys: ['pointsAgainst'], range: [5, 45], label: 'NFL points allowed/game', quiet: true });
+
+      // NFL carried the largest remaining dead weight of any league:
+      // turnover_impact 1.8, yards_diff 0.45, red_zone_diff 0.35,
+      // third_down_diff 0.3, opp_yards_diff 0.3, pass/rush_yards_diff. All
+      // weighted, none collected. Percentages are stored as ESPN gives them
+      // (0-100) and normalised in game-features.
+      teamMap[abbr].yardsPerGame = perGameStat(stats,
+        ['totalYardsPerGame', 'yardsPerGame', 'netTotalYardsPerGame'],
+        { totalKeys: ['totalYards', 'netTotalYards'], range: [150, 550], label: 'NFL yards/game', quiet: true });
+      teamMap[abbr].oppYardsPerGame = perGameStat(stats,
+        ['opponentTotalYardsPerGame', 'yardsAllowedPerGame', 'opponentYardsPerGame'],
+        { totalKeys: ['opponentTotalYards', 'yardsAllowed'], range: [150, 550], label: 'NFL opp yards/game', quiet: true });
+      teamMap[abbr].passYardsPerGame = perGameStat(stats,
+        ['netPassingYardsPerGame', 'passingYardsPerGame', 'passYardsPerGame'],
+        { totalKeys: ['netPassingYards', 'passingYards'], range: [80, 400], label: 'NFL pass yds/game', quiet: true });
+      teamMap[abbr].rushYardsPerGame = perGameStat(stats,
+        ['rushingYardsPerGame', 'rushYardsPerGame'],
+        { totalKeys: ['rushingYards'], range: [40, 250], label: 'NFL rush yds/game', quiet: true });
+      teamMap[abbr].thirdDownPct = perGameStat(stats,
+        ['thirdDownConvPct', 'thirdDownConversionPct', 'thirdDownPct'],
+        { range: [15, 65], label: 'NFL 3rd down %', quiet: true });
+      teamMap[abbr].redZonePct = perGameStat(stats,
+        ['redzoneScoringPct', 'redZoneScoringPct', 'redzoneEfficiencyPct'],
+        { range: [20, 90], label: 'NFL red zone %', quiet: true });
+      // Turnovers: takeaways minus giveaways is the classic NFL margin stat
+      // and is what turnover_impact (weight 1.8) is asking for.
+      teamMap[abbr].takeaways = perGameStat(stats,
+        ['totalTakeaways', 'takeaways', 'defensiveTakeaways'],
+        { range: [0, 60], label: 'NFL takeaways', quiet: true });
+      teamMap[abbr].giveaways = perGameStat(stats,
+        ['totalGiveaways', 'giveaways', 'turnovers'],
+        { range: [0, 60], label: 'NFL giveaways', quiet: true });
     } catch (err) {
       // Skip
     }

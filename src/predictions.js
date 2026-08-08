@@ -35,7 +35,7 @@ const paramStore = require('./param-store');
 // model at all, so rows before and after it are NOT comparable and must not be
 // pooled. MODEL_VERSION is bumped by hand when pick-affecting logic changes;
 // weights_hash moves on its own whenever the weight file does.
-const MODEL_VERSION = 'v2.1-feature-vocab-2026-08-08';
+const MODEL_VERSION = 'v2.2-new-features-2026-08-08';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
@@ -502,6 +502,9 @@ async function generateMLBPredictions() {
         // Real form windows appended 2026-08-08 (indices 19-21). Blank on
         // rows written before that date; game-features falls back.
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
+        ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
+        oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
       };
   }
 
@@ -596,6 +599,9 @@ async function generateNBAPredictions() {
         // Real form windows appended 2026-08-08 (indices 19-21). Blank on
         // rows written before that date; game-features falls back.
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
+        ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
+        oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
       };
   }
 
@@ -659,6 +665,9 @@ async function generateNHLPredictions() {
         // Real form windows appended 2026-08-08 (indices 19-21). Blank on
         // rows written before that date; game-features falls back.
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
+        ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
+        oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
       };
   }
 
@@ -733,6 +742,9 @@ async function generateNFLPredictions() {
         // Real form windows appended 2026-08-08 (indices 19-21). Blank on
         // rows written before that date; game-features falls back.
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
+        ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
+        oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
       };
   }
 

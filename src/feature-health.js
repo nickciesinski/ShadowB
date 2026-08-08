@@ -31,6 +31,9 @@ const MODEL_INJECTED = new Set([
   'sp_pred_margin', 'sp_pred_total', 'sp_prob_home', 'sp_prob_away',
   'sp_edge_ml_home', 'sp_edge_ml_away', 'sp_edge_spread_home',
   'sp_edge_spread_away', 'sp_edge_total',
+  // Injected in game-model.js where pitcherData is in scope; extractFeatures
+  // does not receive it. Legitimately absent at extraction time.
+  'pitcher_whip_diff',
 ]);
 
 // Known-absent weights that are a deliberate decision rather than a bug.
@@ -43,10 +46,11 @@ const ACCEPTED_DEAD = new Set([
   'pitcher_home_advantage', 'pitcher_away_advantage',
   'home_pitcher_rating', 'away_pitcher_rating', 'ace_matchup', 'poor_pitching_matchup',
   // MLB/NFL: genuinely uncollected stats, not naming problems.
-  'whip_diff', 'pitcher_whip_diff', 'bullpen_era_diff', 'ops_diff', 'batting_avg_diff',
+  'bullpen_era_diff',
   'weather_factor', 'home_field_advantage', 'division_game_factor',
-  'turnover_impact', 'efficiency_diff', 'yards_diff', 'opp_yards_diff',
-  'red_zone_diff', 'third_down_diff', 'pass_yards_diff', 'rush_yards_diff',
+  // efficiency_diff stays: its intended meaning is not recoverable, so a
+  // definition would have to be invented. Needs a decision, not a guess.
+  'efficiency_diff',
   'red_zone_combined', 'yards_combined', 'third_down_combined', 'turnover_combined',
   // NHL: uncollected special-teams and goaltending detail.
   'power_play_diff', 'penalty_kill_diff', 'save_percentage_diff', 'shots_diff',

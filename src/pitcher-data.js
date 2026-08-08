@@ -106,6 +106,16 @@ function extractPitcher(probables) {
   }
 
   const era = statMap['ERA']?.value || null;
+  // 2026-08-08 — WHIP was never parsed, so pitcher_whip_diff (0.35 moneyline)
+  // had nothing to read. WHIP is genuinely additional to ERA: it separates a
+  // pitcher who allows few baserunners from one flattered by strand rate.
+  // Range-guarded because a wrong ESPN key would otherwise feed an unbounded
+  // linear model.
+  const whipRaw = parseFloat(
+    statMap['WHIP']?.value ?? statMap['whip']?.value
+    ?? statMap['walksHitsPerInningPitched']?.value);
+  const whip = (Number.isFinite(whipRaw) && whipRaw >= 0.4 && whipRaw <= 3.0)
+    ? whipRaw : null;
   const wl = statMap['wins-losses']?.display || statMap['wins']?.display || '';
   const ks = statMap['strikeouts']?.value || statMap['K']?.value || null;
   const wins = statMap['wins']?.value || (wl ? parseInt(wl.split('-')[0]) : null);
@@ -115,6 +125,7 @@ function extractPitcher(probables) {
     name: athlete.displayName || athlete.fullName || prob.displayName || '',
     id: athlete.id || prob.playerId || '',
     era,
+    whip,
     wins,
     losses,
     strikeouts: ks,
