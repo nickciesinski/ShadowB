@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "2026-08-08. Books Nick can actually place a bet at. Everything measured",
+    "before this date used best-price-across-all-11-books, which included",
+    "lowvig / mybookieag / betus / fanduel / betmgm — prices that were never",
+    "reachable. That made every net-edge number optimistic by 0.5-1.2pp and",
+    "produced a fake +0.133pp on moneyline.",
+    "",
+    "Measured cost of restricting to this list vs unlimited shopping:",
+    "  bovada + betonlineag : h2h -0.47pp, spreads -0.51pp, totals -0.48pp",
+    "  bovada alone         : h2h -1.52pp, spreads -1.05pp, totals -1.43pp",
+    "  bovada + draftkings  : h2h -1.20pp, spreads -0.83pp, totals -0.82pp",
+    "Two-sided hold at bovada+betonlineag: h2h 2.29pp, spreads 2.86pp,",
+    "totals 3.77pp (so ~1.15 / 1.43 / 1.88pp of vig per side).",
+    "",
+    "Adding a book here is the cheapest real improvement available to this",
+    "system — it costs nothing to compute and directly reduces vig paid.",
+    "Novig is deliberately absent: it is a no-vig exchange and is not carried",
+    "by The Odds API, so it cannot be priced from this feed."
+  ],
+  "usable": ["bovada", "betonlineag"],
+  "preferred_line_source": "bovada"
+}

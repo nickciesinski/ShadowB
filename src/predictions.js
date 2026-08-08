@@ -20,6 +20,8 @@ const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb, roundUnits } = require('./market-pricing');
 const { priceStats, selectGradedPrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
+const BOOKS = require('../config/books.json'); // 2026-08-08 books we can actually bet at
+const USABLE_BOOKS = new Set((BOOKS.usable || []).map((b) => String(b).toLowerCase()));
 const { applyApprovalFilters } = require('./approval-engine');
 const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate } = require('./norm');
 const db = require('./db');
@@ -86,6 +88,21 @@ function assignGameNumbers(games) {
 // edge or just one slow book's stale line (architecture doc S11.1). Returns
 // the first book quoting that exact price; ties are arbitrary but rare and
 // only matter for diagnosis, not for the price itself.
+// 2026-08-08 — only books in config/books.json are reachable. Best price is
+// computed over THESE ONLY; the all-book best is kept alongside purely as a
+// diagnostic of what a wider account footprint would be worth. Measuring
+// against prices we cannot reach is what produced a fake +0.133pp net edge on
+// moneyline when the true figure at bovada+betonlineag is about -0.38pp.
+function usableOnly(entries) {
+  if (!Array.isArray(entries)) return [];
+  if (!USABLE_BOOKS.size) return entries;
+  const hit = entries.filter((e) => USABLE_BOOKS.has(String(e.bookmaker || '').toLowerCase()));
+  // If none of our books quote this market, fall back to the full set rather
+  // than dropping the pick — the row is then flagged by best_book being a book
+  // we don't hold, which the weekly digest can surface.
+  return hit.length ? hit : entries;
+}
+
 function bookForPrice(entries, price) {
   if (!Array.isArray(entries) || !Number.isFinite(price)) return null;
   for (const e of entries) {
@@ -246,13 +263,16 @@ function buildGameObjects(oddsRows, sportFilter) {
           const medianPrice = chosenPrice !== null ? chosenPrice : nearPrices[Math.floor(nearPrices.length / 2)];
           // R2.1: best-available price across books (additive — does not change
           // which side/point/price we pick; surfaces line-shopping upside).
-          const bestPrice = priceStats(nearPrices).best;
-          const bestBook = bookForPrice(nearEntries, bestPrice);
+          const usableNear = usableOnly(nearEntries);
+          const bestPrice = priceStats(usableNear.map((e) => e.price)).best;
+          const bestBook = bookForPrice(usableNear, bestPrice);
+          const bestAll = priceStats(nearPrices).best;
           markets[market].push({
             outcome,
             price: medianPrice,
             bestPrice: bestPrice !== null ? bestPrice : medianPrice,
             bestBook: bestBook || null,
+            bestPriceAllBooks: bestAll !== null ? bestAll : medianPrice,
             point: String(chosenPoint),
             impliedProb: impliedProbability(medianPrice).toFixed(3),
             bestImpliedProb: impliedProbability(bestPrice !== null ? bestPrice : medianPrice).toFixed(3),
@@ -269,13 +289,16 @@ function buildGameObjects(oddsRows, sportFilter) {
         const allPrices = allEntries.map((e) => e.price).sort((a, b) => a - b);
         const median = allPrices[Math.floor(allPrices.length / 2)];
         // R2.1: best-available price across books (additive — pick unchanged).
-        const bestH2h = priceStats(allPrices).best;
-        const bestH2hBook = bookForPrice(allEntries, bestH2h);
+        const usableAll = usableOnly(allEntries);
+        const bestH2h = priceStats(usableAll.map((e) => e.price)).best;
+        const bestH2hBook = bookForPrice(usableAll, bestH2h);
+        const bestH2hAll = priceStats(allPrices).best;
         markets[market].push({
           outcome,
           price: median,
           bestPrice: bestH2h !== null ? bestH2h : median,
           bestBook: bestH2hBook || null,
+          bestPriceAllBooks: bestH2hAll !== null ? bestH2hAll : median,
           point,
           impliedProb: impliedProbability(median).toFixed(3),
           bestImpliedProb: impliedProbability(bestH2h !== null ? bestH2h : median).toFixed(3),
