@@ -168,7 +168,20 @@ function extractFeatures(home, away, scheduleInfo, league) {
     const hRA = parseFloat(h.runsAllowedPerGame) || 0;
     const aRuns = parseFloat(a.runsPerGame) || 0;
     const aRA = parseFloat(a.runsAllowedPerGame) || 0;
-    f.mlb_run_diff = ((hRuns - hRA) - (aRuns - aRA)) / norm.ppg;
+    const rawRunDiff = ((hRuns - hRA) - (aRuns - aRA)) / norm.ppg;
+    // 2026-08-08 — sanity gate. scoreMarket() is an UNBOUNDED linear sum with
+    // no clamping anywhere downstream, so one malformed stat can dominate every
+    // other feature. This ran at -5825 for months (season totals mistaken for
+    // per-game rates) and was invisible only because the feature carries no
+    // weight. A plausible value here is well inside +/-3; anything past that is
+    // upstream corruption, so zero it and say so rather than let it through.
+    f.mlb_run_diff = Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) <= 3
+      ? rawRunDiff
+      : 0;
+    if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {
+      console.log(`[game-features][MLB] implausible mlb_run_diff ${rawRunDiff.toFixed(1)} `
+        + `(runs ${hRuns}/${hRA} vs ${aRuns}/${aRA}) — zeroed`);
+    }
   } else {
     f.mlb_run_diff = 0;
   }

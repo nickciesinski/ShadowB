@@ -419,6 +419,33 @@ async function enrichNBA(espn, teamMap) {
 /**
  * MLB: Pull runs scored / runs allowed per game.
  */
+// 2026-08-08 — resolve a per-game MLB rate. Prefers an explicit average, then
+// derives total/gamesPlayed, and finally REJECTS anything outside a plausible
+// range rather than passing it downstream. Silent bad data is the failure mode
+// that has cost this system the most; a rejected stat degrades the feature to
+// 0, which is honest, instead of injecting a five-figure number into a linear
+// model where nothing clamps it.
+const MLB_RATE_MIN = 0.5;   // no team scores under half a run a game
+const MLB_RATE_MAX = 15;    // nor over fifteen
+
+function mlbPerGame(stats, avgKeys, totalKeys) {
+  for (const k of avgKeys) {
+    const v = parseFloat(stats[k]);
+    if (Number.isFinite(v) && v >= MLB_RATE_MIN && v <= MLB_RATE_MAX) return v;
+  }
+  const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
+  if (Number.isFinite(gp) && gp > 0) {
+    for (const k of totalKeys) {
+      const v = parseFloat(stats[k]);
+      if (!Number.isFinite(v)) continue;
+      const rate = v / gp;
+      if (rate >= MLB_RATE_MIN && rate <= MLB_RATE_MAX) return rate;
+    }
+  }
+  console.log(`[data-collection][MLB] no plausible per-game rate for ${avgKeys[0]} — feature degraded to 0`);
+  return '';
+}
+
 async function enrichMLB(espn, teamMap) {
   for (const abbr of Object.keys(teamMap)) {
     try {
@@ -427,8 +454,20 @@ async function enrichMLB(espn, teamMap) {
       if (!res.ok) continue;
       const data = await res.json();
       const stats = flattenESPNStats(data);
-      teamMap[abbr].runsPerGame = stats['runs'] || stats['avgRuns'] || stats['runsPerGame'] || '';
-      teamMap[abbr].runsAllowedPerGame = stats['runsAllowed'] || stats['avgRunsAllowed'] || stats['runsAllowedPerGame'] || '';
+      // 2026-08-08 BUGFIX. The old chain checked stats['runs'] FIRST, which is
+      // the SEASON TOTAL, not a per-game rate — and thanks to the namespace
+      // collision above it was sometimes the pitching category's total anyway.
+      // Result: mlb_run_diff ran from -5825 to +4725 when a correct value is
+      // roughly +/-0.5. Boston/Athletics computed a raw differential of
+      // -23,300 runs. The feature happens to carry zero weight today so it
+      // never corrupted a pick, but it meant run differential — commented in
+      // game-features.js as "single best predictor in baseball" — has been
+      // contributing nothing at all.
+      teamMap[abbr].runsPerGame = mlbPerGame(
+        stats, ['batting.avgRuns', 'avgRuns', 'runsPerGame'], ['batting.runs', 'runs']);
+      teamMap[abbr].runsAllowedPerGame = mlbPerGame(
+        stats, ['pitching.avgRunsAllowed', 'avgRunsAllowed', 'runsAllowedPerGame'],
+        ['pitching.runs', 'runsAllowed']);
     } catch (err) {
       // Skip
     }
@@ -490,13 +529,24 @@ function flattenESPNStats(data) {
       || [];
 
     for (const cat of categories) {
+      // 2026-08-08: MLB returns a stat literally named `runs` in BOTH the
+      // batting and pitching categories — offense scored vs offense allowed.
+      // Flattening every category into one namespace means whichever category
+      // ESPN happens to emit last silently wins, so `stats['runs']` could be
+      // either. Category-prefixed keys are added alongside the flat ones so a
+      // caller can ask for exactly what it means. Flat keys keep last-wins
+      // semantics unchanged — this is purely additive and does not alter NBA,
+      // NFL or NHL extraction.
+      const catName = String(cat.name || cat.abbreviation || '').toLowerCase();
       const stats = cat.stats || cat.statistics || [];
       for (const s of stats) {
         if (s.name && s.value !== undefined) {
           result[s.name] = s.value;
+          if (catName) result[`${catName}.${s.name}`] = s.value;
         }
         if (s.abbreviation && s.value !== undefined) {
           result[s.abbreviation] = s.value;
+          if (catName) result[`${catName}.${s.abbreviation}`] = s.value;
         }
       }
     }
