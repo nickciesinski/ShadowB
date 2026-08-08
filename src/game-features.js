@@ -233,8 +233,15 @@ function extractFeatures(home, away, scheduleInfo, league) {
     const aPF = parseFloat(a.pointsFor) || 0;
     const aPA = parseFloat(a.pointsAgainst) || 0;
     f.nfl_points_margin = ((hPF - hPA) - (aPF - aPA)) / norm.ppg;
+    // 2026-08-08 — opp_points_diff is an alias of the (already inverted)
+    // defensive differential. The rest of NFL's dead weight (turnover_impact
+    // 1.8, efficiency_diff, yards_diff, red_zone_diff, third_down_diff) is
+    // genuinely uncollected data, not a naming problem -- see the audit note
+    // in the commit. Those need new stat collection and are NOT faked here.
+    f.opp_points_diff = f.defense_papg_diff;
   } else {
     f.nfl_points_margin = 0;
+    f.opp_points_diff = 0;
   }
 
   if (league === 'NHL') {
@@ -244,8 +251,22 @@ function extractFeatures(home, away, scheduleInfo, league) {
     const aGF = parseFloat(a.goalsFor) || 0;
     const aGA = parseFloat(a.goalsAgainst) || 0;
     f.nhl_goal_diff = ((hGF - hGA) - (aGF - aGA)) / norm.ppg;
+    // 2026-08-08 — same vocabulary mismatch as MLB, and worse. NHL weights
+    // goal_differential_diff at 1.8 (moneyline) and 3.0 (spread) -- the single
+    // largest weight in any param file -- plus defense_ga_diff 1.4 and
+    // offense_gf_diff 1.2, none of which extractFeatures emitted. Only 57% /
+    // 55% / 51% of NHL weight mass was reaching the model. Aliases of the
+    // identical, already correctly-signed computations above.
+    f.goal_differential_diff = f.nhl_goal_diff;
+    f.offense_gf_diff = f.offense_ppg_diff;
+    f.defense_ga_diff = f.defense_papg_diff;
   } else {
     f.nhl_goal_diff = 0;
+    // Present-but-zero, never undefined: scoreMarket() silently skips missing
+    // keys, which is the failure being fixed.
+    f.goal_differential_diff = 0;
+    f.offense_gf_diff = 0;
+    f.defense_ga_diff = 0;
   }
 
   // ── SP (sharp/power) features — computed from market odds ──
