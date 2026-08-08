@@ -246,6 +246,11 @@ async function updateTeamStats() {
     'GoalsFor', 'GoalsAgainst',
     'PointsFor', 'PointsAgainst',
     'RecentFormPct', 'Last10W', 'Last10L',
+    // 2026-08-08 — real ordered form windows (indices 19-21). MUST stay in
+    // step with the row push below; a header shorter than the data rows leaves
+    // real columns sitting under no heading, which is invisible in the sheet
+    // and exactly the silent-failure class this system keeps hitting.
+    'FormL1', 'FormL3', 'FormL5',
   ];
   const allRows = [HEADER];
   const ts = new Date().toISOString();
