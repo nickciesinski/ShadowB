@@ -280,6 +280,7 @@ async function updateTeamStats() {
           goalsFor: '', goalsAgainst: '',
           pointsFor: '', pointsAgainst: '',
           recentFormPct: '', last10W: '', last10L: '',
+          formL1: '', formL3: '', formL5: '',
         };
       }
 
@@ -299,6 +300,9 @@ async function updateTeamStats() {
           t.goalsFor, t.goalsAgainst,
           t.pointsFor, t.pointsAgainst,
           t.recentFormPct, t.last10W, t.last10L,
+          // Appended 2026-08-08 at indices 19-21. Additive: every existing
+          // reader indexes 0-18 and is unaffected.
+          t.formL1, t.formL3, t.formL5,
         ]);
       }
 
@@ -564,9 +568,23 @@ function flattenESPNStats(data) {
  */
 async function enrichRecentForm(league, espn, teamMap) {
   try {
-    // Fetch last 10 days of scores to approximate recent form
+    // 2026-08-08 BUGFIX — this used to sample only FIVE non-consecutive dates
+    // out of a 14-day window ([0],[2],[5],[8],[12]) and gate on games >= 3, so
+    // a team's recent form came from 3-5 games. wins/games could then only
+    // land on a handful of values: recent_form_*_diff had THREE distinct
+    // values (-0.5, 0, +0.5) across every MLB game. Those four features plus
+    // momentum_diff are ~90% of the moneyline model's signal, so the model was
+    // effectively reading one three-valued number. It also compared two teams
+    // over different, non-overlapping sets of games.
+    //
+    // Now walks consecutive days and keeps results IN ORDER, which also yields
+    // genuine L1/L3/L5/L10 windows instead of the synthetic
+    // formDiff * {1.0,1.1,1.2,1.3} copies game-features.js was inventing.
+    // ESPN scoreboard is free with no published rate limit; we stop early once
+    // every team has 10 games.
+    const MAX_DAYS_BACK = 20;
     const dates = [];
-    for (let i = 1; i <= 14; i++) {
+    for (let i = 1; i <= MAX_DAYS_BACK; i++) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       dates.push(d.toISOString().slice(0, 10).replace(/-/g, ''));
@@ -575,14 +593,15 @@ async function enrichRecentForm(league, espn, teamMap) {
     // Track wins/losses per team over this window
     const teamResults = {}; // abbr â [W, L]
     for (const abbr of Object.keys(teamMap)) {
-      teamResults[abbr] = { wins: 0, losses: 0, games: 0 };
+      teamResults[abbr] = { wins: 0, losses: 0, games: 0, seq: [] };
     }
 
     // Fetch a few recent days' scoreboards to get game results
     // We sample 5 dates spread across the 14-day window to limit API calls
-    const sampleDates = [dates[0], dates[2], dates[5], dates[8], dates[12]].filter(Boolean);
+    const allTeamsFull = () => Object.values(teamResults).every((r) => r.games >= 10);
 
-    for (const dateStr of sampleDates) {
+    for (const dateStr of dates) {
+      if (allTeamsFull()) break;
       try {
         const url = `https://site.api.espn.com/apis/site/v2/sports/${espn.sport}/${espn.league}/scoreboard?dates=${dateStr}`;
         const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -601,6 +620,7 @@ async function enrichRecentForm(league, espn, teamMap) {
 
             const won = comp.winner === true;
             teamResults[abbr].games++;
+            teamResults[abbr].seq.push(won ? 1 : 0);
             if (won) teamResults[abbr].wins++;
             else teamResults[abbr].losses++;
           }
@@ -610,14 +630,28 @@ async function enrichRecentForm(league, espn, teamMap) {
       }
     }
 
+    const windowRate = (seq, n) => (seq.length >= n
+      ? (seq.slice(0, n).reduce((x, y) => x + y, 0) / n).toFixed(3)
+      : '');
+
     // Write results back to teamMap
     for (const [abbr, results] of Object.entries(teamResults)) {
       if (results.games >= 3 && teamMap[abbr]) {
         teamMap[abbr].last10W = results.wins;
         teamMap[abbr].last10L = results.losses;
         teamMap[abbr].recentFormPct = (results.wins / results.games).toFixed(3);
+        // A window is emitted only when actually FULL. A "last 5" computed
+        // from 2 games is not a last-5, and silently emitting one is exactly
+        // how the three-valued feature arose. Consumers fall back to the
+        // longest window they really have.
+        teamMap[abbr].formL1 = windowRate(results.seq, 1);
+        teamMap[abbr].formL3 = windowRate(results.seq, 3);
+        teamMap[abbr].formL5 = windowRate(results.seq, 5);
       }
     }
+    const seen = Object.values(teamResults).map((r) => r.games);
+    console.log(`[data-collection] ${league}: recent form games/team min=${Math.min(...seen)} `
+      + `max=${Math.max(...seen)} across ${dates.length} days`);
 
     console.log(`[data-collection] ${league}: recent form computed for ${Object.keys(teamResults).length} teams`);
   } catch (err) {

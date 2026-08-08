@@ -21,9 +21,43 @@ const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb, roundUnits } = require('./market-pricing');
 const { priceStats, selectGradedPrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const BOOKS = require('../config/books.json'); // 2026-08-08 books we can actually bet at
+
 const USABLE_BOOKS = new Set((BOOKS.usable || []).map((b) => String(b).toLowerCase()));
 const { applyApprovalFilters } = require('./approval-engine');
-const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate } = require('./norm');
+const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate, sha1 } = require('./norm');
+const paramStore = require('./param-store');
+
+// 2026-08-08 — model_version and weights_hash were NULL on every row ever
+// written. Architecture doc S5.2: without weights_hash a promotion gate
+// attributes results to a weight vector that did not produce them, because a
+// vector promoted today does not affect the tickets already open. This matters
+// immediately: today's feature-vocabulary fix changes which features reach the
+// model at all, so rows before and after it are NOT comparable and must not be
+// pooled. MODEL_VERSION is bumped by hand when pick-affecting logic changes;
+// weights_hash moves on its own whenever the weight file does.
+const MODEL_VERSION = 'v2.1-feature-vocab-2026-08-08';
+const WEIGHTS_HASH_CACHE = {};
+
+function weightsHashFor(league) {
+  const key = String(league || '').toUpperCase();
+  if (WEIGHTS_HASH_CACHE[key] !== undefined) return WEIGHTS_HASH_CACHE[key];
+  let hash = null;
+  try {
+    const rows = paramStore.getRows(key);
+    if (Array.isArray(rows) && rows.length) {
+      // Sorted so key order in the JSON file cannot change the hash.
+      const canon = rows
+        .map((r) => `${r[0] || ''}|${r[1] || ''}|${r[2]}`)
+        .sort()
+        .join('\n');
+      hash = sha1(canon).slice(0, 16);
+    }
+  } catch (e) {
+    hash = null;
+  }
+  WEIGHTS_HASH_CACHE[key] = hash;
+  return hash;
+}
 const db = require('./db');
 const { getGameWeather } = require('./weather');
 const { fetchProbablePitchers, remapStarterMapToGames } = require('./pitcher-data');
@@ -398,7 +432,6 @@ function getPerformanceModifier(league, betType) {
 // No minimum confidence filter — every game gets all 3 market picks.
 // Low-confidence picks use minimal units (0.01) instead of being excluded.
 
-
 /**
  * Build a schedule map from Schedule_Context rows for rest/B2B adjustments.
  * Returns { homeTeamName: { homeDaysOff, awayDaysOff, homeB2B, awayB2B } }
@@ -466,6 +499,9 @@ async function generateMLBPredictions() {
         goalsFor: row[12] || '', goalsAgainst: row[13] || '',
         pointsFor: row[14] || '', pointsAgainst: row[15] || '',
         recentFormPct: row[16] || '',
+        // Real form windows appended 2026-08-08 (indices 19-21). Blank on
+        // rows written before that date; game-features falls back.
+        formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
       };
   }
 
@@ -557,6 +593,9 @@ async function generateNBAPredictions() {
         goalsFor: row[12] || '', goalsAgainst: row[13] || '',
         pointsFor: row[14] || '', pointsAgainst: row[15] || '',
         recentFormPct: row[16] || '',
+        // Real form windows appended 2026-08-08 (indices 19-21). Blank on
+        // rows written before that date; game-features falls back.
+        formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
       };
   }
 
@@ -617,6 +656,9 @@ async function generateNHLPredictions() {
         goalsFor: row[12] || '', goalsAgainst: row[13] || '',
         pointsFor: row[14] || '', pointsAgainst: row[15] || '',
         recentFormPct: row[16] || '',
+        // Real form windows appended 2026-08-08 (indices 19-21). Blank on
+        // rows written before that date; game-features falls back.
+        formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
       };
   }
 
@@ -688,6 +730,9 @@ async function generateNFLPredictions() {
         goalsFor: row[12] || '', goalsAgainst: row[13] || '',
         pointsFor: row[14] || '', pointsAgainst: row[15] || '',
         recentFormPct: row[16] || '',
+        // Real form windows appended 2026-08-08 (indices 19-21). Blank on
+        // rows written before that date; game-features falls back.
+        formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
       };
   }
 
@@ -1282,6 +1327,8 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           // gate will eventually need, and it is what makes the two-window
           // A/B readable at all.
           lock_window: lockWindowOf(nowIso),
+          model_version: MODEL_VERSION,
+          weights_hash: weightsHashFor(r[1]),
           days_to_game: daysToGame,
           season: seasonOf(r[1], gameDate),
           status: 'open',

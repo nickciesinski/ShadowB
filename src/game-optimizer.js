@@ -515,6 +515,7 @@ async function optimizeCSVWeights() {
                 runsAllowedPerGame: row[11] || '', goalsFor: row[12] || '',
                 goalsAgainst: row[13] || '', pointsFor: row[14] || '',
                 pointsAgainst: row[15] || '', recentFormPct: row[16] || '',
+                formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
               };
             }
             historicalCache[`current|${league}`] = map;

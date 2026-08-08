@@ -67,6 +67,22 @@ function extractFeatures(home, away, scheduleInfo, league) {
   f.offense_ppg_diff = (hOff - aOff) / norm.ppg;
   f.defense_papg_diff = (aDef - hDef) / norm.ppg; // lower defense = better, so invert
 
+  // 2026-08-08 BUGFIX — vocabulary mismatch between weights and features.
+  // config/model-params.MLB.json weights run_differential_diff (1.7 ML /
+  // 2.2 spread), defense_ra_diff (1.4 / 1.3) and offense_rs_diff (1.2 / 1.1)
+  // -- its three LARGEST weights -- but extractFeatures never emitted those
+  // names. scoreMarket() does `features[key]`, gets undefined, and skips
+  // silently, so 57% of the MLB moneyline weight mass was landing on nothing
+  // and the model ran on 43% of its intended signal. That is the real reason
+  // the top contributors were four copies of recent form: they were among the
+  // few weighted features that actually existed.
+  //
+  // These are aliases of the identical, already correctly-signed computations
+  // above (positive always favours home), NOT new estimates. Emitting both
+  // names keeps any consumer of the old keys working.
+  f.offense_rs_diff = f.offense_ppg_diff;
+  f.defense_ra_diff = f.defense_papg_diff;
+
   // Rating diffs (NBA-specific but safe for all)
   const offRDiff = diff(h.offRating, a.offRating);
   const defRDiff = diff(a.defRating, h.defRating); // invert: lower def rating = better
@@ -79,13 +95,29 @@ function extractFeatures(home, away, scheduleInfo, league) {
   const aForm = parseFloat(a.recentFormPct) || aPct;
   const formDiff = hForm - aForm;
 
-  // We don't have per-window form data in team stats, so we derive
-  // synthetic windows: L10 = recentFormPct, L5/L3/L1 = scaled versions
-  // The optimizer will learn which windows matter
+  // 2026-08-08 BUGFIX — these four were formDiff * {1.0, 1.1, 1.2, 1.3}: the
+  // SAME number scaled by four constants, correlation exactly 1.0. The old
+  // comment said "the optimizer will learn which windows matter", but there
+  // was nothing to learn — every weight vector over four copies of one
+  // variable is equivalent to a single scalar. That is why the MLB deep sweep
+  // came back with a flat weight space, and why recent form looked
+  // "systematically overweighted": its four copies carried ~1.65 of combined
+  // weight and ~90% of the moneyline model's total signal.
+  //
+  // data-collection.js now records results in order and emits real L1/L3/L5
+  // windows. Where a genuine window exists we use it; otherwise we fall back
+  // to the L10 figure UNSCALED, because inventing a spread between windows is
+  // what created the fake variation in the first place. Falling back means a
+  // duplicate value, which is honest — the information really is the same.
+  const winDiff = (hKey, aKey) => {
+    const hv = parseFloat(h[hKey]);
+    const av = parseFloat(a[aKey]);
+    return (Number.isFinite(hv) && Number.isFinite(av)) ? hv - av : formDiff;
+  };
   f.recent_form_l10_diff = formDiff;
-  f.recent_form_l5_diff = formDiff * 1.1;  // recent windows are noisier but more signal
-  f.recent_form_l3_diff = formDiff * 1.2;
-  f.recent_form_l1_diff = formDiff * 1.3;
+  f.recent_form_l5_diff = winDiff('formL5', 'formL5');
+  f.recent_form_l3_diff = winDiff('formL3', 'formL3');
+  f.recent_form_l1_diff = winDiff('formL1', 'formL1');
 
   // Momentum/trend (form vs season average — positive = trending up)
   f.momentum_diff = (hForm - hPct) - (aForm - aPct);
@@ -178,12 +210,20 @@ function extractFeatures(home, away, scheduleInfo, league) {
     f.mlb_run_diff = Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) <= 3
       ? rawRunDiff
       : 0;
+    // Same value under the name the weight vector actually uses (1.7 on
+    // moneyline, 2.2 on spread -- the single largest weight in the file).
+    f.run_differential_diff = f.mlb_run_diff;
     if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {
       console.log(`[game-features][MLB] implausible mlb_run_diff ${rawRunDiff.toFixed(1)} `
         + `(runs ${hRuns}/${hRA} vs ${aRuns}/${aRA}) — zeroed`);
     }
   } else {
     f.mlb_run_diff = 0;
+    // Present-but-zero rather than undefined: an absent key is silently
+    // skipped by scoreMarket(), which is exactly the failure being fixed here.
+    // For non-MLB leagues the generic point differential is the right stand-in.
+    f.run_differential_diff = Number.isFinite(f.point_differential_diff)
+      ? f.point_differential_diff : 0;
   }
 
   if (league === 'NFL') {
