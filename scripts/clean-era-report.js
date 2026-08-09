@@ -18,7 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { buildSegments, parseDate, normMarket } = require('./weekly-threshold-tune');
+const { buildSegments, parseDate, normMarket, supaRowsToArrayRows, toISODate } = require('./weekly-threshold-tune');
 
 const LEAGUES = ['MLB', 'NBA', 'NHL', 'NFL'];
 const MARKETS = ['moneyline', 'spread', 'total'];
@@ -122,10 +122,47 @@ function clvTable(seg, title) {
 
 async function main() {
   const dataStore = require('../src/data-store');
-  const raw = await dataStore.read('performanceRows');
-  if (!raw || raw.length < 2) { console.error('[clean-era] Performance Log empty/unreadable'); process.exit(1); }
-  const rows = raw.slice(1);
-  console.log(`[clean-era] read ${rows.length} rows`);
+  const db = require('../src/db');
+
+  // 2026-08-09 BUGFIX — this read the Google Sheet, which has NO pick_regime
+  // column, so it could not filter regimes and silently blended them. The
+  // 2026-08-09 report headlined "Staked ROI: 19.5%" on 156.9u. The split:
+  //
+  //   v1_daily   1240 decided, 415.9u staked, +107.18u  -> +25.8% ROI
+  //   v2_clv      303 decided, 110.8u staked,   -0.50u  ->  -0.5% ROI
+  //
+  // 80% of the rows behind the headline came from the OLD regime: the same
+  // game re-decided every morning with the side flipping as the line moved,
+  // graded by a grader that has since been fenced off for mis-grading. That
+  // ROI describes a process that no longer exists, and it is the number the
+  // roadmap is supposedly graded on. The v2 figure, -0.5%, matches the
+  // independently measured net edge of -0.38pp per bet.
+  //
+  // The threshold tuner was repointed at Supabase on 2026-08-02 for exactly
+  // this reason; this report was missed. Same pattern, same reasoning.
+  let rows = null;
+  let source = 'sheet';
+  if (db.isEnabled()) {
+    const supaRows = await db.getRecentPerformanceLog(toISODate(CLEAN_ERA_START), { pickRegime: 'v2_clv' });
+    if (supaRows && supaRows.length > 0) {
+      rows = supaRowsToArrayRows(supaRows);
+      source = 'supabase(v2_clv)';
+    } else if (supaRows) {
+      // Empty is not an error. Do NOT fall back to the Sheet: the Sheet is the
+      // v1 mirror, so falling through would silently reintroduce the very rows
+      // being excluded — which is how this bug existed in the first place.
+      console.log('[clean-era] No v2_clv rows yet — nothing to report. Expected while the new regime accumulates.');
+      process.exit(0);
+    } else {
+      console.warn('[clean-era] Supabase unreachable — refusing to report Sheet (v1-era) numbers as clean-era ROI.');
+      process.exit(1);
+    }
+  }
+  if (!rows) {
+    console.error('[clean-era] Supabase required for a regime-filtered report.');
+    process.exit(1);
+  }
+  console.log(`[clean-era] read ${rows.length} rows (source: ${source})`);
 
   const now = new Date();
   const cut7 = new Date(now); cut7.setDate(now.getDate() - 7);
@@ -142,6 +179,8 @@ async function main() {
 
   let md = `# Clean-Era Staked ROI Report — ${dateStr}\n\n`;
   md += `Clean era = picks dated on/after 2026-06-03 (post bug-fix sprint). Pre-6/3 rows excluded.\n`;
+  md += `**Regime: \`pick_regime='v2_clv'\` only.** v1_daily rows are excluded — they come from the\n`;
+  md += `old daily-re-picking process and their ROI describes a system that no longer exists.\n`;
   md += `**The roadmap is graded on the "Approved (staked)" column.**\n\n`;
   md += `## Headline — clean-era staked portfolio\n\n`;
   md += `- **Staked ROI: ${pf.roi}%** on ${pf.staked.toFixed(1)}u risked (return ${pf.ret >= 0 ? '+' : ''}${pf.ret.toFixed(2)}u)\n`;
