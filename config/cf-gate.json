@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "updated": "2026-08-09",
+  "_doc": "R5.1 counterfactual out-of-sample APPLY gate for the weekly weight optimizer (scripts/auto-apply-weights.js). When enabled=true, a winning weight change that has already cleared every existing gate (min-picks, train/holdout lift, promotion state machine) is additionally re-verified with the rigorous counterfactualBacktest() (src/backtesting.js) — which re-runs the real model over historical snapshots — and is only applied if that independent re-run also shows non-negative out-of-sample ROI and net-unit lift on a large-enough sample. GUARD ONLY: it can never approve, loosen, or enable an apply; it can only turn an already-approved apply into a skip. Default enabled=false so it ships INERT (the counterfactual is never even run) — zero live change until deliberately flipped. --force and manual dispatch are exempt (handled in auto-apply-weights.js).",
+  "minSample": 50,
+  "minRoiLift": 0,
+  "minNetUnitsLift": 0
+}

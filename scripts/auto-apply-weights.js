@@ -33,6 +33,8 @@ const { scoreMarket } = require('../src/game-features');
 const { calcUnits, americanToImpliedProb, calcEdge } = require('../src/market-pricing');
 const { readWeights, sheetForLeague, writeWeights } = require('../src/weights');
 const paramStore = require('../src/param-store');
+const cfGate = require('../src/cf-gate');
+const { counterfactualBacktest } = require('../src/backtesting');
 
 const args = process.argv.slice(2);
 const DAYS = parseInt(args.find((_, i, a) => a[i - 1] === '--days') || '60');
@@ -749,6 +751,30 @@ async function main() {
     totalClamped: 0,
   };
 
+  // R5.1: counterfactual out-of-sample APPLY gate (guard-only, ships inert).
+  // When config/cf-gate.json enabled=true, re-verify a winning weight change
+  // with the rigorous counterfactualBacktest() (re-runs the real model over
+  // historical snapshots) and refuse to apply unless that independent re-run
+  // also shows non-negative OOS lift. It can ONLY block an apply the rest of
+  // the pipeline already approved — never enables one. --force is exempt.
+  const cfConfig = cfGate.loadGateConfig();
+  let cfGateResult = null;
+  if (cfConfig.enabled && !FORCE && winner.name !== 'BASELINE' && useFeatures
+      && winner.mods && winner.mods.length > 0) {
+    try {
+      console.log('\n[4/5] cf-gate enabled — running counterfactual re-verification...');
+      const cfSummary = await counterfactualBacktest(winner.mods, { days: DAYS });
+      cfGateResult = cfGate.evaluateCounterfactualGate(cfSummary, cfConfig);
+      console.log(`  cf-gate: ${cfGateResult.pass ? 'PASS' : 'BLOCK'} — ${cfGateResult.reason}`);
+    } catch (e) {
+      // Fail-safe: if the counterfactual itself errors while the gate is ON,
+      // block the apply (an unverified change must not go live).
+      cfGateResult = { pass: false, gated: true, reason: `counterfactual gate errored: ${e.message}` };
+      console.warn(`  cf-gate errored — blocking apply: ${e.message}`);
+    }
+    report.cfGate = cfGateResult;
+  }
+
   // Check: statistical significance — need meaningful edge/unit changes, not just noise
   const flippedPicks = Math.abs(winner.wins - baseline.wins) + Math.abs(winner.losses - baseline.losses);
   const MIN_FLIPS = Math.max(5, Math.ceil(selectionPicks.length * 0.05)); // at least 5 or 5% of the selection window
@@ -795,6 +821,11 @@ async function main() {
   else if (!winner.mods || winner.mods.length === 0) {
     report.skipReason = 'Winner has no weight modifications to apply';
     console.log('\n[4/5] Winner has no mods — skipping.');
+  }
+  // Check: R5.1 counterfactual out-of-sample gate (inert unless enabled).
+  else if (cfGateResult && !cfGateResult.pass) {
+    report.skipReason = `Counterfactual gate blocked apply: ${cfGateResult.reason}`;
+    console.log(`\n[4/5] ${report.skipReason}`);
   }
   // Apply!
   else {
