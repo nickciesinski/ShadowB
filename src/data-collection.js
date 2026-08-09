@@ -522,6 +522,24 @@ async function enrichMLB(espn, teamMap) {
       teamMap[abbr].whip = perGameStat(stats,
         ['pitching.WHIP', 'pitching.whip', 'WHIP', 'whip'],
         { range: [0.7, 2.0], label: 'MLB team WHIP', quiet: true });
+
+      // 2026-08-09 DIAGNOSTIC. On the first production run, runsAllowedPerGame
+      // resolved correctly (~4.3) while runsPerGame came through at season-
+      // total scale (~600) despite an identical resolver and range guard. The
+      // code is right on inspection, so the answer is in the actual ESPN
+      // payload and not in the source. One team per league is enough to see
+      // which key won and what the batting category really contains. Remove
+      // once runsPerGame is confirmed stable.
+      if (!enrichMLB._logged) {
+        enrichMLB._logged = true;
+        const interesting = Object.keys(stats)
+          .filter((k) => /run|game|avg/i.test(k))
+          .map((k) => `${k}=${stats[k]}`);
+        console.log(`[data-collection][MLB ${abbr}] resolved: `
+          + `runsPerGame=${teamMap[abbr].runsPerGame} `
+          + `runsAllowedPerGame=${teamMap[abbr].runsAllowedPerGame}`);
+        console.log(`[data-collection][MLB ${abbr}] run/game/avg keys: ${interesting.join(', ')}`);
+      }
     } catch (err) {
       // Skip
     }

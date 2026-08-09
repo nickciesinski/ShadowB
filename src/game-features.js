@@ -59,10 +59,45 @@ function extractFeatures(home, away, scheduleInfo, league) {
   const norm = NORM[league] || NORM.NBA;
 
   // Offense/defense per-game stats
-  const hOff = parseFloat(h.offRating || h.runsPerGame || h.goalsFor || h.pointsFor) || 0;
-  const aOff = parseFloat(a.offRating || a.runsPerGame || a.goalsFor || a.pointsFor) || 0;
-  const hDef = parseFloat(h.defRating || h.runsAllowedPerGame || h.goalsAgainst || h.pointsAgainst) || 0;
-  const aDef = parseFloat(a.defRating || a.runsAllowedPerGame || a.goalsAgainst || a.pointsAgainst) || 0;
+  // 2026-08-09 — plausibility gate on the scoring rates.
+  //
+  // Found in production the morning after the feature-vocabulary fix. Aliasing
+  // offense_rs_diff to offense_ppg_diff connected weight 1.2 to this value,
+  // and the value was carrying SEASON TOTALS rather than per-game rates:
+  // offense_rs_diff came out at 13.3 and contributed 15.97, while every other
+  // feature in the model sat at or below 0.70. One corrupt input was the model.
+  //
+  // The corruption pre-dated the alias and was harmless only because nothing
+  // weighted it — the same way mlb_run_diff sat at -5825 for months. That is
+  // precisely why this gate belongs here and not only at collection: a feature
+  // can be wrong for a long time and only become dangerous when something
+  // finally reads it. scoreMarket() is an unbounded linear sum with no
+  // clamping, so any out-of-range input silently becomes the whole model.
+  //
+  // Note defense was CORRECT (0.315) while offense was not, so this is not a
+  // blanket collection failure — see the diagnostic logging in enrichMLB.
+  const RATE_RANGE = {
+    MLB: [2, 8],      // runs per game
+    NBA: [85, 135],   // points per game (or offensive rating)
+    NFL: [8, 45],     // points per game
+    NHL: [1.5, 5.5],  // goals per game
+  };
+  const rate = (v, side) => {
+    const n = parseFloat(v);
+    if (!Number.isFinite(n)) return 0;
+    const rng = RATE_RANGE[league];
+    if (!rng) return n;
+    if (n < rng[0] || n > rng[1]) {
+      console.log(`[game-features][${league}] implausible ${side} rate ${n} `
+        + `(expected ${rng[0]}-${rng[1]}) — zeroed`);
+      return 0;
+    }
+    return n;
+  };
+  const hOff = rate(h.offRating || h.runsPerGame || h.goalsFor || h.pointsFor, 'home offense');
+  const aOff = rate(a.offRating || a.runsPerGame || a.goalsFor || a.pointsFor, 'away offense');
+  const hDef = rate(h.defRating || h.runsAllowedPerGame || h.goalsAgainst || h.pointsAgainst, 'home defense');
+  const aDef = rate(a.defRating || a.runsAllowedPerGame || a.goalsAgainst || a.pointsAgainst, 'away defense');
 
   f.offense_ppg_diff = (hOff - aOff) / norm.ppg;
   f.defense_papg_diff = (aDef - hDef) / norm.ppg; // lower defense = better, so invert
