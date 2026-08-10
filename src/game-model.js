@@ -46,7 +46,9 @@ const {
   scoreToMarginAdj,
   scoreToTotalAdj,
   decomposeScore,
+  checkDominance,
 } = require('./game-features');
+const { probe } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not logs
 
 /**
  * Standard normal CDF approximation (Abramowitz & Stegun).
@@ -300,6 +302,27 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     ? pitcherData.goalieAdj * goalieScale : 0;
   if (goalieAdj !== 0) {
     console.log(`[game-model] ${game.away}@${game.home}: goalie adj = ${goalieAdj.toFixed(2)} goals (${pitcherData.awayGoalie?.name || 'TBD'} vs ${pitcherData.homeGoalie?.name || 'TBD'}, scale=${goalieScale})`);
+  }
+
+  // 2026-08-10 — dominance guard. Fires when a single feature accounts for
+  // >=40% of total absolute contribution, which is what 08-09 looked like
+  // (offense_rs_diff at 89%). Probed once per run rather than per game: the
+  // condition is a property of the feature set, not of one matchup, and a
+  // probe per game would bury the signal it exists to surface.
+  if (!generateGamePicks._domProbed) {
+    try {
+      const mlW = (weights && weights.moneyline) || {};
+      const dom = checkDominance(features, mlW);
+      if (dom.dominated) {
+        generateGamePicks._domProbed = true;
+        probe('game-model', 'feature-dominance', {
+          league, game: `${game.away}@${game.home}`,
+          total_contribution: dom.total, offenders: dom.offenders,
+        }).catch(() => {});
+        console.warn(`[game-model][${league}] feature dominance: `
+          + dom.offenders.map((o) => `${o.feature} ${(o.share * 100).toFixed(0)}%`).join(', '));
+      }
+    } catch (e) { /* never let a guard break pick generation */ }
   }
 
   // Unified starter adjustment fed into margin projections below.

@@ -15,6 +15,7 @@ const { logApiCall } = require('./monitoring');
 const { persistGameOdds } = require('./odds-sink');
 const { persistSnapshotFirst } = require('./snapshot-sink');
 const LOCK_POLICY = require('../config/lock-policy.json');
+const { probe, probeKeys } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not logs
 
 // Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
 // We log a flat $0.001/call placeholder so the API_Usage_Log has a signal to sum.
@@ -552,15 +553,21 @@ async function enrichMLB(espn, teamMap) {
       // payload and not in the source. One team per league is enough to see
       // which key won and what the batting category really contains. Remove
       // once runsPerGame is confirmed stable.
-      if (!enrichMLB._logged) {
-        enrichMLB._logged = true;
-        const interesting = Object.keys(stats)
-          .filter((k) => /run|game|avg/i.test(k))
-          .map((k) => `${k}=${stats[k]}`);
-        console.log(`[data-collection][MLB ${abbr}] resolved: `
-          + `runsPerGame=${teamMap[abbr].runsPerGame} `
-          + `runsAllowedPerGame=${teamMap[abbr].runsAllowedPerGame}`);
-        console.log(`[data-collection][MLB ${abbr}] run/game/avg keys: ${interesting.join(', ')}`);
+      // 2026-08-10 — written to debug_probe, not console.log. Actions log
+      // downloads are outside the dev egress allowlist, so the identical probe
+      // added yesterday produced output nobody could read and the runsPerGame
+      // question survived another full day. Diagnostics have to land somewhere
+      // queryable or they are not diagnostics.
+      if (!enrichMLB._probed) {
+        enrichMLB._probed = true;
+        await probeKeys('data-collection', 'mlb-espn-run-keys', stats,
+          /run|game|avg|ops|whip|batting/i, {
+            team: abbr,
+            resolved_runsPerGame: teamMap[abbr].runsPerGame,
+            resolved_runsAllowedPerGame: teamMap[abbr].runsAllowedPerGame,
+            resolved_ops: teamMap[abbr].ops,
+            resolved_whip: teamMap[abbr].whip,
+          });
       }
     } catch (err) {
       // Skip

@@ -443,6 +443,39 @@ function scoreMarket(features, marketWeights) {
  * @param {string} league
  * @returns {number} - Margin adjustment in sport units
  */
+// 2026-08-10 — dominance guard.
+//
+// The generalised catch for what happened on 08-09: offense_rs_diff carried
+// season totals, got aliased onto weight 1.2, and contributed 15.97 against a
+// next-highest of 0.70. One feature WAS the model, and 42 tickets were written
+// before anyone noticed. Range guards catch values that are obviously wrong;
+// this catches values that are wrong RELATIVE to everything else, which is the
+// case that actually matters in an unbounded linear sum.
+//
+// Reports rather than clamps. Clamping would silently reshape the model and
+// hide the very thing worth seeing; the fix belongs at the feature, not here.
+// Returns the offenders so the caller can probe them.
+function checkDominance(features, weights, opts = {}) {
+  const threshold = opts.threshold || 0.4; // share of total absolute contribution
+  const minTotal = opts.minTotal || 0.5;   // ignore near-zero slates
+  const contribs = [];
+  let total = 0;
+  for (const [k, w] of Object.entries(weights || {})) {
+    if (typeof w !== 'number' || w === 0) continue;
+    const v = features?.[k];
+    if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+    const c = Math.abs(v * w);
+    contribs.push({ feature: k, value: v, weight: w, contribution: v * w });
+    total += c;
+  }
+  if (total < minTotal || !contribs.length) return { dominated: false, total, offenders: [] };
+  const offenders = contribs
+    .filter((c) => Math.abs(c.contribution) / total >= threshold)
+    .map((c) => ({ ...c, share: Number((Math.abs(c.contribution) / total).toFixed(3)) }))
+    .sort((x, y) => y.share - x.share);
+  return { dominated: offenders.length > 0, total: Number(total.toFixed(3)), offenders };
+}
+
 function scoreToMarginAdj(score, league) {
   // Scale factors: how many points a "1.0 score" represents
   const SCALE = { NBA: 8.0, NFL: 5.0, MLB: 1.5, NHL: 1.0 };
@@ -487,6 +520,7 @@ function decomposeScore(features, marketWeights) {
 }
 
 module.exports = {
+  checkDominance,
   extractFeatures,
   scoreMarket,
   scoreToMarginAdj,
