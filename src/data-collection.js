@@ -480,10 +480,32 @@ function perGameStat(stats, keys, opts = {}) {
   return '';
 }
 
+// 2026-08-10 — DERIVE FIRST for MLB.
+//
+// Observed in production: runsAllowedPerGame resolved correctly (~4.3) while
+// runsPerGame came through at season scale, despite an identical resolver and
+// the same range guard. The difference is which path won. The derived path
+// (category total / gamesPlayed) is provably correct -- it is what produces
+// the right runsAllowedPerGame -- whereas some ESPN "average"-named key for
+// runs is returning a season figure that then fails the range check and falls
+// through to a worse fallback.
+//
+// So try the arithmetic we can verify BEFORE trusting a key name we cannot.
+// gamesPlayed is a number we can sanity-check; a stat label is not. If the
+// derivation is unavailable the avg keys still apply, and the range guard
+// still rejects anything implausible either way.
 function mlbPerGame(stats, avgKeys, totalKeys) {
-  return perGameStat(stats, avgKeys, {
-    totalKeys, range: [MLB_RATE_MIN, MLB_RATE_MAX], label: avgKeys[0],
-  });
+  const opts = { range: [MLB_RATE_MIN, MLB_RATE_MAX], label: avgKeys[0] };
+  const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
+  if (Number.isFinite(gp) && gp >= 10) {
+    for (const k of totalKeys) {
+      const v = parseFloat(stats[k]);
+      if (!Number.isFinite(v)) continue;
+      const derived = v / gp;
+      if (derived >= MLB_RATE_MIN && derived <= MLB_RATE_MAX) return derived;
+    }
+  }
+  return perGameStat(stats, avgKeys, { ...opts, totalKeys });
 }
 
 async function enrichMLB(espn, teamMap) {

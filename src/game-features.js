@@ -234,11 +234,25 @@ function extractFeatures(home, away, scheduleInfo, league) {
 
   if (league === 'MLB') {
     // Run differential per game: single best predictor in baseball
-    const hRuns = parseFloat(h.runsPerGame) || 0;
-    const hRA = parseFloat(h.runsAllowedPerGame) || 0;
-    const aRuns = parseFloat(a.runsPerGame) || 0;
-    const aRA = parseFloat(a.runsAllowedPerGame) || 0;
-    const rawRunDiff = ((hRuns - hRA) - (aRuns - aRA)) / norm.ppg;
+    // 2026-08-10 — gate the INPUTS, not just the result. The first version
+    // gated only rawRunDiff at +/-3, which caught gross corruption but let
+    // through garbage that happened to land inside the band: with runsPerGame
+    // still carrying season totals, 24 of 30 games were correctly zeroed while
+    // 6 passed a *plausible-looking* value into a weight of 1.7. A difference
+    // of two season totals that happens to be small is not a small run
+    // differential — it is noise wearing a credible number, which is worse
+    // than an obvious error because nothing flags it.
+    //
+    // If any input is implausible the whole feature is 0. Partial credit on a
+    // corrupt input is how this class of bug survives.
+    const hRuns = rate(h.runsPerGame, 'home runs/game');
+    const hRA = rate(h.runsAllowedPerGame, 'home runs allowed/game');
+    const aRuns = rate(a.runsPerGame, 'away runs/game');
+    const aRA = rate(a.runsAllowedPerGame, 'away runs allowed/game');
+    const runInputsOk = hRuns > 0 && hRA > 0 && aRuns > 0 && aRA > 0;
+    const rawRunDiff = runInputsOk
+      ? ((hRuns - hRA) - (aRuns - aRA)) / norm.ppg
+      : NaN;
     // 2026-08-08 — sanity gate. scoreMarket() is an UNBOUNDED linear sum with
     // no clamping anywhere downstream, so one malformed stat can dominate every
     // other feature. This ran at -5825 for months (season totals mistaken for
