@@ -35,7 +35,12 @@ const paramStore = require('./param-store');
 // model at all, so rows before and after it are NOT comparable and must not be
 // pooled. MODEL_VERSION is bumped by hand when pick-affecting logic changes;
 // weights_hash moves on its own whenever the weight file does.
-const MODEL_VERSION = 'v2.2-new-features-2026-08-08';
+// 2026-08-09 — bumped for the scoring-rate gate. The 42 tickets written on
+// 08-09 under v2.2 were produced while offense_rs_diff carried season totals
+// and contributed 15.97 against a next-highest of 0.70: effectively a
+// one-feature model. They are retagged v2.2-corrupt-offense in the DB and
+// must not be pooled with v2.3 when the baseline is measured.
+const MODEL_VERSION = 'v2.3-rate-gate-2026-08-09';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
