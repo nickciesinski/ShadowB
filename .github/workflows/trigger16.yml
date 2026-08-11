@@ -1,10 +1,14 @@
 name: Trigger 16 — Daily Health Check
 
 on:
+  workflow_dispatch:
+    inputs:
+      sheet_format_audit:
+        description: 'Run the one-off sheet formatting audit (reads every sheet twice)'
+        type: boolean
+        default: false
   schedule:
     - cron: '30 9 * * *'  # 5:30 AM EDT = 09:30 UTC (after morning chain)
-  workflow_dispatch:
-
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -26,3 +30,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           NODE_ENV: production
+          SHEET_FORMAT_AUDIT: ${{ inputs.sheet_format_audit && '1' || '0' }}

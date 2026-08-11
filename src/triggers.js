@@ -265,6 +265,20 @@ const TRIGGERS = {
     } catch (err) {
       console.warn('[daily-validation] failed:', err.message);
     }
+    // 2026-08-11 — one-off sheet formatting audit. Set SHEET_FORMAT_AUDIT=1 to
+    // run it; off by default because it reads every sheet twice. Finds cells
+    // where the FORMATTED display string differs numerically from the
+    // underlying value, which is how the MLB sheet silently turned 4.55 into
+    // "455.0%" and zeroed run differential for weeks.
+    if (process.env.SHEET_FORMAT_AUDIT === '1') {
+      try {
+        const { runSheetFormatAudit } = require('./sheet-format-audit');
+        const res = await runSheetFormatAudit();
+        console.log('[sheet-audit] corrupted sheets:', res.corrupted.join(', ') || 'none');
+      } catch (err) {
+        console.warn('[sheet-format-audit] failed:', err.message);
+      }
+    }
   }),
 
   // Backtest: manual dispatch — runs sensitivity analysis + weight validation
