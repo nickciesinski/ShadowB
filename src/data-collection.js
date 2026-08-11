@@ -351,6 +351,36 @@ async function updateTeamStats() {
       const leagueRows = [HEADER, ...allRows.slice(1).filter(r => r[1] === leagueName)];
       await clearSheet(SPREADSHEET_ID, SHEETS[sheetKey]);
       await setValues(SPREADSHEET_ID, SHEETS[sheetKey], 'A1', leagueRows);
+
+      // 2026-08-11 DIAGNOSTIC — read back what we just wrote.
+      //
+      // Columns 10 (RunsPerGame) and 22 (OPS) arrive at the feature layer as 0
+      // while their immediate neighbours 11, 23 and 24 arrive fine. The row as
+      // written is verified correct and the reader indices are verified
+      // correct, so the remaining suspect is the sheet ROUND TRIP itself.
+      // Reading it straight back is the only way to see what getValues
+      // actually returns. Remove once resolved.
+      if (leagueName === 'MLB') {
+        try {
+          const back = await getValues(SPREADSHEET_ID, SHEETS[sheetKey]);
+          const wrote = leagueRows[1] || [];
+          const read = (back && back[1]) || [];
+          await probe('data-collection', 'teamstats-roundtrip', {
+            sheet: SHEETS[sheetKey],
+            wrote_len: wrote.length, read_len: read.length,
+            wrote_header_len: (leagueRows[0] || []).length,
+            read_header_len: (back && back[0] ? back[0].length : null),
+            cells: [7, 10, 11, 16, 19, 22, 23, 24].map((i) => ({
+              i,
+              header: (back && back[0] ? back[0][i] : null),
+              wrote: wrote[i], wrote_type: typeof wrote[i],
+              read: read[i], read_type: typeof read[i],
+            })),
+          });
+        } catch (e) {
+          await probe('data-collection', 'teamstats-roundtrip', { error: e.message });
+        }
+      }
     }
   }
 
