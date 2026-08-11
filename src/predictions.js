@@ -479,7 +479,7 @@ async function generateMLBPredictions() {
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
-    getValues(SPREADSHEET_ID, SHEETS.MLB_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.MLB_TEAM_STATS, null, { unformatted: true }),
     dataStore.read('scheduleContext').catch(() => []),
   ]);
 
@@ -576,7 +576,7 @@ async function generateNBAPredictions() {
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
-    getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.NBA_TEAM_STATS, null, { unformatted: true }),
     dataStore.read('scheduleContext').catch(() => []),
   ]);
 
@@ -643,7 +643,7 @@ async function generateNHLPredictions() {
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
-    getValues(SPREADSHEET_ID, SHEETS.NHL_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.NHL_TEAM_STATS, null, { unformatted: true }),
     dataStore.read('scheduleContext').catch(() => []),
   ]);
 
@@ -720,7 +720,7 @@ async function generateNFLPredictions() {
   const [oddsRows, weightRows, teamRows, scheduleRows] = await Promise.all([
     dataStore.read('gameOdds'),
     Promise.resolve(null), // weights from config/model-params.*.json
-    getValues(SPREADSHEET_ID, SHEETS.NFL_TEAM_STATS),
+    getValues(SPREADSHEET_ID, SHEETS.NFL_TEAM_STATS, null, { unformatted: true }),
     dataStore.read('scheduleContext').catch(() => []),
   ]);
 

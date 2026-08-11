@@ -362,7 +362,7 @@ async function updateTeamStats() {
       // actually returns. Remove once resolved.
       if (leagueName === 'MLB') {
         try {
-          const back = await getValues(SPREADSHEET_ID, SHEETS[sheetKey]);
+          const back = await getValues(SPREADSHEET_ID, SHEETS[sheetKey], null, { unformatted: true });
           const wrote = leagueRows[1] || [];
           const read = (back && back[1]) || [];
           await probe('data-collection', 'teamstats-roundtrip', {

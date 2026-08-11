@@ -84,11 +84,37 @@ function withRetry(label, thunk, opts = {}) {
  * Read all values from a sheet tab.
  * @returns {Array<Array>} 2D array of values
  */
-async function getValues(spreadsheetId, sheetName, range) {
+/**
+ * Read values from a sheet tab.
+ *
+ * @param {Object} [opts]
+ * @param {boolean} [opts.unformatted] return underlying values instead of the
+ *   cell's DISPLAY string.
+ *
+ * 2026-08-11 — why this option exists. values.get defaults to FORMATTED_VALUE,
+ * which applies whatever number formatting the cell happens to carry. The MLB
+ * Team Stats sheet had stale formatting on some columns, so:
+ *
+ *     wrote 4.55       -> read back "455.0%"    (percent format)
+ *     wrote 0.7098012  -> read back "0.7"       (1-decimal format)
+ *     wrote "0.600"    -> read back "1"         (0-decimal format)
+ *
+ * parseFloat("455.0%") is 455, which the plausibility gate then correctly
+ * rejected — so run differential and team offense silently contributed nothing
+ * while their immediate neighbours, in unformatted columns, worked fine. The
+ * data was right at every step except the round trip.
+ *
+ * NOT made the default: UNFORMATTED_VALUE returns dates as serial numbers
+ * rather than strings, which would break every date-parsing read in the
+ * codebase. Opt in on numeric sheets only.
+ */
+async function getValues(spreadsheetId, sheetName, range, opts = {}) {
   const sheets = await getSheetsClient();
   const a1 = range ? `${sheetName}!${range}` : sheetName;
+  const params = { spreadsheetId, range: a1 };
+  if (opts.unformatted) params.valueRenderOption = 'UNFORMATTED_VALUE';
   const res = await withRetry(`getValues(${sheetName})`, () =>
-    sheets.spreadsheets.values.get({ spreadsheetId, range: a1 }));
+    sheets.spreadsheets.values.get(params));
   return res.data.values || [];
 }
 
