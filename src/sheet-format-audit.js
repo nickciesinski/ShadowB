@@ -90,9 +90,13 @@ async function auditSheet(sheetName, maxRows = 40) {
 async function runSheetFormatAudit() {
   const names = [...new Set(Object.values(SHEETS))].filter(Boolean);
   const results = [];
+  // Two reads per sheet against a per-minute quota; the first run exhausted it
+  // and three sheets came back unaudited. Pace it rather than lose coverage.
+  const PAUSE_MS = 1200;
   for (const name of names) {
     /* eslint-disable no-await-in-loop */
     const r = await auditSheet(name);
+    await new Promise((res) => setTimeout(res, PAUSE_MS));
     results.push(r);
     const bad = (r.issues.PERCENT_CORRUPTION || 0) + (r.issues.VALUE_CORRUPTION || 0);
     console.log(`[sheet-audit] ${String(name).padEnd(26)} rows=${String(r.rows_checked).padStart(3)} `

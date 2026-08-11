@@ -625,6 +625,26 @@ async function enrichMLB(espn, teamMap) {
 /**
  * NHL: Pull goals for / goals against per game.
  */
+// Per-game NHL rate. Plausible range 1.5-5.5 goals; a season total (~250) or a
+// percent-mangled value (~28800) is rejected rather than passed downstream.
+const NHL_RATE_MIN = 1.5;
+const NHL_RATE_MAX = 5.5;
+
+function nhlPerGame(stats, avgKeys, totalKeys) {
+  const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
+  if (Number.isFinite(gp) && gp >= 10) {
+    for (const k of totalKeys) {
+      const v = parseFloat(stats[k]);
+      if (!Number.isFinite(v)) continue;
+      const derived = v / gp;
+      if (derived >= NHL_RATE_MIN && derived <= NHL_RATE_MAX) return derived;
+    }
+  }
+  return perGameStat(stats, avgKeys, {
+    totalKeys, range: [NHL_RATE_MIN, NHL_RATE_MAX], label: avgKeys[0], quiet: true,
+  });
+}
+
 async function enrichNHL(espn, teamMap) {
   for (const abbr of Object.keys(teamMap)) {
     try {
@@ -633,8 +653,22 @@ async function enrichNHL(espn, teamMap) {
       if (!res.ok) continue;
       const data = await res.json();
       const stats = flattenESPNStats(data);
-      teamMap[abbr].goalsFor = stats['goalsFor'] || stats['avgGoals'] || stats['goals'] || '';
-      teamMap[abbr].goalsAgainst = stats['goalsAgainst'] || stats['avgGoalsAgainst'] || stats['opponentGoals'] || '';
+      // 2026-08-11 BUGFIX — identical to the MLB run-differential bug. The old
+      // chain took stats['goalsFor'] / stats['goalsAgainst'] FIRST, which are
+      // SEASON TOTALS, not per-game rates. The sheet audit caught NHL
+      // GoalsAgainst at 288 (a season total) where the correct value is about
+      // 2.9 per game — so nhl_goal_diff, goal_differential_diff (weighted 1.8
+      // moneyline / 3.0 spread, the largest weight in any param file),
+      // offense_gf_diff and defense_ga_diff were all being fed nonsense.
+      //
+      // Derive from total / gamesPlayed first, exactly as MLB does: the
+      // arithmetic can be sanity-checked, a stat label cannot. Range guard
+      // rejects anything outside a plausible per-game rate rather than passing
+      // it downstream into an unbounded linear sum.
+      teamMap[abbr].goalsFor = nhlPerGame(stats,
+        ['avgGoals', 'goalsPerGame', 'avgGoalsFor'], ['goalsFor', 'goals']);
+      teamMap[abbr].goalsAgainst = nhlPerGame(stats,
+        ['avgGoalsAgainst', 'goalsAgainstPerGame'], ['goalsAgainst', 'opponentGoals']);
     } catch (err) {
       // Skip
     }
