@@ -254,6 +254,17 @@ const TRIGGERS = {
     } catch (err) {
       console.warn('[feature-health] check failed:', err.message);
     }
+    // 2026-08-10 — layered Data -> Features -> Model -> Price -> Measurement
+    // validation, written to debug_probe so it can be read without Actions log
+    // access. This replaces a checklist that lived only as SQL in a doc, which
+    // meant it ran when somebody remembered; the six silent failures found on
+    // 08-08 had all been running green for weeks.
+    try {
+      const { runDailyValidation } = require('./daily-validation');
+      await runDailyValidation();
+    } catch (err) {
+      console.warn('[daily-validation] failed:', err.message);
+    }
   }),
 
   // Backtest: manual dispatch — runs sensitivity analysis + weight validation
