@@ -175,7 +175,7 @@ async function checkModel(sb, todayISO) {
 // Is the recorded price real, reachable, and attached to the right line?
 async function checkPrice(sb, sinceISO) {
   const { data, error } = await sb.from('performance_log')
-    .select('market, line, close_line, odds, close_odds, placed_book, close_lag_hours, clv_prob_delta, clv_basis, status, graded_at, model_version')
+    .select('market, line, close_line, odds, close_odds, placed_book, close_lag_hours, clv_prob_delta, clv_basis, status, graded_at, model_version, commence_time')
     .eq('pick_regime', 'v2_clv').gte('game_date', sinceISO);
   if (error) return { pass: false, error: error.message };
 
@@ -201,12 +201,24 @@ async function checkPrice(sb, sinceISO) {
   }
 
   // Operational health across every row in the window.
+  //
+  // 2026-08-11: the first run reported 18 "ungraded past close", which was a
+  // false alarm in this check rather than a grader problem — those games had
+  // started 2.6 hours earlier and MLB games run about three. Counting any
+  // closed-but-ungraded ticket flags every in-progress game every evening,
+  // which trains you to ignore the number. Only tickets whose game started
+  // long enough ago that it must have finished count as a backlog.
+  const GRADE_GRACE_HOURS = 6;
   let ungraded = 0;
   const lags = [];
+  const nowMs = Date.now();
   for (const r of all) {
     const lag = num(r.close_lag_hours);
     if (lag !== null) lags.push(lag);
-    if (r.status === 'closed' && !r.graded_at) ungraded++;
+    if (r.status === 'closed' && !r.graded_at && r.commence_time) {
+      const hrs = (nowMs - new Date(r.commence_time).getTime()) / 3.6e6;
+      if (Number.isFinite(hrs) && hrs > GRADE_GRACE_HOURS) ungraded++;
+    }
   }
 
   // Books we cannot actually bet at. A price sourced from an unreachable book
@@ -239,12 +251,20 @@ async function checkPrice(sb, sinceISO) {
 // after the baseline question is settled.
 async function checkMeasurement(sb) {
   const { data, error } = await sb.from('performance_log')
-    .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version')
+    .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book')
     .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
     .like('model_version', `${BASELINE_VERSION_PREFIX}%`).limit(5000);
   if (error) return { pass: false, error: error.message };
 
-  const rows = (data || []).filter((r) => num(r.net_edge_pp) !== null);
+  // Exclude prices from books we cannot bet at. buildGameObjects falls back to
+  // the full book set when neither Bovada nor BetOnline quotes a market, so a
+  // few tickets carry a price that was never actually available. Leaving them
+  // in is the same error that made moneyline look +0.133pp when the reachable
+  // figure was about -0.38pp — just smaller and harder to notice.
+  const REACHABLE_BOOKS = new Set(['bovada', 'betonlineag', 'consensus_median']);
+  const all = (data || []).filter((r) => num(r.net_edge_pp) !== null);
+  const rows = all.filter((r) => !r.placed_book || REACHABLE_BOOKS.has(r.placed_book));
+  const excludedUnreachable = all.length - rows.length;
   const summarise = (rs) => {
     const ne = rs.map((r) => num(r.net_edge_pp)).filter((v) => v !== null);
     const clv = rs.map((r) => num(r.clv_prob_delta)).filter((v) => v !== null);
@@ -268,6 +288,7 @@ async function checkMeasurement(sb) {
 
   return {
     pass: true, // measurement never fails the run; it is the readout
+    excluded_unreachable_book: excludedUnreachable,
     overall: summarise(rows),
     by_market: group((r) => r.market),
     by_league_market: group((r) => `${r.league}.${r.market}`),
