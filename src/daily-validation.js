@@ -70,8 +70,12 @@ async function checkData(sb, todayISO) {
   const games = new Set(rows.map((r) => r.game_key)).size;
   const ratio = games ? Number((rows.length / games).toFixed(2)) : null;
 
+  // No tickets yet is normal before the daily lock runs; it is not a failure.
+  // Only a non-empty slate with a wrong markets-per-game ratio is.
+  const notYetRun = rows.length === 0;
   return {
-    pass: dupes === 0 && (ratio === null || (ratio > 2.5 && ratio < 3.5)),
+    pass: dupes === 0 && (notYetRun || (ratio > 2.5 && ratio < 3.5)),
+    not_yet_run: notYetRun,
     tickets: rows.length, games, markets_per_game: ratio,
     duplicate_game_market: dupes, by_league: byLeague,
   };
@@ -171,31 +175,59 @@ async function checkModel(sb, todayISO) {
 // Is the recorded price real, reachable, and attached to the right line?
 async function checkPrice(sb, sinceISO) {
   const { data, error } = await sb.from('performance_log')
-    .select('market, line, close_line, odds, close_odds, placed_book, close_lag_hours, clv_prob_delta, clv_basis, status, graded_at')
+    .select('market, line, close_line, odds, close_odds, placed_book, close_lag_hours, clv_prob_delta, clv_basis, status, graded_at, model_version')
     .eq('pick_regime', 'v2_clv').gte('game_date', sinceISO);
   if (error) return { pass: false, error: error.message };
 
-  const rows = data || [];
-  let sideFlip = 0, negLag = 0, impossible = 0, nullBook = 0, ungraded = 0;
-  const lags = [];
+  const all = data || [];
+  // INTEGRITY checks run only on baseline-version rows. The spread side-flip,
+  // impossible-CLV and placed_book defects were all fixed on 2026-08-08/09, so
+  // a rolling 7-day window keeps re-flagging rows that are already known-bad
+  // and cannot be fixed. A check that fires on settled history is a check that
+  // gets ignored, which defeats the purpose. Operational health (lag, grading
+  // backlog) still spans the full window, since those apply to every row
+  // regardless of which model produced it.
+  const rows = all.filter((r) => String(r.model_version || '').startsWith(BASELINE_VERSION_PREFIX));
+  let sideFlip = 0, negLag = 0, impossible = 0, nullBook = 0;
   const books = {};
   for (const r of rows) {
     const l = num(r.line), cl = num(r.close_line);
     if (r.market === 'spread' && l !== null && cl !== null && Math.sign(l) !== Math.sign(cl)) sideFlip++;
-    const lag = num(r.close_lag_hours);
-    if (lag !== null) { if (lag < 0) negLag++; lags.push(lag); }
+    if (num(r.close_lag_hours) !== null && num(r.close_lag_hours) < 0) negLag++;
     const clv = num(r.clv_prob_delta);
     if (clv !== null && Math.abs(clv) > 0.10) impossible++;
     if (!r.placed_book) nullBook++;
-    if (r.status === 'closed' && !r.graded_at) ungraded++;
     if (r.placed_book) books[r.placed_book] = (books[r.placed_book] || 0) + 1;
   }
+
+  // Operational health across every row in the window.
+  let ungraded = 0;
+  const lags = [];
+  for (const r of all) {
+    const lag = num(r.close_lag_hours);
+    if (lag !== null) lags.push(lag);
+    if (r.status === 'closed' && !r.graded_at) ungraded++;
+  }
+
+  // Books we cannot actually bet at. A price sourced from an unreachable book
+  // is fiction — that error made moneyline look +0.133pp when the reachable
+  // figure was about -0.38pp.
+  const REACHABLE = new Set(['bovada', 'betonlineag', 'consensus_median']);
+  const unreachable = Object.entries(books)
+    .filter(([b]) => !REACHABLE.has(b))
+    .reduce((acc, [b, n]) => { acc[b] = n; return acc; }, {});
+
   return {
-    pass: sideFlip === 0 && negLag === 0 && impossible === 0,
-    n: rows.length, spread_side_flip: sideFlip, negative_lag: negLag,
-    impossible_clv: impossible, null_placed_book: nullBook, ungraded_past_close: ungraded,
+    pass: sideFlip === 0 && negLag === 0 && impossible === 0
+      && Object.keys(unreachable).length === 0,
+    baseline_n: rows.length, window_n: all.length,
+    spread_side_flip: sideFlip, negative_lag: negLag,
+    impossible_clv: impossible, null_placed_book: nullBook,
+    unreachable_books: unreachable,
+    ungraded_past_close: ungraded,
     median_close_lag_h: lags.length ? round(lags.sort((a, b) => a - b)[Math.floor(lags.length / 2)], 2) : null,
     placed_book_mix: books,
+    note: `integrity scoped to ${BASELINE_VERSION_PREFIX}* rows; lag/grading span the full window`,
   };
 }
 
