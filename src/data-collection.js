@@ -326,6 +326,22 @@ async function updateTeamStats() {
 
   // Write to all league-specific sheets + the default TEAM_STATS sheet
   await clearSheet(SPREADSHEET_ID, SHEETS.TEAM_STATS);
+  // 2026-08-11 DIAGNOSTIC. RunsAllowedPerGame (col 11) reaches the feature
+  // layer fine while RunsPerGame (col 10) arrives as 0, which points at the
+  // row as written rather than at collection — enrichMLB resolves 4.51
+  // correctly. Dump one MLB row verbatim with its header so the exact cell
+  // contents and alignment are visible. Remove once resolved.
+  try {
+    const hdrIdx = HEADER.map((h, i) => `${i}:${h}`);
+    const sampleMlb = allRows.slice(1).find((r) => r[1] === 'MLB');
+    await probe('data-collection', 'teamstats-row-sample', {
+      header: hdrIdx,
+      header_len: HEADER.length,
+      mlb_row: sampleMlb ? sampleMlb.map((v, i) => `${i}:${JSON.stringify(v)}`) : null,
+      mlb_row_len: sampleMlb ? sampleMlb.length : null,
+    });
+  } catch (e) { /* diagnostic only */ }
+
   await setValues(SPREADSHEET_ID, SHEETS.TEAM_STATS, 'A1', allRows);
 
   // Also write league-specific sheets for per-sport lookups
