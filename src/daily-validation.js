@@ -251,7 +251,7 @@ async function checkPrice(sb, sinceISO) {
 // after the baseline question is settled.
 async function checkMeasurement(sb) {
   const { data, error } = await sb.from('performance_log')
-    .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book')
+    .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book, tradeable')
     .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
     .like('model_version', `${BASELINE_VERSION_PREFIX}%`).limit(5000);
   if (error) return { pass: false, error: error.message };
@@ -261,9 +261,11 @@ async function checkMeasurement(sb) {
   // few tickets carry a price that was never actually available. Leaving them
   // in is the same error that made moneyline look +0.133pp when the reachable
   // figure was about -0.38pp — just smaller and harder to notice.
-  const REACHABLE_BOOKS = new Set(['bovada', 'betonlineag', 'consensus_median']);
+  // `tradeable` is stamped at write time (predictions.js) rather than
+  // re-derived here, so the book list can change without silently rewriting
+  // history. Older rows were backfilled from placed_book.
   const all = (data || []).filter((r) => num(r.net_edge_pp) !== null);
-  const rows = all.filter((r) => !r.placed_book || REACHABLE_BOOKS.has(r.placed_book));
+  const rows = all.filter((r) => r.tradeable !== false);
   const excludedUnreachable = all.length - rows.length;
   const summarise = (rs) => {
     const ne = rs.map((r) => num(r.net_edge_pp)).filter((v) => v !== null);

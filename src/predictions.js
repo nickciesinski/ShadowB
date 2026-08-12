@@ -1325,6 +1325,19 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           placed_book: (meta.best_odds != null && parseInt(r[9]) === meta.best_odds)
             ? (meta.best_book || null)
             : 'consensus_median',
+          // 2026-08-12 — mark tickets priced at a book we cannot actually bet.
+          // usableOnly() deliberately falls back to the full book set when
+          // neither Bovada nor BetOnline quotes a market, because dropping the
+          // pick would violate the coverage rule. But the resulting price was
+          // never obtainable, so counting it in net edge is the same error
+          // that made moneyline look +0.133pp when the reachable figure was
+          // about -0.38pp. Tagging at write time means analysis can exclude it
+          // without re-deriving the book list months later.
+          tradeable: (() => {
+            const bk = (meta.best_odds != null && parseInt(r[9]) === meta.best_odds)
+              ? String(meta.best_book || '').toLowerCase() : 'consensus_median';
+            return bk === 'consensus_median' || USABLE_BOOKS.has(bk);
+          })(),
           // --- v2 CLV lifecycle identity + lock metadata ---
           pick_id: makePickId(gKey, market),
           game_key: gKey,

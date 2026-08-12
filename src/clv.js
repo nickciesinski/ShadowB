@@ -221,12 +221,12 @@ async function freezeClosedTickets() {
 
   const nowIso = new Date().toISOString();
   const { data: tickets } = await sb.from('performance_log')
-    .select('pick_id, open_odds, open_line, placed_novig_prob, last_seen_odds, last_seen_line, last_seen_opp_odds, last_seen_at, commence_time')
+    .select('pick_id, odds, open_odds, open_line, placed_novig_prob, last_seen_odds, last_seen_line, last_seen_opp_odds, last_seen_at, commence_time')
     .eq('pick_regime', 'v2_clv').eq('status', 'open')
     .lte('commence_time', nowIso);
   if (!tickets || !tickets.length) return { frozen: 0 };
 
-  let frozen = 0, novig = 0;
+  let frozen = 0, novig = 0, withNetEdge = 0;
   for (const t of tickets) {
     const closeOdds = t.last_seen_odds != null ? t.last_seen_odds : t.open_odds;
     const closeLine = t.last_seen_line != null ? t.last_seen_line : t.open_line;
@@ -270,7 +270,31 @@ async function freezeClosedTickets() {
       ? Math.round(((new Date(t.commence_time).getTime() - new Date(t.last_seen_at).getTime()) / 3.6e6) * 10) / 10
       : null;
 
+    // 2026-08-12 — vig_paid_pp and net_edge_pp are computed HERE.
+    //
+    // These columns were added on 08-08 and backfilled with a one-off SQL
+    // UPDATE, but never wired into the freeze job. So every ticket written
+    // since then had CLV but no vig, which means net_edge_pp — the number the
+    // whole project is graded on — was NULL on all of them. The daily
+    // validation reported n=0 against 120 real tickets and looked like a
+    // reporting bug rather than a missing write. A backfill without the code
+    // path behind it decays the moment new rows arrive.
+    //
+    // net_edge = CLV - vig IS expected ROI per unit staked: beating the close
+    // is only worth money after the juice you paid to get on.
+    const placedImplied = t.odds != null
+      ? (t.odds > 0 ? 100 / (Number(t.odds) + 100) : Math.abs(t.odds) / (Math.abs(t.odds) + 100))
+      : null;
+    const vigPaid = (placedImplied != null && t.placed_novig_prob != null)
+      ? Math.round((placedImplied - Number(t.placed_novig_prob)) * 1e5) / 1e5
+      : null;
+    const netEdge = (clvProbDelta != null && vigPaid != null)
+      ? Math.round((clvProbDelta - vigPaid) * 1e5) / 1e5
+      : null;
+
     const { error } = await sb.from('performance_log').update({
+      vig_paid_pp: vigPaid,
+      net_edge_pp: netEdge,
       close_odds: closeOdds,
       close_line: closeLine,
       close_opp_odds: closeOppOdds,
@@ -284,9 +308,9 @@ async function freezeClosedTickets() {
       close_source: 'last_seen',
       status: 'closed',
     }).eq('pick_id', t.pick_id);
-    if (!error) frozen++;
+    if (!error) { frozen++; if (netEdge != null) withNetEdge++; }
   }
-  return { frozen, novig };
+  return { frozen, novig, withNetEdge };
 }
 
 // American-odds profit for a win.
