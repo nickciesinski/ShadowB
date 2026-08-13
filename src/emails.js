@@ -482,7 +482,67 @@ async function sendPropAlertEmail() {
   console.log('[emails] Prop alert sent: ' + topPicks.length + ' picks with edge >= ' + MIN_EDGE + '%');
 }
 
-module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck, sendPropAlertEmail };
+/**
+ * Pipeline integrity alert. Sent ONLY when a validation layer fails.
+ *
+ * Deliberately silent on healthy days: a daily "all clear" trains you to filter
+ * the sender, and then the one that matters gets filtered too. No email is the
+ * all-clear.
+ *
+ * The layers are ordered Data -> Features -> Model -> Price -> Measurement and
+ * the subject names the FIRST broken one, because a CLV figure computed on top
+ * of a corrupt feature is meaningless rather than merely noisy — fixing the
+ * earliest broken layer is the only move that helps.
+ */
+async function sendValidationAlert(report) {
+  const layer = report.trust_broken_at;
+  if (!layer) return { sent: false };
+
+  const esc = (v) => String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const detail = report.layers?.[layer] || {};
+  // Show only the fields that are actually wrong, not the whole payload.
+  const problems = Object.entries(detail)
+    .filter(([k, v]) => k !== 'pass' && k !== 'note'
+      && ((typeof v === 'number' && v > 0 && /flip|negative|impossible|duplicate|null_/.test(k))
+        || (v && typeof v === 'object' && Object.keys(v).length && /unexpected|collapsed|dominance|unreachable|new_dead/.test(k))
+        || (Array.isArray(v) && v.length && /unexpected|collapsed|dominance/.test(k))))
+    .map(([k, v]) => `<tr><td style="padding:4px 10px 4px 0;"><b>${esc(k)}</b></td>`
+      + `<td style="padding:4px 0;">${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</td></tr>`)
+    .join('');
+
+  const m = report.layers?.measurement?.overall || {};
+  const kill = report.kill_criterion || {};
+
+  const html = '<html><body style="font-family:-apple-system,Segoe UI,Arial,sans-serif;color:#1a1a2e;">'
+    + `<h2 style="margin-bottom:2px;">Pipeline integrity: <span style="color:#c0392b;">${esc(layer)}</span> layer failed</h2>`
+    + `<p style="color:#666;margin-top:0;">${esc(report.date)} &middot; layers run in order Data &rarr; Features &rarr; Model &rarr; Price &rarr; Measurement</p>`
+    + '<p>Everything downstream of this layer is untrustworthy until it is fixed. '
+    + 'Numbers computed on top of a broken layer are meaningless rather than merely noisy.</p>'
+    + (problems ? `<table style="border-collapse:collapse;font-size:14px;">${problems}</table>`
+      : '<p><i>See the full report in debug_probe.</i></p>')
+    + '<h3 style="margin-bottom:2px;">Where the baseline stands</h3>'
+    + `<p style="margin-top:0;font-size:14px;">n=${esc(m.n ?? 0)} &middot; `
+    + `net edge ${esc(m.net_edge ?? 'n/a')} &middot; t ${esc(m.t_stat ?? 'n/a')} &middot; `
+    + `kill criterion: <b>${esc(kill.status || 'n/a')}</b></p>`
+    + '<p style="font-size:12px;color:#888;">Full report:<br>'
+    + '<code>SELECT payload FROM debug_probe WHERE label=\'layered-report\' ORDER BY created_at DESC LIMIT 1;</code></p>'
+    + '<p style="font-size:11px;color:#999;">Shadow Bets validation &middot; sent only when a layer fails; no email means healthy.</p>'
+    + '</body></html>';
+
+  const transporter = getTransporter();
+  await transporter.sendMail({
+    from: GMAIL_USER,
+    to: EMAIL_RECIPIENTS.join(', '),
+    subject: `[Shadow Bets] ${layer} layer failed — ${report.date}`,
+    html,
+  });
+  console.log(`[emails] validation alert sent (${layer} layer)`);
+  return { sent: true };
+}
+
+module.exports = { sendDailyPicksEmail, sendPerformanceSummary, sendTriggerHealthCheck, sendPropAlertEmail, sendValidationAlert };
 
 // ── Trigger Health Check ─────────────────────────────────────────
 

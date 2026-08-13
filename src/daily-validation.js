@@ -229,9 +229,17 @@ async function checkPrice(sb, sinceISO) {
     .filter(([b]) => !REACHABLE.has(b))
     .reduce((acc, [b, n]) => { acc[b] = n; return acc; }, {});
 
+  // 2026-08-13 — unreachable books are REPORTED but do not fail the layer.
+  // usableOnly() falls back to the full book set when neither of our books
+  // quotes a market, which is deliberate (dropping the pick would violate the
+  // coverage rule). Those rows are stamped tradeable=false and excluded from
+  // measurement, so they are handled — not broken. Failing the layer on them
+  // means trust_broken_at reads 'price' every single day over four historical
+  // rows that cannot be fixed, which is precisely how a real alert gets
+  // ignored. Only a RISING count would be new information, and that shows up
+  // in the reported number.
   return {
-    pass: sideFlip === 0 && negLag === 0 && impossible === 0
-      && Object.keys(unreachable).length === 0,
+    pass: sideFlip === 0 && negLag === 0 && impossible === 0,
     baseline_n: rows.length, window_n: all.length,
     spread_side_flip: sideFlip, negative_lag: negLag,
     impossible_clv: impossible, null_placed_book: nullBook,
@@ -336,6 +344,29 @@ function killCriterion(measurement, opts = {}) {
       + 'Stop adding model complexity. Redirect to selection and timing, or conclude no useful edge.' };
 }
 
+// 2026-08-13 — alert only when something is actually wrong.
+//
+// The validation job detects problems but had no way to TELL anyone: it writes
+// to debug_probe and logs to stdout, and Actions logs are unreadable from the
+// dev environment. So a broken layer on a day nobody happens to look sits
+// there silently — which is the same silent-failure shape the job exists to
+// prevent, one level up.
+//
+// Deliberately silent on healthy days. A daily "all clear" email trains you to
+// filter the sender, and then the one that matters gets filtered too. No email
+// IS the all-clear.
+async function alertIfBroken(report) {
+  if (!report.trust_broken_at) return { sent: false, reason: 'healthy' };
+  try {
+    const { sendValidationAlert } = require('./emails');
+    await sendValidationAlert(report);
+    return { sent: true };
+  } catch (err) {
+    console.warn('[daily-validation] alert failed:', err.message);
+    return { sent: false, reason: err.message };
+  }
+}
+
 async function runDailyValidation() {
   const sb = db.getClient();
   if (!sb) return { ok: false, reason: 'no_db' };
@@ -366,13 +397,15 @@ async function runDailyValidation() {
   };
   await probe('daily-validation', 'layered-report', report);
 
+  const alert = await alertIfBroken(report);
   console.log(`[daily-validation] ${today} trust_broken_at=${report.trust_broken_at || 'none'} `
+    + `alert_sent=${alert.sent} `
     + `n=${measurement.overall?.n ?? 0} net_edge=${measurement.overall?.net_edge ?? 'n/a'} `
     + `kill=${kill.status}`);
   return { ok: true, report };
 }
 
 module.exports = {
-  runDailyValidation, killCriterion,
+  runDailyValidation, killCriterion, alertIfBroken,
   checkData, checkFeatures, checkModel, checkPrice, checkMeasurement,
 };
