@@ -457,7 +457,23 @@ function scoreMarket(features, marketWeights) {
 // Returns the offenders so the caller can probe them.
 function checkDominance(features, weights, opts = {}) {
   const threshold = opts.threshold || 0.4; // share of total absolute contribution
-  const minTotal = opts.minTotal || 0.5;   // ignore near-zero slates
+  // 2026-08-18 — raised from a pre-production guess of 0.5.
+  //
+  // The guard fired on Padres@Mets: recent_form_l3_diff at 45% of a total
+  // contribution of just 0.809. That is not a feature spiking, it is the
+  // DENOMINATOR collapsing — an evenly matched game where run differential,
+  // WHIP and OPS all landed near zero, so a mid-sized form signal was
+  // mechanically the largest share of very little. Measured across that day's
+  // slate: 15 games, average total 1.251, average top share 30.9%, and this
+  // was the only game over threshold. Every feature had 15 distinct values and
+  // run differential was live on all of them — the pipeline was healthy.
+  //
+  // A share is meaningless when the total is small. 1.0 is comfortably below
+  // the observed average, so a genuinely collapsed model still trips it, while
+  // one close matchup no longer cries wolf. An alert that fires on normal
+  // variance is an alert that gets ignored, which is how the real one gets
+  // missed.
+  const minTotal = opts.minTotal || 1.0;
   const contribs = [];
   let total = 0;
   for (const [k, w] of Object.entries(weights || {})) {
