@@ -4,7 +4,7 @@
 //   freezeClosedTickets() : once a game has started, freeze close_* := last_seen_*,
 //                           compute CLV, and mark the ticket 'closed'. No API cost.
 const db = require('./db');
-const { americanToImpliedProb, removeVig } = require('./market-pricing');
+const { americanToImpliedProb, removeVig, isValidAmericanOdds } = require('./market-pricing');
 const { norm } = require('./norm');
 
 // ESPN scoreboard path per league (free, no key, no rate limit).
@@ -82,7 +82,10 @@ function buildPriceMap(rows) {
       priceMap[k] = { prices: [], point: pk === 'na' ? null : parseFloat(point) };
       (variantIdx[base] = variantIdx[base] || []).push(pk);
     }
-    if (Number.isFinite(price)) priceMap[k].prices.push(price);
+    // 2026-08-21 — only pool REAL American-odds quotes. A price like -1 (a feed
+    // sentinel that reached id 114721) is finite but not a real quote, and it
+    // would drag the median toward garbage and later froze as a -0.4714 CLV.
+    if (isValidAmericanOdds(price)) priceMap[k].prices.push(price);
   }
   return { priceMap, variantIdx, commenceMap };
 }
@@ -228,9 +231,18 @@ async function freezeClosedTickets() {
 
   let frozen = 0, novig = 0, withNetEdge = 0;
   for (const t of tickets) {
-    const closeOdds = t.last_seen_odds != null ? t.last_seen_odds : t.open_odds;
+    let closeOdds = t.last_seen_odds != null ? t.last_seen_odds : t.open_odds;
     const closeLine = t.last_seen_line != null ? t.last_seen_line : t.open_line;
-    const closeOppOdds = t.last_seen_opp_odds != null ? t.last_seen_opp_odds : null;
+    let closeOppOdds = t.last_seen_opp_odds != null ? t.last_seen_opp_odds : null;
+
+    // 2026-08-21 defensive guard. buildPriceMap now rejects garbage quotes at
+    // the source, but a bad price could still reach a row from an older write or
+    // another path. Never let an invalid odds value (e.g. -1) become a stored
+    // close or feed the no-vig math — null it out and the ticket freezes as
+    // "closed, close unmeasured" (basis null), which is excluded from
+    // measurement, rather than freezing a fictional CLV that breaks the layer.
+    if (closeOdds != null && !isValidAmericanOdds(closeOdds)) closeOdds = null;
+    if (closeOppOdds != null && !isValidAmericanOdds(closeOppOdds)) closeOppOdds = null;
 
     // De-vig the close when we have both sides. A single side's implied price
     // includes the whole hold, so implied-minus-implied conflates line movement

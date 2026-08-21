@@ -20,6 +20,23 @@ function americanToImpliedProb(odds) {
  * Implied probability (0-1) â American odds.
  * e.g. 0.60 â -150, 0.333 â +200
  */
+function isValidAmericanOdds(odds) {
+  // 2026-08-21. Valid American odds are integers with |odds| >= 100 (+100/-100
+  // is even money). Anything between -99 and +99 -- including 0, -1, +5 -- is
+  // not a real quote; it is a parse artifact or a feed sentinel.
+  //
+  // americanToImpliedProb() does NOT reject these: it turned close_odds = -1
+  // into an implied prob of 0.0099, which de-vigged to a "close" no-vig prob of
+  // 0.0178 and a CLV of -0.4714 on an Angels/Astros total (id 114721). A 47-pp
+  // swing is physically impossible, so the price integrity check flagged it and
+  // -- correctly -- declared the whole Price layer untrustworthy. The bad number
+  // arrived via rollLastSeen (the snapshot median), the one place a garbage
+  // quote can overwrite a good locked price. Guarding here stops the fiction at
+  // the source instead of letting it poison CLV and everything built on it.
+  const o = parseFloat(odds);
+  return Number.isFinite(o) && Math.abs(o) >= 100;
+}
+
 function impliedProbToAmerican(prob) {
   if (prob <= 0 || prob >= 1) return prob >= 1 ? -10000 : +10000;
   if (prob >= 0.5) {
@@ -291,6 +308,7 @@ module.exports = {
   // Odds conversion
   americanToImpliedProb,
   impliedProbToAmerican,
+  isValidAmericanOdds,
   removeVig,
   // Edge
   calcEdge,
