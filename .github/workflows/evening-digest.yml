@@ -1,0 +1,39 @@
+name: Evening Digest — Tomorrow's Picks Email
+
+# Runs ~9:30pm PT (during PDT; ~8:30pm during PST — cron is fixed UTC) and emails
+# the full slate of picks for TOMORROW across every league in the shared ledger,
+# so the bets can be reviewed the night before and the earliest lines are captured.
+# 04:30 UTC = 21:30 PDT (UTC-7) / 20:30 PST (UTC-8).
+on:
+  schedule:
+    - cron: '30 4 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Optional YYYY-MM-DD slate date (defaults to tomorrow PT)'
+        required: false
+        default: ''
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - name: Send tomorrow's picks digest
+        run: |
+          if [ -n "${{ github.event.inputs.date }}" ]; then
+            node scripts/evening-digest.js --date=${{ github.event.inputs.date }}
+          else
+            node scripts/evening-digest.js
+          fi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          NODE_ENV: production
