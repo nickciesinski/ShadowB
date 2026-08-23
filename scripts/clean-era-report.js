@@ -65,10 +65,14 @@ function portfolio(seg) {
 }
 
 // ── CLV (closing-line value) — R1.1 ──────────────────────────────
-// Read-only: our odds live in Performance Log col 9, the closing odds the
-// grader captured live in col 31. CLV = how much the market moved toward our
-// side after we bet. Positive = we beat the close (the durable skill signal).
-const COL_ODDS = 9, COL_CLOSE_ODDS = 31;
+// Read-only. CLV = how much the market moved toward our side after we bet;
+// positive = we beat the close (the durable skill signal). Two sources:
+//   • Supabase (v2_clv): a precomputed novig points value at col 33 (COL_CLV_PTS).
+//   • Google Sheet (v1/legacy): reconstruct from our odds (col 9) vs the closing
+//     odds the grader captured (col 31).
+// Supabase rows have NO raw closing american price, so col 31 is empty there —
+// prefer col 33 and fall back to the odds calc, matching the threshold tuner.
+const COL_ODDS = 9, COL_CLOSE_ODDS = 31, COL_CLV_PTS = 33;
 
 const { impliedProb, clvPoints, emptyClv, clvFinalize } = require('./clv-lib');
 
@@ -84,7 +88,15 @@ function clvSegments(rows, cutoff) {
     if (!d || d < cutoff) continue;
     const lg = String(row[1] || '').toUpperCase();
     if (!seg[lg]) continue;
-    const pts = clvPoints(row[COL_ODDS], row[COL_CLOSE_ODDS]);
+    // Supabase (v2_clv) rows carry a precomputed novig points value at
+    // COL_CLV_PTS (see supaRowsToArrayRows in weekly-threshold-tune.js): the
+    // v2 schema stores CLV as a probability delta, not a raw closing american
+    // price, so col 31 is ALWAYS empty for Supabase rows. Prefer the precomputed
+    // value; Sheet-sourced rows fall back to the odds-based calc. Mirrors the
+    // tuner's leagueApprovedClv exactly, so report and tuner agree.
+    const pts = typeof row[COL_CLV_PTS] === 'number'
+      ? row[COL_CLV_PTS]
+      : clvPoints(row[COL_ODDS], row[COL_CLOSE_ODDS]);
     if (pts == null) continue; // no closing snapshot for this bet
     const mk = normMarket(row[2]);
     const appr = String(row[21] || '').trim().toLowerCase();
