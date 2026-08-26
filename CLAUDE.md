@@ -25,3 +25,17 @@ make changes.
   optimizer), not in Google Sheets.
 - The cloud sandbox has no Supabase/Sheets creds and blocks direct ESPN/curl
   calls — verify live data via GitHub Actions logs or ask Nick.
+
+## Keeping the two systems in sync
+ShadowB (US sports) and ShadowB-Soccer (EPL) are independent, but some changes
+are meant for BOTH. When a change is **fundamental/shared** (not tied to one
+sport's model), STOP and tell Nick it likely belongs in the sibling system too,
+and offer to make the matching change. Then log it in
+`Briefs/cross-system-sync-log.md`.
+
+- Shared/fundamental (port to both): stake sizing, CLV logic, results-ledger
+  format, pick-coverage rules (ML + spread + total must all appear),
+  odds/price validation, calibration approach, email/digest plumbing.
+- Sport-specific (do NOT copy across): the actual model guts — soccer's 3-way
+  home/draw/away probabilities, NHL goalies, NBA pace/defRating, MLB pitchers,
+  spreads/totals math.
