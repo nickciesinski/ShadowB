@@ -92,14 +92,19 @@ function teamLogo(teamName, league) {
   return `https://a.espncdn.com/i/teamlogos/${sport}/500/${code}.png`;
 }
 
-function cleanTime(period) {
+function cleanTime(period, showDate = false) {
   if (!period) return '';
   // Handle ISO dates (from startTime field)
   if (period.includes('T') && period.includes('-')) {
     try {
       const d = new Date(period);
       if (isNaN(d.getTime())) return '';
-      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+      if (!showDate) return time;
+      // "This Week" mixes multiple days together — prefix with a short date so
+      // it's clear which day a game card belongs to.
+      const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'numeric', day: 'numeric' });
+      return `${day}, ${time}`;
     } catch (e) { return ''; }
   }
   // Clean ESPN shortDetail format
@@ -404,7 +409,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 }
 
 // ── Picks Tab ───────────────────────────────────────────────────────
-function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lockAll }) {
+function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lockAll, showDate = false }) {
   const dedupedPicks = dedup(picks);
 
   // My Bets filter
@@ -431,7 +436,7 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
                 <span style={{ fontSize: 13, fontWeight: 600, color: '#F1F5F9' }}>{g.away} @ {g.home}</span>
                 <TeamLogo team={g.home} league={g.league} size={16} />
               </div>
-              {g.startTime && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{cleanTime(g.startTime)}</span>}
+              {g.startTime && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{cleanTime(g.startTime, showDate)}</span>}
             </div>
             {g.picks.map((p, j) => {
               const selected = isBet(p);
@@ -567,7 +572,7 @@ function PicksTab({ picks, sf, bf, cf, isBet, isFade, toggleBet, liveGames, lock
               <TeamLogo team={g.home} league={g.league} size={16} />
               {g._gameNum && <span style={{ fontSize: 9, fontWeight: 700, color: '#94A3B8', background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 3 }}>GM {g._gameNum}</span>}
             </div>
-            {g.startTime && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{cleanTime(g.startTime)}</span>}
+            {g.startTime && <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{cleanTime(g.startTime, showDate)}</span>}
           </div>
           {/* MLB Starting Pitchers */}
           {g.league === 'MLB' && (() => {
@@ -2104,6 +2109,7 @@ export default function App() {
     return new Map();
   });
   const [propDateFilter, setPropDateFilter] = useState('Today');
+  const [picksDateFilter, setPicksDateFilter] = useState('Today');
   const [resultType, setResultType] = useState('Games');
   const [data, setData] = useState(null);
   const [resultsData, setResultsData] = useState(null); // graded history, loaded lazily after main data
@@ -2164,7 +2170,10 @@ export default function App() {
   // Lock all picks above threshold (for morning quick-lock)
   const lockAll = useCallback(() => {
     if (!data?.todayPicks) return;
-    const qualified = dedup(data.todayPicks).filter(p => p.units >= 0.2);
+    // "Morning quick-lock" is a today-only action — scope it to today's picks even
+    // though data.todayPicks now spans the next week (soccer's CLV lookahead).
+    const todaysOnly = data.todayPicks.filter(p => !p.isoDate || p.isoDate === new Date().toLocaleDateString('en-CA'));
+    const qualified = dedup(todaysOnly).filter(p => p.units >= 0.2);
     setMyBets(prev => {
       const next = new Map(prev);
       for (const p of qualified) {
@@ -2295,6 +2304,25 @@ export default function App() {
   const fadeCount = [...myBets.values()].filter(v => v === 'fade').length;
   // Only show leagues that have real games today (hides off-season leagues like NFL in April)
   const todayDateISO = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+  // Picks tab date picker: /api/data now returns today-through-next-week (soccer
+  // locks picks in up to 7 days ahead for CLV — see ShadowB-Soccer). Filter down
+  // to what the picker's asking for; each pick carries its own isoDate.
+  const tmrwDateObj = new Date(); tmrwDateObj.setDate(tmrwDateObj.getDate() + 1);
+  const tomorrowDateISO = tmrwDateObj.toLocaleDateString('en-CA');
+  const weekAheadDateObj = new Date(); weekAheadDateObj.setDate(weekAheadDateObj.getDate() + 7);
+  const weekAheadDateISO = weekAheadDateObj.toLocaleDateString('en-CA');
+  const picksForTab = (data?.todayPicks || []).filter(p => {
+    if (!p.isoDate) return picksDateFilter === 'Today'; // no date = assume today
+    if (picksDateFilter === 'Today') return p.isoDate === todayDateISO;
+    if (picksDateFilter === 'Tomorrow') return p.isoDate === tomorrowDateISO;
+    // This Week: today through 7 days out, inclusive (includes tomorrow).
+    return p.isoDate >= todayDateISO && p.isoDate <= weekAheadDateISO;
+  });
+  // Scores tab always shows only TODAY's games, independent of whatever the
+  // Picks tab's date picker is set to — so it needs its own today-only slice
+  // rather than the full today-through-next-week data (matching a future pick
+  // to today's game by team name alone would be wrong).
+  const todaysPicksOnly = (data?.todayPicks || []).filter(p => !p.isoDate || p.isoDate === todayDateISO);
   const realGames = liveGames.filter(g => {
     if (g.status === 'in') return true; // live = real
     if (!g.gameDate) return false;
@@ -2364,6 +2392,7 @@ export default function App() {
         {tab !== 'settings' && <Pills items={sportPills} active={sf} onChange={setSf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'picks' && <Pills items={BET_TYPES} active={bf} onChange={setBf} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'picks' && <Pills items={CONFIDENCE_FILTERS} active={cf} onChange={setCf} color={TAB_ACCENTS[tab].accent} />}
+        {tab === 'picks' && <Pills items={['Today', 'Tomorrow', 'This Week']} active={picksDateFilter} onChange={setPicksDateFilter} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'props' && <Pills items={['Today', 'Tomorrow', 'All']} active={propDateFilter} onChange={setPropDateFilter} color={TAB_ACCENTS[tab].accent} />}
         {tab === 'props' && (() => {
           const books = data?.props ? ['All', ...new Set(data.props.map(p => p.book).filter(Boolean))] : ['All'];
@@ -2387,14 +2416,14 @@ export default function App() {
       <div style={{ padding: '8px 12px 90px' }}>
         {loading && <LoadingSkeleton />}
         {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
-        {data && tab === 'picks' && <PicksTab picks={data.todayPicks} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} liveGames={liveGames} lockAll={lockAll} />}
+        {data && tab === 'picks' && <PicksTab picks={picksForTab} sf={sf} bf={bf} cf={cf} isBet={isBet} isFade={isFade} toggleBet={toggleBet} liveGames={liveGames} lockAll={lockAll} showDate={picksDateFilter === 'This Week'} />}
         {data && tab === 'scores' && <ScoresTab liveGames={liveGames.filter(g => {
           // Hide off-season games (e.g. Super Bowl replay in April)
           if (g.status === 'in') return true;
           if (!g.gameDate) return false;
           try { return new Date(g.gameDate).toLocaleDateString('en-CA') === todayDateISO; }
           catch { return false; }
-        })} picks={data.todayPicks} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
+        })} picks={todaysPicksOnly} sf={sf} bf={bf} isBet={isBet} isFade={isFade} />}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
         {data && tab === 'results' && resultType === 'Changelog' && <ChangelogTab />}
         {data && tab === 'results' && resultType !== 'Changelog' && (

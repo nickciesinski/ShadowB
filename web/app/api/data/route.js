@@ -103,14 +103,20 @@ export async function GET() {
     const yyyy = today.getFullYear();
     const todayStr = `${mm}/${dd}/${yyyy}`;
     const isoToday = `${yyyy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    // 2026-08-26: soccer now locks in picks up to a week ahead (CLV strategy —
+    // see ShadowB-Soccer's lookaheadDays), and those rows already sit in the
+    // shared table today. Widen the window so the app's Today/Tomorrow/This Week
+    // picker on the Picks tab has something to show, not just isoToday.
+    const weekAhead = new Date(today); weekAhead.setDate(weekAhead.getDate() + 7);
+    const isoWeekAhead = `${weekAhead.getFullYear()}-${String(weekAhead.getMonth() + 1).padStart(2, '0')}-${String(weekAhead.getDate()).padStart(2, '0')}`;
 
-    // Supabase queries for the MAIN load only (today's picks + odds snapshot).
-    // Graded-history queries were moved to /api/results. Each resolves to null
-    // on error so the Sheets fallbacks below still work.
+    // Supabase queries for the MAIN load only (today-through-next-week picks +
+    // odds snapshot). Graded-history queries were moved to /api/results. Each
+    // resolves to null on error so the Sheets fallbacks below still work.
     const sbTodayQ = sb
       ? sb.from('performance_log')
           .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result')
-          .eq('date', isoToday)
+          .gte('date', isoToday).lte('date', isoWeekAhead)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
 
@@ -131,13 +137,18 @@ export async function GET() {
 
     const allPicks = perfRows.slice(1).map(parsePerfRow);
 
-    // Today's picks: default to Sheets filter; prefer Supabase if it has rows.
-    let todayPicks = allPicks.filter(p => p.date === todayStr);
+    // Today's picks: default to Sheets filter (today only); prefer Supabase if it
+    // has rows (now today-through-next-week — each row keeps its OWN date rather
+    // than being stamped "today", so the app's date picker can tell them apart).
+    let todayPicks = allPicks.filter(p => p.date === todayStr).map(p => ({ ...p, isoDate: isoToday }));
     if (sbTodayRows && sbTodayRows.length > 0) {
       todayPicks = sbTodayRows.map(r => {
         const gp = (r.game || '').split(' @ ');
+        const rowIso = r.date || isoToday;
+        const [ry, rm2, rd2] = rowIso.split('-');
+        const rowDateStr = `${parseInt(rm2)}/${parseInt(rd2)}/${ry}`;
         return {
-          date: todayStr, league: r.league || '', market: r.market || '',
+          date: rowDateStr, isoDate: rowIso, league: r.league || '', market: r.market || '',
           away: gp[0] || '', home: gp[1] || '', startTime: r.start_time || '', betType: r.market || '',
           pick: r.pick || '', line: r.line != null ? String(r.line) : '',
           odds: r.odds || -110, units: r.final_units || 0,
