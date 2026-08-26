@@ -1,12 +1,13 @@
 name: Evening Digest — Tomorrow's Picks Email
 
-# Runs ~9:30pm PT (during PDT; ~8:30pm during PST — cron is fixed UTC) and emails
+# Runs ~8:30pm PT (during PDT; ~7:30pm during PST — cron is fixed UTC) and emails
 # the full slate of picks for TOMORROW across every league in the shared ledger,
 # so the bets can be reviewed the night before and the earliest lines are captured.
-# 04:30 UTC = 21:30 PDT (UTC-7) / 20:30 PST (UTC-8).
+# Fires 30 min early to land ~9pm PT after GitHub Actions' typical scheduling delay.
+# 03:30 UTC = 20:30 PDT (UTC-7) / 19:30 PST (UTC-8).
 on:
   schedule:
-    - cron: '30 4 * * *'
+    - cron: '30 3 * * *'
   workflow_dispatch:
     inputs:
       date:
