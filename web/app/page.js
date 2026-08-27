@@ -10,7 +10,6 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     @keyframes flashGreen { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
     @keyframes flashRed { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
     @keyframes progressPulse { 0%,100% { opacity: 0.8; } 50% { opacity: 1; } }
-    @keyframes armPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 
     /* ── Tape design system (Direction A handoff) ─────────────────── */
     .tp{--bg:#0A0B0D;--panel:#101216;--panel2:#15181C;--panel3:#0C0E11;--line:#1F242A;--line-soft:#14171B;--line2:#2A3138;--text:#E7E9EC;--dim:#79818B;--dim2:#7C848F;--take:#4C9AFF;--fade:#FF8A3D;--win:#34C77B;--loss:#E5484D;--body:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,sans-serif;--mono:'IBM Plex Mono','SF Mono',monospace;font-family:var(--body);color:var(--text);background:var(--bg)}
@@ -35,6 +34,10 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .datepick{display:flex;gap:6px;padding:7px 14px;background:var(--panel3);border-bottom:1px solid var(--line)}
     .datepick button{font:500 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim2);background:none;border:1px solid var(--line2);border-radius:3px;padding:4px 9px}
     .datepick button.on{color:var(--take);border-color:rgba(76,154,255,.5);background:rgba(76,154,255,.12)}
+    .rangerow{display:flex;background:var(--panel3);border-bottom:1px solid var(--line)}
+    .rangerow button{flex:1;background:none;border:0;border-right:1px solid var(--line);padding:9px 0;font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
+    .rangerow button:last-child{border-right:0}
+    .rangerow button.on{background:var(--panel);color:var(--take)}
     .arule{background:var(--panel2);border-bottom:1px solid var(--line);padding:11px 14px 12px;display:flex;flex-direction:column;gap:9px}
     .arule-top{display:flex;align-items:center;justify-content:space-between}
     .arule-top .lb{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
@@ -54,8 +57,11 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .abtn.solid{background:var(--take);border-color:var(--take);color:#03142c}
     .abtn.ghost{border-color:var(--line2);background:transparent;color:var(--dim);padding:0 14px}
     .abtn.on{border-color:var(--take);color:var(--take);background:rgba(76,154,255,.1)}
-    .abtn.armed{background:var(--win);border-color:var(--win);color:#052013;animation:armPulse 1s ease-in-out infinite}
     .abtn:disabled{opacity:.4;cursor:default}
+    .undobar{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--panel3);border-bottom:1px solid var(--line)}
+    .undobar .ul{font:500 10px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+    .undobar .ct{font:400 10px/1 var(--mono);color:var(--dim2);margin-left:8px}
+    .undobar .ub{font:500 10px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--take);background:rgba(76,154,255,.12);border:1px solid rgba(76,154,255,.5);border-radius:3px;padding:5px 11px}
     .aleagues{display:flex;border-bottom:1px solid var(--line);background:var(--bg)}
     .aleagues button{flex:1;background:none;border:0;border-right:1px solid var(--line);padding:9px 0 8px;display:flex;flex-direction:column;align-items:center;gap:3px}
     .aleagues button:last-child{border-right:0;flex:0 0 42px}
@@ -65,6 +71,11 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .aleagues .sel .lg{color:var(--text)}
     .aleagues .sel .ct{color:var(--take)}
     .aleagues .glyph{font:500 13px/1 var(--mono);color:var(--dim2)}
+    .aleagues button:disabled{opacity:.35}
+    .aleagues.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .aleagues.scroll::-webkit-scrollbar{display:none}
+    .aleagues.scroll button{flex:0 0 auto;min-width:62px;padding:9px 12px 8px}
+    .aleagues.scroll button:last-child{position:sticky;right:0;flex:0 0 42px;min-width:42px;background:var(--bg);border-left:1px solid var(--line);border-right:0;justify-content:center}
     .agame{border-bottom:1px solid var(--line)}
     .agh{display:flex;align-items:center;gap:8px;padding:8px 14px 7px;background:#0c0e11}
     .agh .lgm{font:600 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim2);width:26px;flex-shrink:0}
@@ -73,8 +84,9 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .agh .tme{margin-left:auto;font:500 10px/1 var(--mono);color:var(--dim2);letter-spacing:.03em}
     .agh .live{margin-left:auto;display:flex;align-items:center;gap:6px;font:500 10px/1 var(--mono);color:var(--win)}
     .agh .live b{width:5px;height:5px;border-radius:50%;background:var(--win);display:block}
+    .agh .close{margin-left:auto;font:500 10px/1 var(--mono);letter-spacing:.03em;color:var(--take)}
     .agh .sc{font:600 12px/1 var(--mono);color:var(--text);margin-left:2px}
-    .r{display:grid;grid-template-columns:3px 1fr 54px 46px 72px;align-items:center;gap:9px;height:46px;padding-right:12px;border-top:1px solid #14171b;background:var(--bg)}
+    .r{display:grid;grid-template-columns:3px 1fr 54px 46px 72px;align-items:center;gap:9px;height:56px;padding-right:12px;border-top:1px solid #14171b;background:var(--bg)}
     .r.first{border-top:0}
     .tick{height:0;width:3px;background:var(--dim2);align-self:end;margin-bottom:9px}
     .t10{height:26px}.t7{height:17px}.t5{height:9px}
@@ -88,7 +100,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .u{font:600 17px/1 var(--mono);letter-spacing:-.02em;color:var(--text);text-align:right}
     .u em{font-style:normal;font-size:9px;color:var(--dim2);margin-left:1px}
     .p{font:400 11px/1 var(--mono);color:var(--dim);text-align:right}
-    .tri{display:grid;grid-template-columns:repeat(3,1fr);height:28px;border:1px solid var(--line2);border-radius:4px;overflow:hidden}
+    .tri{display:grid;grid-template-columns:repeat(3,1fr);height:44px;border:1px solid var(--line2);border-radius:4px;overflow:hidden}
     .tri s{text-decoration:none;display:flex;align-items:center;justify-content:center;font:600 9px/1 var(--mono);color:var(--dim2);border-right:1px solid var(--line2);background:#0d0f12;cursor:pointer;-webkit-tap-highlight-color:transparent}
     .tri s:last-child{border-right:0}
     .tri s.on{background:var(--take);color:#03142c}
@@ -103,9 +115,9 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .more{padding:7px 14px 8px 32px;font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim2);border-top:1px solid #14171b;background:#0c0e11;cursor:pointer}
     .apnl{font:600 15px/1 var(--mono);text-align:right;letter-spacing:-.02em}
     .apnl.up{color:var(--win)}.apnl.dn{color:var(--loss)}.apnl.fl{color:var(--dim)}
-    .prog{grid-column:5;height:4px;border-radius:2px;background:#191d22;position:relative;overflow:hidden}
-    .prog b{position:absolute;inset:0 auto 0 0;background:var(--win);transition:width .6s ease}
-    .prog.dn b{background:var(--loss)}
+    .apnl em{font-style:normal;font-size:9px;color:#565e68;margin-left:1px}
+    .clockbar{grid-column:5;height:4px;border-radius:2px;background:#191d22;position:relative;overflow:hidden}
+    .clockbar b{position:absolute;inset:0 auto 0 0;background:var(--line2);transition:width .6s ease}
     .r.locked .tri{display:none}
     .tapebar{display:flex;height:6px;border-bottom:1px solid var(--line)}
     .tapebar i{display:block;height:100%}
@@ -131,14 +143,6 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .lr .pr{font:400 10px/1 var(--mono);color:var(--dim2)}
     .lr .un{font:600 12px/1 var(--mono);width:52px;text-align:right}
     .lr .un.w{color:var(--win)}.lr .un.l{color:var(--loss)}.lr .un.p{color:var(--dim2)}
-    .health{margin-top:auto;border-top:1px solid var(--line);background:var(--panel)}
-    .health-h{display:flex;align-items:center;gap:8px;padding:10px 14px 8px}
-    .health-h b{width:6px;height:6px;border-radius:50%;background:var(--win);display:block}
-    .health-h span{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
-    .health-h i{margin-left:auto;font:400 10px/1 var(--mono);color:var(--dim2);font-style:normal}
-    .health-r{display:flex;justify-content:space-between;padding:5px 14px;font:400 10px/1.4 var(--mono);color:var(--dim2)}
-    .health-r b{color:#c4cad1;font-weight:500}
-    .health-r.warn b{color:var(--fade)}
     .tabs{display:grid;border-top:1px solid var(--line);background:var(--panel);padding:9px 0 calc(10px + env(safe-area-inset-bottom, 8px))}
     .tabs button{background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;position:relative}
     .tabs .ti{width:16px;height:16px;border:1.4px solid var(--dim2);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px}
@@ -189,7 +193,8 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .legend u.on{background:var(--take);border-color:var(--take);color:#03142c}
     .legend u.onf{background:var(--fade);border-color:var(--fade);color:#2b1200}
     .legend i{font-style:normal}
-    .consec{padding:8px 13px 7px;background:#0c0e11;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim);display:flex;justify-content:space-between;cursor:pointer}
+    .legend b.sw{width:16px;height:8px;border-radius:2px;display:inline-block}
+    .consec{padding:8px 13px 7px;background:#0c0e11;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim);display:flex;justify-content:space-between}
     .empty{padding:40px 14px;text-align:center;font:500 12px/1.4 var(--body);color:var(--dim)}
   `;
   document.head.appendChild(style);
@@ -646,21 +651,12 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated }) {
+function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
   const [expandedGames, setExpandedGames] = useState({});
-  const [armed, setArmed] = useState(false);
-  const [commitSnapshot, setCommitSnapshot] = useState(null);
-  const armTimer = useRef(null);
-  const undoTimer = useRef(null);
   const dragRef = useRef(null);
-
-  useEffect(() => () => {
-    if (armTimer.current) clearTimeout(armTimer.current);
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-  }, []);
 
   const allPicks = dedup(picks);
   const pool = minUnitOn ? allPicks.filter(p => p.units >= 0.3) : allPicks;
@@ -682,57 +678,33 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   for (const p of allPicks) leagueCounts[p.league] = (leagueCounts[p.league] || 0) + 1;
   const leagues = Object.keys(leagueCounts).sort((a, b) => leagueCounts[b] - leagueCounts[a]);
 
-  // Rule bar segment counts (tier 10 / 7 / 5), always over the FULL slate —
-  // the league row below only filters what's visible in the tape.
-  const segCount = (t) => allPicks.filter(p => tierOf(p) === t).length;
+  // Rule bar segment counts (tier 10 / 7 / 5) respect the min-unit rule
+  // (0.3u+) but still ignore the league filter — the rule bar describes the
+  // whole (min-unit-filtered) slate, not the visible slice.
+  const segCount = (t) => pool.filter(p => tierOf(p) === t).length;
 
-  const commitTake = () => {
-    if (!armed) {
-      setArmed(true);
-      if (armTimer.current) clearTimeout(armTimer.current);
-      armTimer.current = setTimeout(() => setArmed(false), 4000);
-      return;
-    }
-    setArmed(false);
-    setCommitSnapshot(myBets); // frozen reference — myBets is replaced wholesale on every edit
-    const next = new Map(myBets);
-    for (const p of commitList) {
-      const key = pickKey(p);
-      if (!next.has(key)) next.set(key, 'bet');
-    }
-    setMyBets(next);
-    setPickMode('watch');
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-    undoTimer.current = setTimeout(() => setCommitSnapshot(null), 8000);
-  };
-  const undoCommit = () => {
-    if (!commitSnapshot) return;
-    setMyBets(commitSnapshot);
-    setPickMode('build');
-    setCommitSnapshot(null);
-    if (undoTimer.current) clearTimeout(undoTimer.current);
-  };
+  const commitTake = () => commitTakeApp(commitList);
 
   // ── Watch mode: derive positions, live P/L, tape-bar proportions ──────
   const positions = pool.filter(p => isBet(p) || isFade(p));
   const matchupGames = buildMatchupGames(liveGames);
   const posWithGame = positions.map(p => ({ p, game: findGameForPick(liveGames, matchupGames, p) }));
   let winU = 0, loseU = 0, liveN = 0, finalOrLiveN = 0;
-  const tape = { win: 0, mid: 0, loss: 0, pre: 0 };
+  const tape = { win: 0, mid: 0, loss: 0, pre: 0 }; // unit sums, not position counts — see fix #9
   for (const { p, game } of posWithGame) {
     const faded = isFade(p);
     const display = faded ? findOppositePick(p, allPicks) : p;
-    if (!game || game.status === 'pre') { tape.pre++; continue; }
+    if (!game || game.status === 'pre') { tape.pre += (p.units || 0); continue; }
     finalOrLiveN++;
     if (game.status === 'in') liveN++;
     const status = getEffectiveStatus(display, game);
     const pl = status === 'winning' ? calcProfit(display.odds, p.units) : status === 'losing' ? -(p.units || 0) : 0;
-    if (status === 'winning') { winU += pl; tape.win++; }
-    else if (status === 'losing') { loseU += p.units || 0; tape.loss++; }
-    else tape.mid++;
+    if (status === 'winning') { winU += pl; tape.win += (p.units || 0); }
+    else if (status === 'losing') { loseU += p.units || 0; tape.loss += (p.units || 0); }
+    else tape.mid += (p.units || 0);
   }
   const dayPL = winU - loseU;
-  const tapeTotal = Math.max(positions.length, 1);
+  const tapeTotal = Math.max(positions.reduce((s, p) => s + (p.units || 0), 0), 0.01);
   const tapePct = { win: tape.win / tapeTotal * 100, mid: tape.mid / tapeTotal * 100, loss: tape.loss / tapeTotal * 100, pre: tape.pre / tapeTotal * 100 };
 
   const runLabel = lastUpdated
@@ -815,7 +787,6 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     const status = game ? getEffectiveStatus(display, game) : 'pending';
     const pl = status === 'winning' ? calcProfit(display.odds, p.units) : status === 'losing' ? -(p.units || 0) : 0;
     const plCls = isPre ? 'fl' : status === 'winning' ? 'up' : status === 'losing' ? 'dn' : 'fl';
-    const winProb = game && game.status !== 'pre' ? (status === 'winning' ? 0.5 + Math.min(getGameProgress(game), 0.48) : status === 'losing' ? 0.5 - Math.min(getGameProgress(game), 0.48) : 0.5) : 0;
     return (
       <div key={pickKey(p) + idx} className={`r locked${idx === 0 ? ' first' : ''}${!faded ? ' take' : ' fade'}`}>
         <b className={`tick ${tierHeightClass(tier)}`}></b>
@@ -826,9 +797,9 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
         </div>
         <span className="p num">{fmt(display.odds)}</span>
         {isPre
-          ? <span className="apnl fl num">{(p.units || 0).toFixed(2)}<em style={{ fontSize: 9, color: '#565e68' }}>u</em></span>
-          : <span className={`apnl ${plCls} num`}>{pl >= 0 ? '+' : ''}{pl.toFixed(2)}</span>}
-        <div className={`prog${status === 'losing' ? ' dn' : ''}`}><b style={{ width: `${isPre ? 0 : Math.round(winProb * 100)}%`, background: status === 'even' || status === 'pending' ? 'var(--line2)' : undefined }}></b></div>
+          ? <span className="apnl fl num">{(p.units || 0).toFixed(2)}<em>u</em></span>
+          : <span className={`apnl ${plCls} num`}>{pl >= 0 ? '+' : ''}{pl.toFixed(2)}<em>u</em></span>}
+        <div className="clockbar"><b style={{ width: `${Math.round(getGameProgress(game) * 100)}%` }}></b></div>
       </div>
     );
   };
@@ -838,8 +809,10 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
       <div className="ah">
         <b>Shadow Bets</b>
         {pickMode === 'build'
-          ? <span>{dayLabel} · {runLabel}</span>
-          : <span className="clickable" onClick={() => setPickMode('build')}>{lockedCount} POSITIONS · BACK TO BUILD</span>}
+          ? (positions.length > 0
+            ? <span className="clickable" onClick={() => setPickMode('watch')}>{dayLabel} · VIEW: WATCH ▸</span>
+            : <span>{dayLabel} · {runLabel}</span>)
+          : <span className="clickable" onClick={() => setPickMode('build')}>{lockedCount} POSITIONS · VIEW: BUILD ▸</span>}
       </div>
 
       {picksDateFilter && (
@@ -894,8 +867,8 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
             <div className="handle" style={{ left: `calc(${tierThreshold === 10 ? 33.33 : tierThreshold === 7 ? 66.66 : 100}% - 1px)` }}></div>
           </div>
           <div className="arule-act">
-            <button className={`abtn${armed ? ' armed' : ' solid'}`} disabled={commitCount === 0} onClick={commitTake}>
-              {armed ? 'Tap again to confirm' : `Take ${commitCount} · ${commitUnits.toFixed(1)}u`}
+            <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake}>
+              {`Take ${commitCount} · ${commitUnits.toFixed(1)}u`}
             </button>
             <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)}>0.3u+</button>
           </div>
@@ -909,10 +882,19 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
         </div>
       )}
 
+      {pickMode === 'watch' && (
+        <div className="legend">
+          <span><b className="sw" style={{ background: 'var(--win)' }}></b><i>{tape.win.toFixed(1)}u up</i></span>
+          <span><b className="sw" style={{ background: 'var(--line2)' }}></b><i>{tape.mid.toFixed(1)}u even</i></span>
+          <span><b className="sw" style={{ background: 'var(--loss)' }}></b><i>{tape.loss.toFixed(1)}u dn</i></span>
+          <span><b className="sw" style={{ background: 'var(--panel2)', boxShadow: 'inset 0 0 0 1px var(--line2)' }}></b><i>{tape.pre.toFixed(1)}u pre</i></span>
+        </div>
+      )}
+
       {commitSnapshot && pickMode === 'watch' && (
-        <div className="datepick" style={{ justifyContent: 'space-between' }}>
-          <span style={{ font: '500 10px/1 var(--mono)', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--dim)' }}>Locked just now</span>
-          <button className="on" onClick={undoCommit}>Undo</button>
+        <div className="undobar">
+          <span className="ul">Locked {committedCount} · {committedUnits.toFixed(1)}u<span className="ct">{undoLeft}s</span></span>
+          <button className="ub" onClick={undoCommit}>Undo</button>
         </div>
       )}
 
@@ -1073,9 +1055,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
     }
   }
 
-  const openKey = (expandedKey && gameData.some(d => d.key === expandedKey)) ? expandedKey : (gameData[0] ? gameData[0].key : null);
-  const openData = gameData.find(d => d.key === openKey);
-  const condensedData = gameData.filter(d => d.key !== openKey);
+  const openKey = (expandedKey && gameData.some(d => d.key === expandedKey)) ? expandedKey : null;
   const abbr = (name) => (name || '').split(' ').pop();
 
   const teamChip = (name, league, mini) => {
@@ -1111,11 +1091,11 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
         <div><span className="k">Live</span><span className="v">{tally.live.w}–{tally.live.l}{tally.live.t ? <s>–{tally.live.t}</s> : null}</span></div>
         <div><span className="k">Day P/L</span><span className={`v ${dayPLTotal >= 0 ? 'up' : 'dn'}`}>{dayPLTotal >= 0 ? '+' : ''}{dayPLTotal.toFixed(2)}<s>u</s></span></div>
       </div>
-      <div className="aleagues">
+      <div className="aleagues scroll">
         <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{liveGames.length}</span></button>
-        {hasAnyPosition && <button className={sf === 'My Bets' ? 'sel' : ''} onClick={() => setSf('My Bets')}><span className="lg">MINE</span><span className="ct">{mineCount}</span></button>}
+        <button className={sf === 'My Bets' ? 'sel' : ''} disabled={mineCount === 0} onClick={() => setSf('My Bets')}><span className="lg">MINE</span><span className="ct">{mineCount}</span></button>
         <button className={sf === 'Live' ? 'sel' : ''} onClick={() => setSf('Live')}><span className="lg">LIVE</span><span className="ct">{liveCount}</span></button>
-        {leagues.slice(0, hasAnyPosition ? 1 : 2).map(l => (
+        {leagues.map(l => (
           <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{leagueCounts[l]}</span></button>
         ))}
         <button onClick={() => setSortAlt(v => !v)}><span className="glyph">⇅</span></button>
@@ -1123,36 +1103,36 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
 
       {isEmpty && <div className="empty">{sf === 'Live' ? 'No live games right now.' : sf === 'My Bets' ? 'No positions on today’s games yet.' : 'No games today.'}</div>}
 
-      {openData && <ExpandedGame d={openData} isBet={isBet} isFade={isFade} teamChip={teamChip} />}
-
-      {condensedData.length > 0 && <div className="consec"><span>Other games · {condensedData.length}</span><span>▾ tap to open</span></div>}
-      {condensedData.map(d => {
-        const { game, gamePicks, isPre, key } = d;
-        return (
-          <div key={key} className={`acon${d.isLive ? ' live' : ''}`} onClick={() => setExpandedKey(key)}>
-            <span className="lg">{game.league}</span>
-            <span className="duo">{teamChip(game.away, game.league, true)}{teamChip(game.home, game.league, true)}</span>
-            <span className="mt">{abbr(game.away)} <s>at</s> {abbr(game.home)}</span>
-            <span className="sc">{isPre ? cleanTime(game.period) : `${game.awayScore}–${game.homeScore}`}</span>
-            {positionPips(gamePicks)}
-            {gamePicks.length > 0
-              ? <span className={`pos apnl ${isPre ? 'fl' : d.dayPL > 0 ? 'up' : d.dayPL < 0 ? 'dn' : 'fl'}`}>{isPre ? gamePicks.reduce((s, p) => s + (p.units || 0), 0).toFixed(2) : `${d.dayPL >= 0 ? '+' : ''}${d.dayPL.toFixed(2)}`}</span>
-              : <span className="pos" style={{ color: 'var(--dim2)' }}>—</span>}
-          </div>
-        );
-      })}
+      {gameData.length > 0 && <div className="consec"><span>Today · {gameData.length} game{gameData.length > 1 ? 's' : ''}</span></div>}
+      {gameData.map(d => d.key === openKey
+        ? <ExpandedGame key={d.key} d={d} isBet={isBet} isFade={isFade} teamChip={teamChip} onClose={() => setExpandedKey(null)} />
+        : (() => {
+          const { game, gamePicks, isPre, key } = d;
+          return (
+            <div key={key} className={`acon${d.isLive ? ' live' : ''}`} onClick={() => setExpandedKey(key)}>
+              <span className="lg">{game.league}</span>
+              <span className="duo">{teamChip(game.away, game.league, true)}{teamChip(game.home, game.league, true)}</span>
+              <span className="mt">{abbr(game.away)} <s>at</s> {abbr(game.home)}</span>
+              <span className="sc">{isPre ? cleanTime(game.period) : `${game.awayScore}–${game.homeScore}`}</span>
+              {positionPips(gamePicks)}
+              {gamePicks.length > 0
+                ? <span className={`pos apnl ${isPre ? 'fl' : d.dayPL > 0 ? 'up' : d.dayPL < 0 ? 'dn' : 'fl'}`}>{isPre ? gamePicks.reduce((s, p) => s + (p.units || 0), 0).toFixed(2) : `${d.dayPL >= 0 ? '+' : ''}${d.dayPL.toFixed(2)}`}<em>u</em></span>
+                : <span className="pos" style={{ color: 'var(--dim2)' }}>—</span>}
+            </div>
+          );
+        })())}
     </div>
   );
 }
 
-function ExpandedGame({ d, isBet, isFade, teamChip }) {
-  const { game, gamePicks, isPre, isLive, isPost } = d;
+function ExpandedGame({ d, isBet, isFade, teamChip, onClose }) {
+  const { game, gamePicks, isPre } = d;
   const aw = game.awayLinescores || [];
   const ho = game.homeLinescores || [];
   const periods = Math.max(aw.length, ho.length);
   return (
     <div className="agame">
-      <div className="agh">
+      <div className="agh" onClick={onClose} style={{ cursor: 'pointer' }}>
         <span className="lgm">{game.league}</span>
         <span className="duo">{teamChip(game.away, game.league, true)}{teamChip(game.home, game.league, true)}</span>
         <span className="tm2">{game.away.split(' ').pop()}</span>
@@ -1160,11 +1140,7 @@ function ExpandedGame({ d, isBet, isFade, teamChip }) {
         <span className="at">{isPre ? '@' : '–'}</span>
         {!isPre && <span className="sc">{game.homeScore}</span>}
         <span className="tm2">{game.home.split(' ').pop()}</span>
-        {isLive
-          ? <span className="live"><b></b>{cleanTime(game.period)}</span>
-          : isPost
-            ? <span className="live"><b style={{ background: '#565e68' }}></b>FINAL</span>
-            : <span className="tme">{cleanTime(game.period)}</span>}
+        <span className="close">▴ close</span>
       </div>
       {gamePicks.map((p, j) => {
         const faded = isFade(p);
@@ -1664,7 +1640,6 @@ function UnitsChart({ results }) {
 }
 
 // ── Results Tab (Direction A — Tape) ──────────────────────────────────
-const RESULT_RANGES = ['Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days', 'All Time'];
 function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onChangelog }) {
   const [viewType, setViewType] = useState('Games');
   const [range, setRange] = useState('Last 30 Days');
@@ -1695,16 +1670,23 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
   const allLeagues = [...new Set([...results.map(r => r.league), ...(gradedProps || []).map(r => r.league)])].filter(Boolean);
 
   const filteredGames = showProps ? [] : results.filter(r => {
+    if (!dateMatch(r)) return false;
     if (sf === 'My Bets') return isBet(r);
     if (sf !== 'All' && r.league !== sf) return false;
-    return dateMatch(r);
+    return true;
   });
   const filteredProps = !showProps ? [] : (gradedProps || []).filter(r => {
+    if (!dateMatch(r)) return false;
     if (sf === 'My Bets') return isPropBet(r);
     if (sf !== 'All' && r.league !== sf) return false;
-    return dateMatch(r);
+    return true;
   });
   const filtered = showProps ? filteredProps : filteredGames;
+
+  const rangeGames = showProps ? [] : results.filter(dateMatch);
+  const rangeProps = !showProps ? [] : (gradedProps || []).filter(dateMatch);
+  const rangeAll = showProps ? rangeProps : rangeGames;
+  const leagueCount = (l) => rangeAll.filter(r => r.league === l).length;
 
   const wins = filtered.filter(r => r.result === 'W').length;
   const losses = filtered.filter(r => r.result === 'L').length;
@@ -1723,7 +1705,13 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
 
   return (
     <div className="tp">
-      <div className="ah"><b>Results</b><span className="clickable" onClick={() => setRange(RESULT_RANGES[(RESULT_RANGES.indexOf(range) + 1) % RESULT_RANGES.length])}>{range.toUpperCase()} ▾</span></div>
+      <div className="ah"><b>Results</b><span>{rangeAll.length} GRADED</span></div>
+
+      <div className="rangerow">
+        {[['Today', 'Today'], ['Yesterday', 'Yest'], ['Last 7 Days', '7d'], ['Last 30 Days', '30d'], ['All Time', 'All']].map(([val, label]) => (
+          <button key={val} className={range === val ? 'on' : ''} onClick={() => setRange(val)}>{label}</button>
+        ))}
+      </div>
 
       <div className="agrid">
         <div><span className="k">Record</span><span className="v">{wins}–{losses}{pushes ? <s>–{pushes}</s> : null}</span></div>
@@ -1740,10 +1728,10 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
       </div>
 
       <div className="aleagues">
-        <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{filtered.length}</span></button>
-        <button className={sf === 'My Bets' ? 'sel' : ''} onClick={() => setSf('My Bets')}><span className="lg">MINE</span><span className="ct">{(showProps ? filteredProps : filteredGames).filter(showProps ? isPropBet : isBet).length}</span></button>
+        <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{rangeAll.length}</span></button>
+        <button className={sf === 'My Bets' ? 'sel' : ''} onClick={() => setSf('My Bets')}><span className="lg">MINE</span><span className="ct">{rangeAll.filter(showProps ? isPropBet : isBet).length}</span></button>
         {allLeagues.map(l => (
-          <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span></button>
+          <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{leagueCount(l)}</span></button>
         ))}
       </div>
 
@@ -1790,10 +1778,6 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
         );
       })}
 
-      <div className="health">
-        <div className="health-h"><b></b><span>System health</span><i>{lastUpdated ? 'OK' : 'loading'}</i></div>
-        <div className="health-r"><span>Last data refresh</span><b>{lastUpdated ? lastUpdated.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</b></div>
-      </div>
     </div>
   );
 }
@@ -2236,11 +2220,52 @@ export default function App() {
       localStorage.setItem('shadowbets_pickmode', JSON.stringify({ date: new Date().toLocaleDateString(), mode: pickMode }));
     } catch (e) {}
   }, [pickMode]);
+
+  // Commit/Undo snapshot for the Picks rule-bar "Take" action — lifted here
+  // (rather than owned by PicksTab) so a build→watch→build→watch mode toggle
+  // round trip can't overwrite it with post-commit state. Only ever set by an
+  // actual commit, and — like pickMode/myBets — implicitly scoped to today
+  // since a reload always starts fresh.
+  const UNDO_SECONDS = 20;
+  const [commitSnapshot, setCommitSnapshot] = useState(null);
+  const [committedCount, setCommittedCount] = useState(0);
+  const [committedUnits, setCommittedUnits] = useState(0);
+  const [undoLeft, setUndoLeft] = useState(0);
+  const commitTake = useCallback((commitList) => {
+    setCommitSnapshot(myBets);
+    setCommittedCount(commitList.length);
+    setCommittedUnits(commitList.reduce((s, p) => s + (p.units || 0), 0));
+    setMyBets(prev => {
+      const next = new Map(prev);
+      for (const p of commitList) {
+        const key = pickKey(p);
+        if (!next.has(key)) next.set(key, 'bet');
+      }
+      return next;
+    });
+    setPickMode('watch');
+    setUndoLeft(UNDO_SECONDS);
+  }, [myBets]);
+  const undoCommit = useCallback(() => {
+    if (!commitSnapshot) return;
+    setMyBets(commitSnapshot);
+    setPickMode('build');
+    setCommitSnapshot(null);
+    setUndoLeft(0);
+  }, [commitSnapshot]);
+  useEffect(() => {
+    if (!commitSnapshot) return;
+    if (undoLeft <= 0) { setCommitSnapshot(null); return; }
+    const t = setTimeout(() => setUndoLeft(s => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [commitSnapshot, undoLeft]);
+
   const [propDateFilter, setPropDateFilter] = useState('Today');
   const [picksDateFilter, setPicksDateFilter] = useState('Today');
   const [resultType, setResultType] = useState('Games');
   const [data, setData] = useState(null);
   const [resultsData, setResultsData] = useState(null); // graded history, loaded lazily after main data
+  const [resultsError, setResultsError] = useState(false);
   const [liveGames, setLiveGames] = useState([]);
   const [liveStats, setLiveStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -2332,7 +2357,7 @@ export default function App() {
   // Fetch sheet data
   const fetchData = useCallback(() => {
     fetch('/api/data')
-      .then(r => r.json())
+      .then(r => r.json().then(d => { if (!r.ok || d?.error) throw new Error(d?.error || `HTTP ${r.status}`); return d; }))
       .then(d => { setData(d); setLoading(false); setLastUpdated(new Date()); })
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
@@ -2342,9 +2367,9 @@ export default function App() {
   // Fetch graded history (Results tab) lazily — never blocks the main load.
   const fetchResults = useCallback(() => {
     fetch('/api/results')
-      .then(r => r.json())
-      .then(d => { setResultsData(d); })
-      .catch(() => {}); // Results stays in "loading" state on failure; main app unaffected
+      .then(r => r.json().then(d => { if (!r.ok || d?.error) throw new Error(d?.error || `HTTP ${r.status}`); return d; }))
+      .then(d => { setResultsData(d); setResultsError(false); })
+      .catch(() => { setResultsError(true); }); // existing resultsData (if any) stays intact; main app unaffected
   }, []);
 
   // Kick off the results fetch once, right AFTER the main data has arrived.
@@ -2458,6 +2483,10 @@ export default function App() {
   // rather than the full today-through-next-week data (matching a future pick
   // to today's game by team name alone would be wrong).
   const todaysPicksOnly = (data?.todayPicks || []).filter(p => !p.isoDate || p.isoDate === todayDateISO);
+  // Uncommitted count for the Picks tab badge — plays in today's slate with no
+  // manual take/fade yet. Only meaningful pre-commit; watch mode means the
+  // slate's already been triaged, so nothing to flag.
+  const uncommittedCount = pickMode === 'build' ? dedup(todaysPicksOnly).filter(p => !isBet(p) && !isFade(p)).length : 0;
   const realGames = liveGames.filter(g => {
     if (g.status === 'in') return true; // live = real
     if (!g.gameDate) return false;
@@ -2488,10 +2517,10 @@ export default function App() {
   // may get a way back in later). The tab/route and SettingsTab component are
   // still here, just unreachable from the tab bar.
   const tabs = [
-    { id: 'picks', label: 'Picks', icon: '📋' },
-    { id: 'scores', label: 'Scores', icon: '🏟️' },
-    { id: 'props', label: 'Props', icon: '🎯' },
-    { id: 'results', label: 'Results', icon: '📊' },
+    { id: 'picks', label: 'Picks' },
+    { id: 'scores', label: 'Scores' },
+    { id: 'props', label: 'Props' },
+    { id: 'results', label: 'Results' },
   ];
 
   // Picks/Scores/Results are self-contained tape screens with their own header,
@@ -2539,7 +2568,15 @@ export default function App() {
       {/* Content */}
       <div style={{ padding: legacyChrome || tab === 'settings' ? '8px 12px 90px' : '0 0 90px' }}>
         {loading && <LoadingSkeleton />}
-        {error && <div style={{ textAlign: 'center', padding: 40, color: '#F87171', fontSize: 13 }}>Error: {error}<br /><span style={{ fontSize: 11, color: '#64748B' }}>Check Vercel env vars</span></div>}
+        {error && (
+          <div className="tp">
+            <div className="ah"><b>Shadow Bets</b><span style={{ color: 'var(--loss)' }}>LOAD FAILED</span></div>
+            <div className="empty">
+              Couldn't reach the model run.<br />
+              <button className="abtn ghost" style={{ marginTop: 14 }} onClick={() => { setError(null); setLoading(true); fetchData(); }}>Retry</button>
+            </div>
+          </div>
+        )}
         {data && tab === 'picks' && (
           <PicksTab
             picks={picksForTab} liveGames={liveGames} myBets={myBets} setMyBets={setMyBets}
@@ -2547,6 +2584,8 @@ export default function App() {
             pickMode={pickMode} setPickMode={setPickMode} tierThreshold={tierThreshold} setTierThreshold={setTierThreshold}
             picksDateFilter={picksDateFilter} setPicksDateFilter={setPicksDateFilter}
             showDate={picksDateFilter === 'This Week'} lastUpdated={lastUpdated}
+            commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
+            undoLeft={undoLeft} commitTake={commitTake} undoCommit={undoCommit}
           />
         )}
         {data && tab === 'scores' && (
@@ -2571,7 +2610,17 @@ export default function App() {
         {data && tab === 'results' && resultType !== 'Changelog' && (
           resultsData
             ? <ResultsTab results={resultsData.gradedPicks} gradedProps={resultsData.gradedProps || []} isBet={isBet} isPropBet={isPropBet} lastUpdated={lastUpdated} onChangelog={() => setResultType('Changelog')} />
-            : <div className="tp"><div className="ah"><b>Results</b></div><div className="empty">Loading results…</div></div>
+            : resultsError
+              ? (
+                <div className="tp">
+                  <div className="ah"><b>Results</b><span style={{ color: 'var(--loss)' }}>LOAD FAILED</span></div>
+                  <div className="empty">
+                    Couldn't load graded results.<br />
+                    <button className="abtn ghost" style={{ marginTop: 14 }} onClick={fetchResults}>Retry</button>
+                  </div>
+                </div>
+              )
+              : <div className="tp"><div className="ah"><b>Results</b></div><div className="empty">Loading results…</div></div>
         )}
         {tab === 'settings' && <SettingsTab />}
       </div>
@@ -2583,10 +2632,11 @@ export default function App() {
       }}>
         {tabs.map(t => (
           <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => handleTabChange(t.id)} style={{ position: 'relative' }}>
-            <span className="ti">{t.icon}</span>
+            <span className="ti"></span>
             <span className="tl">{t.label}</span>
             {t.id === 'scores' && closeCount > 0 && <span className="badge">{closeCount}</span>}
             {t.id === 'scores' && betCount > 0 && closeCount === 0 && <span className="badge" style={{ background: 'var(--take)', color: '#03142c' }}>{betCount}</span>}
+            {t.id === 'picks' && uncommittedCount > 0 && <span className="badge">{uncommittedCount}</span>}
           </button>
         ))}
       </div>
