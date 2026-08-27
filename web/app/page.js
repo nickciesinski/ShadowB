@@ -2221,6 +2221,40 @@ export default function App() {
     } catch (e) {}
   }, [pickMode]);
 
+  // Cross-device sync: today's myBets/pickMode also live in Supabase
+  // (daily_state, one row per day, last write wins) so a pick tapped on your
+  // phone shows up on your computer and vice versa — localStorage above is
+  // per-device only. On mount, pull the server's copy if one exists; local
+  // state stays authoritative until that resolves, so a blank server row
+  // doesn't wipe out picks made on this device moments before the fetch
+  // lands. After that, every myBets/pickMode change gets pushed up.
+  const [stateSynced, setStateSynced] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const todayIso = new Date().toLocaleDateString('en-CA');
+    fetch(`/api/state?date=${todayIso}`)
+      .then(r => r.json())
+      .then(d => {
+        if (cancelled) return;
+        if (d.found) {
+          setMyBets(new Map(d.myBets || []));
+          setPickMode(d.pickMode || 'build');
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setStateSynced(true); });
+    return () => { cancelled = true; };
+  }, []);
+  useEffect(() => {
+    if (!stateSynced) return;
+    const todayIso = new Date().toLocaleDateString('en-CA');
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: todayIso, myBets: [...myBets.entries()], pickMode }),
+    }).catch(() => {});
+  }, [stateSynced, myBets, pickMode]);
+
   // Commit/Undo snapshot for the Picks rule-bar "Take" action — lifted here
   // (rather than owned by PicksTab) so a build→watch→build→watch mode toggle
   // round trip can't overwrite it with post-commit state. Only ever set by an
