@@ -18,7 +18,17 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 function getSupabase() {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;
-  return createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  // Next.js's App Router patches global fetch() to cache requests by default —
+  // this applies to ANY fetch call made inside a route handler, including the
+  // ones supabase-js makes internally, independently of this route's own
+  // `dynamic = 'force-dynamic'` (which only governs the route's own response,
+  // not nested fetches). Without this override, the first successful Supabase
+  // query gets cached indefinitely and every later request — even after a
+  // redeploy — keeps getting served that stale snapshot.
+  return createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false },
+    global: { fetch: (url, options) => fetch(url, { ...options, cache: 'no-store' }) },
+  });
 }
 
 async function getSheetsClient() {
