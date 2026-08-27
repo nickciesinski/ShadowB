@@ -1,0 +1,42 @@
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:#17181a;color:#e7e9ec;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{display:none}
+a{color:inherit}a:hover{color:inherit}
+
+/* ── page scaffold for a direction sheet ───────────────────────────── */
+.sheet{padding:36px 40px 48px;font-family:"IBM Plex Sans",system-ui,sans-serif}
+.sheet-head{display:flex;flex-direction:column;gap:14px;max-width:1210px;margin-bottom:30px}
+.sheet-kicker{font:600 11px/1 "IBM Plex Mono",monospace;letter-spacing:.16em;text-transform:uppercase;color:#8a919b}
+.sheet-title{font:800 40px/1 "IBM Plex Sans",sans-serif;letter-spacing:-.025em;color:#f2f4f7}
+.sheet-title em{font-style:normal;color:#8a919b}
+.sheet-lede{font:400 15px/1.55 "IBM Plex Sans",sans-serif;color:#a4abb4;max-width:78ch;text-wrap:pretty}
+.tokens{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:#2a2d31;border:1px solid #2a2d31;border-radius:8px;overflow:hidden;max-width:1210px}
+.tok{background:#1d1f22;padding:13px 14px;display:flex;flex-direction:column;gap:9px}
+.tok-label{font:600 9px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:#7d848e}
+.tok-swatches{display:flex;gap:5px}
+.tok-swatches i{width:20px;height:20px;border-radius:4px;border:1px solid rgba(255,255,255,.09)}
+.tok-body{font:400 12px/1.5 "IBM Plex Sans",sans-serif;color:#c3c9d1}
+.tok-body b{color:#eef1f5;font-weight:600}
+.frames{display:flex;gap:34px;margin-top:34px;align-items:flex-start}
+.framewrap{display:flex;flex-direction:column;gap:12px;width:390px}
+.framecap{display:flex;flex-direction:column;gap:4px;padding-left:2px}
+.framecap b{font:700 14px/1.2 "IBM Plex Sans",sans-serif;color:#eef1f5}
+.framecap span{font:400 12px/1.45 "IBM Plex Sans",sans-serif;color:#8f969f}
+.tradeoff{margin-top:34px;max-width:1210px;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#2a2d31;border:1px solid #2a2d31;border-radius:8px;overflow:hidden}
+.tradeoff div{background:#1d1f22;padding:16px 18px}
+.tradeoff h4{font:600 9px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:#7d848e;margin-bottom:9px}
+.tradeoff p{font:400 13px/1.55 "IBM Plex Sans",sans-serif;color:#bcc2ca;text-wrap:pretty}
+
+/* ── phone shell ───────────────────────────────────────────────────── */
+.phone{width:390px;height:844px;border-radius:44px;overflow:hidden;position:relative;box-shadow:0 0 0 1px rgba(255,255,255,.09),0 24px 60px -20px rgba(0,0,0,.8);display:flex;flex-direction:column;background:var(--bg)}
+.phone *{font-family:var(--body)}
+.statusbar{height:52px;flex:0 0 52px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 26px 6px;font:600 13px/1 var(--body);color:var(--text);position:relative;z-index:5}
+.statusbar .sb-r{display:flex;gap:5px;align-items:center;opacity:.85}
+.statusbar .sb-r i{display:block;width:15px;height:9px;border:1px solid currentColor;border-radius:2px;position:relative}
+.statusbar .sb-r i::after{content:"";position:absolute;inset:1.5px;right:5px;background:currentColor;border-radius:1px}
+.statusbar .sb-r u{width:12px;height:9px;background:currentColor;clip-path:polygon(0 100%,20% 100%,20% 60%,0 60%,0 100%,35% 100%,35% 40%,55% 40%,55% 100%,70% 100%,70% 15%,90% 15%,90% 100%);text-decoration:none}
+.screen{flex:1;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.scroll{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.scroll>*{flex:0 0 auto}
+.homebar{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--text);opacity:.32;z-index:20}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}

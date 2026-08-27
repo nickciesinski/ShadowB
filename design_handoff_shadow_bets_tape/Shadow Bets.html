@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shadow Bets</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;0,9..40,900&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: radial-gradient(ellipse at 30% 20%, #0d0d1a 0%, #07070e 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'DM Sans', sans-serif;
+    }
+    ::-webkit-scrollbar { display: none; }
+
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(0.75); }
+    }
+    @keyframes liveRing {
+      0% { transform: scale(1); opacity: 0.7; }
+      100% { transform: scale(2.8); opacity: 0; }
+    }
+    @keyframes slideUp {
+      from { transform: translateY(6px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes criticalPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+      50% { box-shadow: 0 0 14px 2px rgba(239,68,68,0.15); }
+    }
+    @keyframes barGrow {
+      from { width: 0; }
+    }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+// ─── TWEAK DEFAULTS ──────────────────────────────────────────────────────────
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "theme": "royal",
+  "cardStyle": "compact"
+}/*EDITMODE-END*/;
+
+// ─── THEME CONFIG ─────────────────────────────────────────────────────────────
+const THEMES = {
+  midnight: { accent: '#00e5a0', accentDim: 'rgba(0,229,160,0.1)', accentBorder: 'rgba(0,229,160,0.25)', name: 'Midnight' },
+  royal:    { accent: '#5b9cf7', accentDim: 'rgba(91,156,247,0.1)', accentBorder: 'rgba(91,156,247,0.25)', name: 'Royal' },
+  gold:     { accent: '#f5b93e', accentDim: 'rgba(245,185,62,0.1)', accentBorder: 'rgba(245,185,62,0.25)', name: 'Gold' },
+};
+
+// ─── GAME STATUS CONFIG ───────────────────────────────────────────────────────
+// EARLY (lots of time) → calm blue  |  HEATING → amber  |  CRITICAL → red pulse  |  FINAL → gray
+const STATUS = {
+  pregame:  { border: '#1c2235', badge: '#5b9cf7', badgeBg: 'rgba(91,156,247,0.1)',  dot: '#5b9cf7', label: 'Pregame',        glow: null,                       cardBg: '#0f0f1a' },
+  early:    { border: '#1a2d40', badge: '#60b4ff', badgeBg: 'rgba(96,180,255,0.09)', dot: '#60b4ff', label: 'Early',          glow: null,                       cardBg: '#0e111a' },
+  heating:  { border: '#3d2c10', badge: '#f5a623', badgeBg: 'rgba(245,166,35,0.11)', dot: '#f5a623', label: 'Heating Up',     glow: 'rgba(245,166,35,0.07)',    cardBg: '#100d06' },
+  critical: { border: '#3d1414', badge: '#ef4444', badgeBg: 'rgba(239,68,68,0.12)',  dot: '#ef4444', label: 'Final Stretch',  glow: 'rgba(239,68,68,0.09)',     cardBg: '#0f0808' },
+  final:    { border: '#1a1a26', badge: '#555570', badgeBg: 'rgba(85,85,112,0.1)',   dot: '#555570', label: 'Final',          glow: null,                       cardBg: '#0f0f14' },
+};
+
+const OUTCOME = {
+  winning: { color: '#00e5a0', borderColor: '#00e5a0', bg: 'rgba(0,229,160,0.05)', icon: '↑' },
+  losing:  { color: '#ef4444', borderColor: '#ef4444', bg: 'rgba(239,68,68,0.05)', icon: '✕' },
+  pending: { color: '#555575', borderColor: '#22223a', bg: 'transparent',           icon: '·' },
+  win:     { color: '#00e5a0', borderColor: '#00e5a0', bg: 'rgba(0,229,160,0.05)', icon: '✓' },
+  loss:    { color: '#ef4444', borderColor: '#ef4444', bg: 'rgba(239,68,68,0.05)', icon: '✕' },
+};
+
+// ─── MOCK DATA ────────────────────────────────────────────────────────────────
+const GAMES = [
+  {
+    id: 1, sport: 'NHL', status: 'critical',
+    away: 'Golden State Warriors', awayAbbr: 'GSW', awayScore: 112,
+    home: 'Phoenix Suns',          homeAbbr: 'PHX', homeScore: 104,
+    isLive: true, time: '2:14', period: '4th',
+    picks: [
+      { id:'p1', type:'SPREAD',    selection:'Warriors -4.5',  odds:'-110', units:1.0, outcome:'winning' },
+      { id:'p2', type:'TOTAL',     selection:'Over 224.5',     odds:'-108', units:0.5, outcome:'winning' },
+    ],
+  },
+  {
+    id: 2, sport: 'NHL', status: 'heating',
+    away: 'Boston Bruins',    awayAbbr: 'BOS', awayScore: 0,
+    home: 'Buffalo Sabres',   homeAbbr: 'BUF', homeScore: 0,
+    isLive: true, time: '15:50', period: '1st', statusLabel: 'Picks struggling',
+    picks: [
+      { id:'p3', type:'MONEYLINE', selection:'Boston Bruins',  odds:'+148', units:0.2, outcome:'pending' },
+      { id:'p4', type:'SPREAD',    selection:'Buffalo Sabres', odds:'+145', units:0.5, outcome:'losing'  },
+      { id:'p5', type:'TOTAL',     selection:'Over 6.5',       odds:'+105', units:0.0, outcome:'losing'  },
+    ],
+  },
+  {
+    id: 3, sport: 'NHL', status: 'early',
+    away: 'Montreal Canadiens', awayAbbr: 'MTL', awayScore: 1,
+    home: 'Tampa Bay Lightning', homeAbbr: 'TBL', homeScore: 1,
+    isLive: true, time: '3:29', period: '1st',
+    picks: [
+      { id:'p6', type:'MONEYLINE', selection:'Montreal Canadiens', odds:'+148', units:0.2, outcome:'pending' },
+    ],
+  },
+  {
+    id: 4, sport: 'NHL', status: 'pregame',
+    away: 'Utah Mammoth',         awayAbbr: 'UTA', awayScore: null,
+    home: 'Vegas Golden Knights', homeAbbr: 'VGK', homeScore: null,
+    isLive: false, time: '7:00 PM', period: null,
+    picks: [
+      { id:'p7', type:'MONEYLINE', selection:'Utah Mammoth',          odds:'+132', units:0.1, outcome:'pending' },
+      { id:'p8', type:'SPREAD',    selection:'Vegas Golden Knights',  odds:'+160', units:0.5, outcome:'pending' },
+      { id:'p9', type:'TOTAL',     selection:'Over 6.5',              odds:'+114', units:0.0, outcome:'pending' },
+    ],
+  },
+  {
+    id: 5, sport: 'NHL', status: 'pregame',
+    away: 'Los Angeles Kings',  awayAbbr: 'LAK', awayScore: null,
+    home: 'Colorado Avalanche', homeAbbr: 'COL', homeScore: null,
+    isLive: false, time: '9:30 PM', period: null,
+    picks: [
+      { id:'p10', type:'SPREAD',    selection:'Colorado Avalanche', odds:'-115', units:0.5, outcome:'pending' },
+      { id:'p11', type:'TOTAL',     selection:'Under 5.5',          odds:'+108', units:0.5, outcome:'pending' },
+      { id:'p12', type:'MONEYLINE', selection:'Los Angeles Kings',  odds:'+142', units:0.3, outcome:'pending' },
+    ],
+  },
+];
+
+const PROPS = [
+  {
+    id:'pr1', player:'Tage Thompson', sport:'NHL', propType:'Shots on Goal',
+    game:'BOS @ BUF', gameStatus:'heating', gameTime:'15:50 · 1st',
+    direction:'OVER', line:3.5, odds:'-115', current:1,
+    sportsbook:'Bovada', edge:'4.7%', consensus:'58.2%', bookLine:'53.5%',
+    pace: 'NEEDS 2.5 MORE',
+  },
+  {
+    id:'pr2', player:'Cole Caufield', sport:'NHL', propType:'Shots on Goal',
+    game:'MTL @ TBL', gameStatus:'early', gameTime:'3:29 · 1st',
+    direction:'UNDER', line:3.5, odds:'-130', current:0,
+    sportsbook:'Bovada', edge:'4.4%', consensus:'60.9%', bookLine:'56.5%',
+    pace: 'ON PACE',
+  },
+  {
+    id:'pr3', player:'Charlie McAvoy', sport:'NHL', propType:'Shots on Goal',
+    game:'BOS @ BUF', gameStatus:'heating', gameTime:'15:50 · 1st',
+    direction:'OVER', line:2.5, odds:'+110', current:1,
+    sportsbook:'DraftKings', edge:'3.2%', consensus:'55.1%', bookLine:'51.9%',
+    pace: 'NEEDS 1.5 MORE',
+  },
+  {
+    id:'pr4', player:'Stephen Curry', sport:'NBA', propType:'Points',
+    game:'PHX @ GSW', gameStatus:'critical', gameTime:'2:14 · 4th',
+    direction:'OVER', line:28.5, odds:'-115', current:24,
+    sportsbook:'FanDuel', edge:'5.1%', consensus:'61.3%', bookLine:'56.2%',
+    pace: 'NEEDS 4.5',
+  },
+];
+
+const PAST_GAMES = [
+  {
+    id:'r1', sport:'NHL', away:'NY Rangers', home:'Washington Capitals', result:'4–2',
+    picks:[
+      { sel:'Rangers ML',  outcome:'win',  odds:'-140', units:0.5 },
+      { sel:'Over 5.5',    outcome:'win',  odds:'-110', units:0.5 },
+    ], profit:'+0.86u',
+  },
+  {
+    id:'r2', sport:'NBA', away:'Miami Heat', home:'Boston Celtics', result:'112–108',
+    picks:[
+      { sel:'Celtics ML',  outcome:'loss', odds:'-180', units:1.0 },
+    ], profit:'–1.00u',
+  },
+  {
+    id:'r3', sport:'NHL', away:'Calgary Flames', home:'Edmonton Oilers', result:'1–3',
+    picks:[
+      { sel:'Oilers ML',   outcome:'win',  odds:'+120', units:0.5 },
+      { sel:'Under 5.5',   outcome:'win',  odds:'-105', units:0.5 },
+    ], profit:'+1.08u',
+  },
+];
+
+// ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
+const LiveDot = ({ color = '#00e5a0', size = 7 }) => (
+  <div style={{ position:'relative', width:size, height:size, flexShrink:0 }}>
+    <div style={{ width:size, height:size, borderRadius:'50%', background:color,
+      animation:'livePulse 1.6s ease-in-out infinite' }} />
+    <div style={{ position:'absolute', inset:-3, borderRadius:'50%',
+      border:`1.5px solid ${color}`, animation:'liveRing 1.6s ease-out infinite' }} />
+  </div>
+);
+
+const SportBadge = ({ sport }) => (
+  <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.07em', color:'#8888aa',
+    background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.09)',
+    borderRadius:4, padding:'2px 6px' }}>{sport}</span>
+);
+
+const BetTypePill = ({ type }) => {
+  const c = { MONEYLINE:{bg:'rgba(100,100,255,0.13)',color:'#9090ee'},
+               SPREAD:   {bg:'rgba(255,150,50,0.11)', color:'#ffaa66'},
+               TOTAL:    {bg:'rgba(80,200,255,0.11)', color:'#66ccff'} }[type] || {bg:'rgba(255,255,255,0.07)',color:'#aaa'};
+  return <span style={{ fontSize:9, fontWeight:700, letterSpacing:'0.05em',
+    background:c.bg, color:c.color, borderRadius:3, padding:'2px 5px' }}>{type}</span>;
+};
+
+// ─── PICK ROW ─────────────────────────────────────────────────────────────────
+const PickRow = ({ pick, isLast }) => {
+  const oc = OUTCOME[pick.outcome] || OUTCOME.pending;
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 14px',
+      borderLeft:`2.5px solid ${oc.borderColor}`, background:oc.bg,
+      borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,0.04)',
+      animation:'slideUp 0.18s ease' }}>
+      <div style={{ width:18, height:18, borderRadius:'50%', flexShrink:0,
+        background:`${oc.color}1a`, display:'flex', alignItems:'center', justifyContent:'center',
+        fontSize:9, color:oc.color, fontWeight:900 }}>{oc.icon}</div>
+      <BetTypePill type={pick.type} />
+      <span style={{ flex:1, fontSize:12.5, color:'#ccd0e8', fontWeight:500,
+        textWrap:'pretty' }}>{pick.selection}</span>
+      <div style={{ textAlign:'right', flexShrink:0 }}>
+        <div style={{ fontSize:13, fontWeight:800,
+          color: oc.color !== '#555575' ? oc.color : '#aaaacc' }}>{pick.odds}</div>
+        {pick.units > 0 && <div style={{ fontSize:9.5, color:'#444460', marginTop:1 }}>{pick.units}u</div>}
+      </div>
+    </div>
+  );
+};
+
+// ─── GAME CARD ────────────────────────────────────────────────────────────────
+const GameCard = ({ game, expanded, onToggle, compact }) => {
+  const sc = STATUS[game.status] || STATUS.pregame;
+  const hasPicks = game.picks.length > 0;
+
+  const winCount   = game.picks.filter(p => p.outcome === 'winning' || p.outcome === 'win').length;
+  const loseCount  = game.picks.filter(p => p.outcome === 'losing'  || p.outcome === 'loss').length;
+  const pendCount  = game.picks.filter(p => p.outcome === 'pending').length;
+
+  return (
+    <div style={{ borderRadius:14, border:`1px solid ${expanded ? sc.border : '#18182a'}`,
+      background: expanded ? sc.cardBg : '#0f0f18',
+      overflow:'hidden', marginBottom:10,
+      boxShadow: expanded && sc.glow ? `0 0 28px ${sc.glow}` : 'none',
+      animation: game.status === 'critical' && expanded ? 'criticalPulse 2s ease-in-out infinite' : 'none',
+      transition:'border-color 0.2s, box-shadow 0.2s, background 0.2s' }}>
+
+      {/* ── Tap area ── */}
+      <div onClick={hasPicks ? onToggle : undefined}
+        style={{ padding: compact ? '10px 14px' : '13px 14px',
+          cursor: hasPicks ? 'pointer' : 'default' }}>
+
+        {/* Top row */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:compact?6:9 }}>
+          <SportBadge sport={game.sport} />
+          {game.isLive
+            ? <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <LiveDot color={sc.dot} size={6} />
+                <span style={{ fontSize:10, fontWeight:700, color:sc.badge, letterSpacing:'0.03em' }}>
+                  {game.time} · {game.period}
+                </span>
+              </div>
+            : <span style={{ fontSize:10, color:'#444460', fontWeight:500 }}>{game.time}</span>}
+          <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:5 }}>
+            {game.statusLabel
+              ? <span style={{ fontSize:9.5, fontWeight:700, color:sc.badge,
+                  background:sc.badgeBg, padding:'2px 8px', borderRadius:10 }}>
+                  {game.statusLabel}
+                </span>
+              : hasPicks && !expanded && (
+                  <span style={{ fontSize:9.5, fontWeight:600, color:'#555575',
+                    background:'rgba(85,85,117,0.1)', padding:'2px 7px', borderRadius:10 }}>
+                    {game.picks.length} pick{game.picks.length !== 1 ? 's' : ''}
+                  </span>
+                )
+            }
+          </div>
+        </div>
+
+        {/* Teams + score */}
+        <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize: compact?13.5:15, fontWeight:650, color:'#e8e8f8',
+              lineHeight:1.2 }}>{game.away}</div>
+            {!compact && <div style={{ fontSize:9.5, color:'#333348', marginTop:1 }}>{game.awayAbbr}</div>}
+          </div>
+          {game.isLive
+            ? <div style={{ display:'flex', alignItems:'center', gap:7, flexShrink:0 }}>
+                <span style={{ fontSize:compact?20:24, fontWeight:900, color:'#f0f0ff', letterSpacing:-1 }}>
+                  {game.awayScore}</span>
+                <span style={{ fontSize:12, color:'#2a2a40' }}>–</span>
+                <span style={{ fontSize:compact?20:24, fontWeight:900, color:'#f0f0ff', letterSpacing:-1 }}>
+                  {game.homeScore}</span>
+              </div>
+            : <div style={{ padding:'5px 12px', borderRadius:7, background:sc.badgeBg,
+                border:`1px solid ${sc.border}`, flexShrink:0 }}>
+                <span style={{ fontSize:10, fontWeight:800, color:sc.badge }}>VS</span>
+              </div>}
+          <div style={{ flex:1, textAlign:'right' }}>
+            <div style={{ fontSize: compact?13.5:15, fontWeight:650, color:'#e8e8f8',
+              lineHeight:1.2 }}>{game.home}</div>
+            {!compact && <div style={{ fontSize:9.5, color:'#333348', marginTop:1 }}>{game.homeAbbr}</div>}
+          </div>
+        </div>
+
+        {/* Pick summary pills (when expanded) or chevron */}
+        {hasPicks && (
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', marginTop:8, gap:5 }}>
+            {expanded ? (
+              <>
+                {winCount > 0  && <span style={{ fontSize:9.5, fontWeight:700, color:'#00e5a0', background:'rgba(0,229,160,0.1)', padding:'2px 7px', borderRadius:8 }}>↑ {winCount} winning</span>}
+                {loseCount > 0 && <span style={{ fontSize:9.5, fontWeight:700, color:'#ef4444', background:'rgba(239,68,68,0.1)', padding:'2px 7px', borderRadius:8 }}>✕ {loseCount} losing</span>}
+                {pendCount > 0 && <span style={{ fontSize:9.5, fontWeight:600, color:'#555575', background:'rgba(85,85,117,0.1)', padding:'2px 7px', borderRadius:8 }}>· {pendCount} pending</span>}
+                <svg width="10" height="6" viewBox="0 0 10 6" style={{ marginLeft:4, transform:'rotate(180deg)' }}>
+                  <path d="M1 1l4 4 4-4" stroke="#444460" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                </svg>
+              </>
+            ) : (
+              <div style={{ color:'#333350', display:'flex', alignItems:'center', gap:3, fontSize:10 }}>
+                <svg width="10" height="6" viewBox="0 0 10 6">
+                  <path d="M1 1l4 4 4-4" stroke="#444460" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                </svg>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Expanded picks ── */}
+      {expanded && hasPicks && (
+        <div style={{ borderTop:'1px solid rgba(255,255,255,0.05)' }}>
+          {game.picks.map((pick, i) => (
+            <PickRow key={pick.id} pick={pick} isLast={i === game.picks.length - 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── PICKS TAB ────────────────────────────────────────────────────────────────
+const PicksTab = ({ accent, accentDim, accentBorder, cardStyle }) => {
+  const [expanded, setExpanded] = useState(new Set([2])); // BOS@BUF open by default (struggling)
+  const [sportFilter, setSportFilter] = useState('all');
+  const [betFilter, setBetFilter] = useState('all');
+  const compact = cardStyle === 'compact';
+
+  const sports   = ['All','My Bets','Live','NBA','NHL','MLB','NFL'];
+  const betTypes = ['All','Spread','Moneyline','Total'];
+
+  const toggle = (id) => setExpanded(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const filtered = GAMES.filter(g => {
+    if (sportFilter === 'live' && !g.isLive) return false;
+    if (!['all','my bets','live'].includes(sportFilter) && g.sport !== sportFilter.toUpperCase()) return false;
+    return true;
+  });
+
+  const allPicks = GAMES.flatMap(g => g.picks);
+  const wins    = allPicks.filter(p => p.outcome === 'winning').length;
+  const losses  = allPicks.filter(p => p.outcome === 'losing').length;
+  const pending = allPicks.filter(p => p.outcome === 'pending').length;
+  const totalU  = allPicks.reduce((s,p) => s + p.units, 0);
+
+  const chip = (label, active, onClick, small) => (
+    <button key={label} onClick={onClick} style={{
+      padding: small ? '4px 10px' : '5px 13px',
+      borderRadius:20, fontSize: small?11:12, fontWeight:600,
+      background: active ? accent : 'rgba(255,255,255,0.05)',
+      color: active ? '#080810' : '#666688',
+      border: active ? 'none' : '1px solid rgba(255,255,255,0.07)',
+      whiteSpace:'nowrap', flexShrink:0, transition:'all 0.15s ease',
+    }}>{label}</button>
+  );
+
+  return (
+    <div style={{ height:'100%', display:'flex', flexDirection:'column' }}>
+      {/* Header */}
+      <div style={{ padding:'14px 16px 0' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          <div>
+            <div style={{ fontSize:23, fontWeight:900, color:'#f0f0ff', letterSpacing:-0.8 }}>Shadow Bets</div>
+            <div style={{ fontSize:11, color:'#333355', marginTop:1 }}>Mon, Apr 21</div>
+          </div>
+          <div style={{ width:36, height:36, borderRadius:10, background:accentDim,
+            border:`1px solid ${accentBorder}`,
+            display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="6" r="3" stroke={accent} strokeWidth="1.5"/>
+              <path d="M2 14c0-3 2.7-5 6-5s6 2 6 5" stroke={accent} strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </div>
+        </div>
+
+        {/* Day summary bar */}
+        <div style={{ display:'flex', gap:6, padding:'10px 14px', borderRadius:13,
+          background:'#0c0c16', border:'1px solid #1a1a28', marginBottom:13 }}>
+          {[
+            { label:'Total', val:`${totalU.toFixed(1)}u`, color:'#8888aa' },
+            { label:'Winning', val:String(wins),   color:'#00e5a0' },
+            { label:'Losing',  val:String(losses),  color:'#ef4444' },
+            { label:'Pending', val:String(pending), color:'#555575' },
+          ].map((s,i) => (
+            <React.Fragment key={s.label}>
+              {i > 0 && <div style={{ width:1, background:'#1c1c2c', borderRadius:1 }} />}
+              <div style={{ flex:1, textAlign:'center' }}>
+                <div style={{ fontSize:17, fontWeight:900, color:s.color, letterSpacing:-0.5 }}>{s.val}</div>
+                <div style={{ fontSize:9, color:'#333355', fontWeight:600, marginTop:1, letterSpacing:'0.04em' }}>{s.label.toUpperCase()}</div>
+              </div>
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* Sport chips */}
+      <div style={{ display:'flex', gap:5, padding:'0 16px 7px', overflowX:'auto' }}>
+        {sports.map(s => chip(s, sportFilter === s.toLowerCase(), () => setSportFilter(s.toLowerCase())))}
+      </div>
+      {/* Bet type chips */}
+      <div style={{ display:'flex', gap:5, padding:'0 16px 11px', overflowX:'auto' }}>
+        {betTypes.map(b => chip(b, betFilter === b.toLowerCase(), () => setBetFilter(b.toLowerCase()), true))}
+      </div>
+
+      {/* Game list */}
+      <div style={{ flex:1, overflowY:'auto', padding:'0 16px 84px' }}>
+        {filtered.map(game => (
+          <GameCard key={game.id} game={game} compact={compact}
+            expanded={expanded.has(game.id)} onToggle={() => toggle(game.id)} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── SCORES TAB ───────────────────────────────────────────────────────────────
+const ScoresTab = () => {
+  return (
+    <div style={{ height:'100%', overflowY:'auto', padding:'16px 16px 84px' }}>
+      <div style={{ fontSize:22, fontWeight:900, color:'#f0f0ff', letterSpacing:-0.7, marginBottom:14 }}>Scores</div>
+      {/* Live section */}
+      <div style={{ fontSize:10, fontWeight:700, color:'#555575', letterSpacing:'0.08em', marginBottom:8 }}>LIVE NOW</div>
+      {GAMES.filter(g => g.isLive).map(game => {
+        const sc = STATUS[game.status];
+        return (
+          <div key={game.id} style={{ padding:'12px 14px', borderRadius:13,
+            background: sc.cardBg, border:`1px solid ${sc.border}`,
+            boxShadow: sc.glow ? `0 0 20px ${sc.glow}` : 'none',
+            marginBottom:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:8 }}>
+              <SportBadge sport={game.sport} />
+              <LiveDot color={sc.dot} size={6} />
+              <span style={{ fontSize:10, fontWeight:700, color:sc.badge }}>{game.time} · {game.period}</span>
+              <span style={{ marginLeft:'auto', fontSize:9.5, fontWeight:700, color:sc.badge,
+                background:sc.badgeBg, padding:'2px 8px', borderRadius:10 }}>{sc.label}</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ flex:1, fontSize:14, fontWeight:650, color:'#dde0f8' }}>{game.away}</span>
+              <div style={{ display:'flex', gap:6, alignItems:'center', flexShrink:0 }}>
+                <span style={{ fontSize:22, fontWeight:900, color:'#f0f0ff' }}>{game.awayScore}</span>
+                <span style={{ fontSize:11, color:'#222238' }}>–</span>
+                <span style={{ fontSize:22, fontWeight:900, color:'#f0f0ff' }}>{game.homeScore}</span>
+              </div>
+              <span style={{ flex:1, textAlign:'right', fontSize:14, fontWeight:650, color:'#dde0f8' }}>{game.home}</span>
+            </div>
+          </div>
+        );
+      })}
+      {/* Upcoming */}
+      <div style={{ fontSize:10, fontWeight:700, color:'#555575', letterSpacing:'0.08em', margin:'14px 0 8px' }}>UPCOMING</div>
+      {GAMES.filter(g => !g.isLive).map(game => {
+        const sc = STATUS[game.status];
+        return (
+          <div key={game.id} style={{ padding:'11px 14px', borderRadius:12,
+            background:'#0f0f18', border:'1px solid #1a1a28', marginBottom:7 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:5, marginBottom:7 }}>
+              <SportBadge sport={game.sport} />
+              <span style={{ fontSize:10, color:'#444460' }}>{game.time}</span>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ flex:1, fontSize:13.5, fontWeight:600, color:'#ccd0e8' }}>{game.away}</span>
+              <span style={{ fontSize:11, color:'#444460', fontWeight:700 }}>vs</span>
+              <span style={{ flex:1, textAlign:'right', fontSize:13.5, fontWeight:600, color:'#ccd0e8' }}>{game.home}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── PROPS TAB ────────────────────────────────────────────────────────────────
+const PropCard = ({ prop, accent }) => {
+  const sc = STATUS[prop.gameStatus] || STATUS.early;
+  const isOver = prop.direction === 'OVER';
+  const pct = Math.min(prop.current / prop.line, 1);
+  // progress color logic
+  const barColor = isOver
+    ? (pct >= 0.9 ? '#ef4444' : pct >= 0.55 ? '#f5a623' : accent)
+    : (pct <= 0.25 ? accent : pct <= 0.6 ? '#f5a623' : '#ef4444');
+
+  return (
+    <div style={{ borderRadius:14, background:'#0f0f18', border:`1px solid ${sc.border}`,
+      marginBottom:10, overflow:'hidden',
+      boxShadow: sc.glow ? `0 0 18px ${sc.glow}` : 'none' }}>
+      {/* Game context banner */}
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 12px',
+        background: sc.badgeBg, borderBottom:`1px solid ${sc.border}` }}>
+        <SportBadge sport={prop.sport} />
+        <span style={{ fontSize:11, fontWeight:700, color:sc.badge }}>{prop.game}</span>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4 }}>
+          <LiveDot color={sc.dot} size={5} />
+          <span style={{ fontSize:10, color:sc.badge }}>{prop.gameTime}</span>
+        </div>
+      </div>
+
+      {/* Main content */}
+      <div style={{ padding:'12px 14px' }}>
+        <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:15.5, fontWeight:800, color:'#eaeaff', marginBottom:1 }}>{prop.player}</div>
+            <div style={{ fontSize:11, color:'#555575', marginBottom:9 }}>{prop.propType}</div>
+            {/* Direction pill + line */}
+            <div style={{ display:'flex', alignItems:'center', gap:7, marginBottom:11 }}>
+              <span style={{ padding:'4px 9px', borderRadius:6, fontSize:11.5, fontWeight:900,
+                background: isOver ? 'rgba(0,229,160,0.13)' : 'rgba(239,68,68,0.13)',
+                color: isOver ? '#00e5a0' : '#ef4444' }}>{prop.direction}</span>
+              <span style={{ fontSize:18, fontWeight:900, color:'#f0f0ff', letterSpacing:-0.5 }}>{prop.line}</span>
+              <span style={{ fontSize:12, color:'#555575', fontWeight:500 }}>{prop.odds}</span>
+            </div>
+            {/* Progress bar */}
+            <div style={{ marginBottom:7 }}>
+              <div style={{ height:5, borderRadius:3, background:'rgba(255,255,255,0.06)', overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:3, width:`${pct*100}%`,
+                  background:barColor, animation:'barGrow 0.6s ease', transition:'width 0.4s ease' }} />
+              </div>
+              <div style={{ display:'flex', justifyContent:'space-between', marginTop:4 }}>
+                <span style={{ fontSize:10, color:'#444460' }}>Current: <b style={{color:'#8888aa'}}>{prop.current}</b></span>
+                <span style={{ fontSize:10, color:'#444460' }}>Line: <b style={{color:'#8888aa'}}>{prop.line}</b></span>
+              </div>
+            </div>
+            {/* Edge row */}
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ fontSize:10, color:'#444460' }}>via {prop.sportsbook}</span>
+              <span style={{ fontSize:10, fontWeight:700, color:accent }}>+{prop.edge} edge</span>
+              <span style={{ fontSize:10, color:'#444460' }}>· {prop.consensus} consensus</span>
+            </div>
+          </div>
+
+          {/* Right: big current value */}
+          <div style={{ textAlign:'right', flexShrink:0 }}>
+            <div style={{ fontSize:42, fontWeight:900, lineHeight:1, color:'#f0f0ff', letterSpacing:-2 }}>{prop.current}</div>
+            <div style={{ fontSize:11, color:'#444460', marginTop:1 }}>/ {prop.line}</div>
+            <div style={{ marginTop:5, padding:'3px 7px', borderRadius:6, display:'inline-block',
+              background:sc.badgeBg, fontSize:9, fontWeight:800, color:sc.badge, letterSpacing:'0.04em' }}>
+              {prop.pace}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PropsTab = ({ accent }) => {
+  // group by game
+  const games = [...new Set(PROPS.map(p => p.game))];
+  return (
+    <div style={{ height:'100%', overflowY:'auto', padding:'16px 16px 84px' }}>
+      <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', marginBottom:14 }}>
+        <div style={{ fontSize:22, fontWeight:900, color:'#f0f0ff', letterSpacing:-0.7 }}>Top Edges</div>
+        <div style={{ fontSize:11, color:'#444460' }}>{PROPS.length} props found</div>
+      </div>
+      {PROPS.map(prop => <PropCard key={prop.id} prop={prop} accent={accent} />)}
+    </div>
+  );
+};
+
+// ─── RESULTS DATA ─────────────────────────────────────────────────────────────
+const HISTORY = [
+  { date:'Apr 14', day:'Mon', sport:'NBA', away:'Dallas Mavericks',    home:'Oklahoma City',  result:'105–118', picks:[{sel:'OKC ML',       outcome:'win',  odds:'-155', units:1.0, type:'MONEYLINE'},{sel:'Over 221.5',    outcome:'win',  odds:'-110', units:0.5, type:'TOTAL'}],    profit: 1.14 },
+  { date:'Apr 15', day:'Tue', sport:'NHL', away:'Toronto Maple Leafs', home:'Ottawa Senators',result:'3–2 OT',  picks:[{sel:'Ottawa ML',     outcome:'win',  odds:'+182', units:0.5, type:'MONEYLINE'},{sel:'Over 5.5',      outcome:'loss', odds:'-115', units:0.5, type:'TOTAL'}],    profit: 0.41 },
+  { date:'Apr 15', day:'Tue', sport:'NBA', away:'Milwaukee Bucks',     home:'Indiana Pacers', result:'112–120', picks:[{sel:'Bucks ML',       outcome:'loss', odds:'-130', units:1.0, type:'MONEYLINE'},{sel:'Pacers +2.5',   outcome:'win',  odds:'-110', units:0.5, type:'SPREAD'}],   profit:-0.32 },
+  { date:'Apr 16', day:'Wed', sport:'NHL', away:'Colorado Avalanche',  home:'Dallas Stars',   result:'4–1',     picks:[{sel:'Avs ML',         outcome:'win',  odds:'+108', units:0.5, type:'MONEYLINE'},{sel:'Under 6.0',     outcome:'win',  odds:'-120', units:0.5, type:'TOTAL'}],    profit: 1.04 },
+  { date:'Apr 17', day:'Thu', sport:'NBA', away:'LA Lakers',           home:'Denver Nuggets', result:'109–115', picks:[{sel:'Nuggets -3.5',   outcome:'win',  odds:'-110', units:1.0, type:'SPREAD'},{sel:'Under 224.5',    outcome:'loss', odds:'-108', units:0.5, type:'TOTAL'}],    profit: 0.45 },
+  { date:'Apr 18', day:'Fri', sport:'NHL', away:'NY Rangers',          home:'Washington',     result:'4–2',     picks:[{sel:'Rangers ML',     outcome:'win',  odds:'-140', units:0.5, type:'MONEYLINE'},{sel:'Over 5.5',      outcome:'win',  odds:'-110', units:0.5, type:'TOTAL'}],    profit: 0.86 },
+  { date:'Apr 18', day:'Fri', sport:'NBA', away:'Miami Heat',          home:'Boston Celtics', result:'112–108', picks:[{sel:'Celtics ML',     outcome:'loss', odds:'-180', units:1.0, type:'MONEYLINE'}],                                                                                profit:-1.00 },
+  { date:'Apr 19', day:'Sat', sport:'NHL', away:'Calgary Flames',      home:'Edmonton Oilers',result:'1–3',     picks:[{sel:'Oilers ML',      outcome:'win',  odds:'+120', units:0.5, type:'MONEYLINE'},{sel:'Under 5.5',     outcome:'win',  odds:'-105', units:0.5, type:'TOTAL'}],    profit: 1.08 },
+  { date:'Apr 19', day:'Sat', sport:'NBA', away:'Phoenix Suns',        home:'Minnesota Twolves',result:'98–114',picks:[{sel:'Minnesota ML',   outcome:'win',  odds:'-125', units:1.0, type:'MONEYLINE'},{sel:'Under 226.0',   outcome:'win',  odds:'-112', units:0.5, type:'TOTAL'}],    profit: 1.30 },
+  { date:'Apr 20', day:'Sun', sport:'NHL', away:'Pittsburgh Penguins', home:'Carolina Hurricanes',result:'1–5', picks:[{sel:'Carolina -1.5', outcome:'win',  odds:'+110', units:0.5, type:'SPREAD'},{sel:'Over 5.0',       outcome:'win',  odds:'-118', units:0.5, type:'TOTAL'}],    profit: 0.97 },
+  { date:'Apr 20', day:'Sun', sport:'NBA', away:'Sacramento Kings',    home:'Golden State',   result:'118–122', picks:[{sel:'Kings +4.5',     outcome:'loss', odds:'-110', units:0.5, type:'SPREAD'},{sel:'Over 232.5',     outcome:'win',  odds:'-108', units:0.5, type:'TOTAL'}],   profit:-0.04 },
+  { date:'Apr 21', day:'Mon', sport:'NHL', away:'NY Rangers',          home:'Washington',     result:'4–2',     picks:[{sel:'Rangers ML',     outcome:'win',  odds:'-140', units:0.5, type:'MONEYLINE'},{sel:'Over 5.5',      outcome:'win',  odds:'-110', units:0.5, type:'TOTAL'}],    profit: 0.86 },
+  { date:'Apr 21', day:'Mon', sport:'NBA', away:'Miami Heat',          home:'Boston Celtics', result:'112–108', picks:[{sel:'Celtics ML',     outcome:'loss', odds:'-180', units:1.0, type:'MONEYLINE'}],                                                                                profit:-1.00 },
+  { date:'Apr 21', day:'Mon', sport:'NHL', away:'Calgary Flames',      home:'Edmonton Oilers',result:'1–3',     picks:[{sel:'Oilers ML',      outcome:'win',  odds:'+120', units:0.5, type:'MONEYLINE'},{sel:'Under 5.5',     outcome:'win',  odds:'-105', units:0.5, type:'TOTAL'}],    profit: 1.08 },
+];
+
+// Build cumulative series
+const buildSeries = (filter) => {
+  let cumulative = 0;
+  const pts = [];
+  HISTORY.forEach((g, i) => {
+    const include = filter === 'total' ? true
+      : filter === 'nhl'  ? g.sport === 'NHL'
+      : filter === 'nba'  ? g.sport === 'NBA'
+      : filter === 'spread'     ? g.picks.some(p => p.type === 'SPREAD')
+      : filter === 'moneyline'  ? g.picks.some(p => p.type === 'MONEYLINE')
+      : filter === 'total_bet'  ? g.picks.some(p => p.type === 'TOTAL')
+      : true;
+    if (include) {
+      cumulative += g.profit;
+      pts.push({ x: i / (HISTORY.length - 1), y: cumulative, game: g, cumulative });
+    }
+  });
+  return pts;
+};
+
+// ─── SVG LINE CHART ───────────────────────────────────────────────────────────
+const LineChart = ({ series, accent, width = 330, height = 130 }) => {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+  const pad = { top:14, right:14, bottom:22, left:38 };
+  const W = width  - pad.left - pad.right;
+  const H = height - pad.top  - pad.bottom;
+
+  if (!series.length) return null;
+
+  const vals = series.map(p => p.cumulative);
+  const minV  = Math.min(0, ...vals);
+  const maxV  = Math.max(0, ...vals);
+  const range = maxV - minV || 1;
+
+  const px = (x) => pad.left + x * W;
+  const py = (v) => pad.top  + H - ((v - minV) / range) * H;
+  const zeroY = py(0);
+
+  // Build SVG path
+  const points = series.map(p => [px(p.x), py(p.cumulative)]);
+  const pathD = points.map((pt,i) => `${i===0?'M':'L'}${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join(' ');
+  // Filled area path
+  const areaD = pathD + ` L${points[points.length-1][0].toFixed(1)},${zeroY.toFixed(1)} L${points[0][0].toFixed(1)},${zeroY.toFixed(1)} Z`;
+
+  const finalVal = vals[vals.length-1];
+  const isPositive = finalVal >= 0;
+  const lineColor = isPositive ? accent : '#ef4444';
+
+  // Y-axis labels
+  const yTicks = [minV, 0, maxV].filter((v,i,a) => a.indexOf(v)===i).sort((a,b)=>a-b);
+
+  const hovered = hoveredIdx !== null ? series[hoveredIdx] : null;
+
+  return (
+    <svg width={width} height={height} style={{ overflow:'visible', display:'block' }}
+      onMouseLeave={() => setHoveredIdx(null)}>
+      <defs>
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={lineColor} stopOpacity="0.22"/>
+          <stop offset="100%" stopColor={lineColor} stopOpacity="0"/>
+        </linearGradient>
+        <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stopColor={lineColor} stopOpacity="0.4"/>
+          <stop offset="100%" stopColor={lineColor} stopOpacity="1"/>
+        </linearGradient>
+      </defs>
+
+      {/* Y axis ticks */}
+      {yTicks.map(v => (
+        <g key={v}>
+          <line x1={pad.left-4} y1={py(v)} x2={pad.left+W} y2={py(v)}
+            stroke="rgba(255,255,255,0.05)" strokeWidth="1" strokeDasharray={v===0?'none':'3,3'}/>
+          <text x={pad.left-7} y={py(v)+4} textAnchor="end" fontSize="9"
+            fill={v===0?'#555575':'#333350'} fontFamily="DM Sans,sans-serif">
+            {v > 0 ? `+${v.toFixed(1)}` : v.toFixed(1)}
+          </text>
+        </g>
+      ))}
+      {/* Zero line always present */}
+      <line x1={pad.left} y1={zeroY} x2={pad.left+W} y2={zeroY}
+        stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
+
+      {/* Area fill */}
+      <path d={areaD} fill="url(#areaGrad)" />
+
+      {/* Line */}
+      <path d={pathD} fill="none" stroke="url(#lineGrad)" strokeWidth="2.5"
+        strokeLinecap="round" strokeLinejoin="round"/>
+
+      {/* Hover hit areas */}
+      {series.map((p, i) => (
+        <rect key={i}
+          x={points[i][0] - (W / series.length / 2)}
+          y={pad.top} width={W / series.length} height={H}
+          fill="transparent"
+          onMouseEnter={() => setHoveredIdx(i)}
+        />
+      ))}
+
+      {/* Data dots — only on hover */}
+      {series.map((p, i) => {
+        const isHov = hoveredIdx === i;
+        return (
+          <circle key={i} cx={points[i][0]} cy={points[i][1]} r={isHov?5:3}
+            fill={isHov ? lineColor : '#08080e'} stroke={lineColor}
+            strokeWidth={isHov?2.5:1.5} style={{ transition:'r 0.1s' }}
+            onMouseEnter={() => setHoveredIdx(i)} />
+        );
+      })}
+
+      {/* X-axis date labels (sparse) */}
+      {series.filter((_, i) => i === 0 || i === series.length-1 || i === Math.floor(series.length/2)).map((p,_,arr) => {
+        const origIdx = series.indexOf(p);
+        return (
+          <text key={origIdx} x={points[origIdx][0]} y={pad.top+H+15}
+            textAnchor="middle" fontSize="9" fill="#333350" fontFamily="DM Sans,sans-serif">
+            {p.game.date.replace('Apr ','')+'/4'}
+          </text>
+        );
+      })}
+
+      {/* Tooltip */}
+      {hovered && (() => {
+        const i = hoveredIdx;
+        const tx = points[i][0];
+        const ty = points[i][1];
+        const boxW = 86, boxH = 36;
+        const bx = Math.max(pad.left, Math.min(tx - boxW/2, pad.left+W - boxW));
+        const by = ty - boxH - 8 < pad.top ? ty + 10 : ty - boxH - 8;
+        const pos = hovered.cumulative;
+        const posColor = pos >= 0 ? accent : '#ef4444';
+        return (
+          <g>
+            <rect x={bx} y={by} width={boxW} height={boxH} rx="7"
+              fill="#16162a" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+            <text x={bx+boxW/2} y={by+13} textAnchor="middle" fontSize="9.5"
+              fill="#666688" fontFamily="DM Sans,sans-serif">{hovered.game.date} · {hovered.game.sport}</text>
+            <text x={bx+boxW/2} y={by+27} textAnchor="middle" fontSize="12"
+              fontWeight="800" fill={posColor} fontFamily="DM Sans,sans-serif">
+              {pos >= 0 ? '+' : ''}{pos.toFixed(2)}u
+            </text>
+          </g>
+        );
+      })()}
+    </svg>
+  );
+};
+
+// ─── RESULTS TAB ──────────────────────────────────────────────────────────────
+const ResultsTab = ({ accent }) => {
+  const [sportFilter, setSportFilter] = useState('all');
+  const [betFilter,   setBetFilter]   = useState('all');
+  const [expandedGame, setExpandedGame] = useState(null);
+
+  const sportFilters   = [{ id:'all', label:'All' }, { id:'nhl', label:'NHL' }, { id:'nba', label:'NBA' }];
+  const betTypeFilters = [{ id:'all', label:'All' }, { id:'spread', label:'Spread' }, { id:'moneyline', label:'ML' }, { id:'total_bet', label:'O/U' }];
+
+  // Combine both filters into a single key for buildSeries
+  const chartKey = sportFilter !== 'all' ? sportFilter : betFilter !== 'all' ? betFilter : 'total';
+  // When both active, filter manually
+  const filteredHistory = HISTORY.filter(g => {
+    const sportOk = sportFilter === 'all' || g.sport === sportFilter.toUpperCase();
+    const betOk   = betFilter   === 'all' || g.picks.some(p =>
+      betFilter === 'spread'    ? p.type === 'SPREAD'     :
+      betFilter === 'moneyline' ? p.type === 'MONEYLINE'  :
+      betFilter === 'total_bet' ? p.type === 'TOTAL'      : true
+    );
+    return sportOk && betOk;
+  });
+  // Build combined series from filtered history
+  const series = (() => {
+    let cum = 0;
+    return filteredHistory.map((g, i) => {
+      cum += g.profit;
+      return { x: i / Math.max(filteredHistory.length - 1, 1), y: cum, game: g, cumulative: cum };
+    });
+  })();
+
+  const finalVal = series.length ? series[series.length-1].cumulative : 0;
+  const isPos = finalVal >= 0;
+  const lineColor = isPos ? accent : '#ef4444';
+
+  // Stats across history
+  const allPicks = HISTORY.flatMap(g => g.picks);
+  const wins  = allPicks.filter(p => p.outcome==='win').length;
+  const total = allPicks.length;
+  const winPct = total > 0 ? ((wins/total)*100).toFixed(0) : 0;
+  const totalUnits = HISTORY.reduce((s,g)=>s+g.profit,0);
+  const roi = ((totalUnits / HISTORY.reduce((s,g)=>s+g.picks.reduce((a,p)=>a+p.units,0),0))*100).toFixed(1);
+
+  // by-sport breakdown
+  const sports = ['NHL','NBA'];
+  const sportStats = sports.map(sp => {
+    const games = HISTORY.filter(g=>g.sport===sp);
+    const profit = games.reduce((s,g)=>s+g.profit,0);
+    const picks = games.flatMap(g=>g.picks);
+    const w = picks.filter(p=>p.outcome==='win').length;
+    return { sport:sp, profit, wins:w, total:picks.length };
+  });
+
+  // by-type breakdown
+  const betTypes = ['MONEYLINE','SPREAD','TOTAL'];
+  const typeStats = betTypes.map(bt => {
+    const picks = HISTORY.flatMap(g=>g.picks).filter(p=>p.type===bt);
+    const profit = HISTORY.filter(g=>g.picks.some(p=>p.type===bt))
+      .reduce((s,g)=>{ const gp=g.picks.filter(p=>p.type===bt); return s + gp.reduce((a,p)=>a+(p.outcome==='win'?(p.units*(parseFloat(p.odds)>0?parseFloat(p.odds)/100:100/Math.abs(parseFloat(p.odds)))):p.outcome==='loss'?-p.units:0),0); },0);
+    const w = picks.filter(p=>p.outcome==='win').length;
+    return { type:bt, wins:w, total:picks.length, pct: picks.length ? ((w/picks.length)*100).toFixed(0) : 0 };
+  });
+
+  const sportChip = (id, label) => {
+    const active = sportFilter === id;
+    return (
+      <button key={id} onClick={() => setSportFilter(id)} style={{
+        padding:'5px 13px', borderRadius:20, fontSize:12, fontWeight:600,
+        background: active ? lineColor : 'rgba(255,255,255,0.05)',
+        color: active ? '#080810' : '#666688',
+        border: active ? 'none' : '1px solid rgba(255,255,255,0.07)',
+        whiteSpace:'nowrap', flexShrink:0, transition:'all 0.15s',
+      }}>{label}</button>
+    );
+  };
+  const betChip = (id, label) => {
+    const active = betFilter === id;
+    return (
+      <button key={id} onClick={() => setBetFilter(id)} style={{
+        padding:'4px 10px', borderRadius:20, fontSize:11, fontWeight:600,
+        background: active ? lineColor : 'rgba(255,255,255,0.05)',
+        color: active ? '#080810' : '#555575',
+        border: active ? 'none' : '1px solid rgba(255,255,255,0.07)',
+        whiteSpace:'nowrap', flexShrink:0, transition:'all 0.15s',
+      }}>{label}</button>
+    );
+  };
+
+  return (
+    <div style={{ height:'100%', overflowY:'auto', padding:'16px 0 84px' }}>
+      {/* Header */}
+      <div style={{ padding:'0 16px', marginBottom:12 }}>
+        <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between' }}>
+          <div>
+            <div style={{ fontSize:22, fontWeight:900, color:'#f0f0ff', letterSpacing:-0.7 }}>Results</div>
+            <div style={{ fontSize:11, color:'#444460', marginTop:1 }}>Apr 14 – Apr 21</div>
+          </div>
+          <div style={{ textAlign:'right' }}>
+            <div style={{ fontSize:30, fontWeight:900, letterSpacing:-1.2,
+              color: isPos ? accent : '#ef4444' }}>
+              {isPos?'+':''}{finalVal.toFixed(2)}u
+            </div>
+            <div style={{ fontSize:10, color: isPos?`${accent}88`:'rgba(239,68,68,0.6)', fontWeight:600 }}>
+              {isPos ? '▲' : '▼'} ROI {roi}%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick stats bar */}
+      <div style={{ display:'flex', gap:0, padding:'0 16px', marginBottom:14 }}>
+        {[
+          { label:'W–L',     val:`${wins}–${total-wins}` },
+          { label:'Win %',   val:`${winPct}%` },
+          { label:'Games',   val:String(HISTORY.length) },
+          { label:'Avg/game',val:`${(totalUnits/HISTORY.length).toFixed(2)}u` },
+        ].map((s,i) => (
+          <React.Fragment key={s.label}>
+            {i>0 && <div style={{ width:1, background:'#1a1a28' }}/>}
+            <div style={{ flex:1, textAlign:'center', padding:'9px 0',
+              background:'#0c0c16', border:'1px solid #1a1a28',
+              borderLeft: i>0?'none':'1px solid #1a1a28',
+              borderRadius: i===0?'10px 0 0 10px':i===3?'0 10px 10px 0':'0' }}>
+              <div style={{ fontSize:16, fontWeight:900, color:'#eaeaff', letterSpacing:-0.5 }}>{s.val}</div>
+              <div style={{ fontSize:9, color:'#333355', fontWeight:600, marginTop:1, letterSpacing:'0.04em' }}>{s.label.toUpperCase()}</div>
+            </div>
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* Sport chips */}
+      <div style={{ display:'flex', gap:5, padding:'0 16px', overflowX:'auto', marginBottom:6 }}>
+        {sportFilters.map(f => sportChip(f.id, f.label))}
+      </div>
+      {/* Bet type chips */}
+      <div style={{ display:'flex', gap:5, padding:'0 16px', overflowX:'auto', marginBottom:10 }}>
+        {betTypeFilters.map(f => betChip(f.id, f.label))}
+      </div>
+
+      {/* Chart card */}
+      <div style={{ margin:'0 16px 16px', padding:'14px 10px 8px',
+        borderRadius:16, background:'#0c0c18', border:'1px solid #1a1a28' }}>
+        <div style={{ fontSize:11, color:'#444460', marginBottom:6, paddingLeft:4, fontWeight:600 }}>
+          CUMULATIVE P&L · {sportFilter !== 'all' ? sportFilter.toUpperCase() : 'ALL SPORTS'}{betFilter !== 'all' ? ` · ${betTypeFilters.find(f=>f.id===betFilter)?.label.toUpperCase()}` : ''}
+        </div>
+        {series.length > 1
+          ? <LineChart series={series} accent={lineColor} width={320} height={130}/>
+          : <div style={{ height:80, display:'flex', alignItems:'center', justifyContent:'center',
+              fontSize:11, color:'#333355' }}>No data for this filter</div>}
+      </div>
+
+      {/* Breakdown: by sport */}
+      <div style={{ padding:'0 16px', marginBottom:14 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'#555575', letterSpacing:'0.08em', marginBottom:8 }}>BY SPORT</div>
+        <div style={{ display:'flex', gap:8 }}>
+          {sportStats.map(s => {
+            const sp = s.profit;
+            const isP = sp >= 0;
+            return (
+              <div key={s.sport} style={{ flex:1, padding:'11px 12px', borderRadius:12,
+                background:'#0f0f18', border:`1px solid ${isP?'rgba(0,229,160,0.15)':'rgba(239,68,68,0.12)'}` }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+                  <SportBadge sport={s.sport} />
+                  <span style={{ fontSize:14, fontWeight:900, letterSpacing:-0.5,
+                    color: isP ? accent : '#ef4444' }}>{isP?'+':''}{sp.toFixed(2)}u</span>
+                </div>
+                <div style={{ fontSize:11, color:'#444460' }}>{s.wins}–{s.total-s.wins} · {s.total>0?((s.wins/s.total)*100).toFixed(0):0}% wins</div>
+                <div style={{ marginTop:7, height:3, borderRadius:2, background:'rgba(255,255,255,0.06)' }}>
+                  <div style={{ height:'100%', borderRadius:2, background: isP ? accent : '#ef4444',
+                    width:`${s.total>0?(s.wins/s.total)*100:0}%`, transition:'width 0.5s ease' }}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Breakdown: by bet type */}
+      <div style={{ padding:'0 16px', marginBottom:14 }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'#555575', letterSpacing:'0.08em', marginBottom:8 }}>BY BET TYPE</div>
+        <div style={{ borderRadius:12, background:'#0f0f18', border:'1px solid #1a1a28', overflow:'hidden' }}>
+          {typeStats.map((s,i) => {
+            const pct = parseInt(s.pct);
+            const good = pct >= 55;
+            return (
+              <div key={s.type} style={{ padding:'10px 14px',
+                borderBottom: i < typeStats.length-1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                display:'flex', alignItems:'center', gap:10 }}>
+                <BetTypePill type={s.type} />
+                <div style={{ flex:1 }}>
+                  <div style={{ height:4, borderRadius:2, background:'rgba(255,255,255,0.06)', marginTop:4 }}>
+                    <div style={{ height:'100%', borderRadius:2,
+                      background: good ? accent : pct >= 45 ? '#f5a623' : '#ef4444',
+                      width:`${pct}%`, transition:'width 0.5s ease' }}/>
+                  </div>
+                </div>
+                <div style={{ textAlign:'right', flexShrink:0 }}>
+                  <span style={{ fontSize:13, fontWeight:800,
+                    color: good ? accent : pct >= 45 ? '#f5a623' : '#ef4444' }}>{pct}%</span>
+                  <span style={{ fontSize:10, color:'#333355', marginLeft:5 }}>{s.wins}/{s.total}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Game log */}
+      <div style={{ padding:'0 16px' }}>
+        <div style={{ fontSize:10, fontWeight:700, color:'#555575', letterSpacing:'0.08em', marginBottom:8 }}>GAME LOG</div>
+        {[...HISTORY].reverse().map((game, i) => {
+          const isExp = expandedGame === i;
+          const profitPos = game.profit >= 0;
+          return (
+            <div key={i} style={{ borderRadius:13, background:'#0f0f18',
+              border:`1px solid ${isExp ? (profitPos?'rgba(0,229,160,0.2)':'rgba(239,68,68,0.18)') : '#1a1a28'}`,
+              marginBottom:7, overflow:'hidden', transition:'border-color 0.2s' }}>
+              <div onClick={() => setExpandedGame(isExp ? null : i)}
+                style={{ padding:'10px 14px', cursor:'pointer',
+                  display:'flex', alignItems:'center', gap:8 }}>
+                <SportBadge sport={game.sport} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:12.5, fontWeight:700, color:'#d0d4e8',
+                    whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                    {game.away} @ {game.home}
+                  </div>
+                  <div style={{ fontSize:10, color:'#333355', marginTop:1 }}>{game.date} · {game.result}</div>
+                </div>
+                <div style={{ textAlign:'right', flexShrink:0 }}>
+                  <div style={{ fontSize:15, fontWeight:900, letterSpacing:-0.5,
+                    color: profitPos ? accent : '#ef4444' }}>
+                    {profitPos ? '+' : ''}{game.profit.toFixed(2)}u
+                  </div>
+                  <div style={{ fontSize:9, color:'#333355', marginTop:1 }}>
+                    {game.picks.filter(p=>p.outcome==='win').length}/{game.picks.length} picks
+                  </div>
+                </div>
+                <svg width="10" height="6" viewBox="0 0 10 6" style={{ flexShrink:0,
+                  transform: isExp ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}>
+                  <path d="M1 1l4 4 4-4" stroke="#444460" strokeWidth="1.5" fill="none" strokeLinecap="round"/>
+                </svg>
+              </div>
+              {isExp && (
+                <div style={{ borderTop:'1px solid rgba(255,255,255,0.05)', animation:'slideUp 0.15s ease' }}>
+                  {game.picks.map((p,j) => {
+                    const oc = p.outcome === 'win' ? OUTCOME.win : OUTCOME.loss;
+                    return (
+                      <div key={j} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 14px',
+                        borderLeft:`2.5px solid ${oc.borderColor}`, background:oc.bg,
+                        borderBottom: j < game.picks.length-1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                        <div style={{ width:16, height:16, borderRadius:'50%', background:`${oc.color}22`,
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          fontSize:8, color:oc.color, fontWeight:900, flexShrink:0 }}>
+                          {p.outcome==='win'?'✓':'✕'}
+                        </div>
+                        <BetTypePill type={p.type} />
+                        <span style={{ flex:1, fontSize:12, color:'#ccd0e8', fontWeight:500 }}>{p.sel}</span>
+                        <span style={{ fontSize:12, fontWeight:800, color:oc.color }}>{p.odds}</span>
+                        <span style={{ fontSize:10, color:'#444460' }}>{p.units}u</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── BOTTOM NAV ───────────────────────────────────────────────────────────────
+const BottomNav = ({ active, onSelect, accent }) => {
+  const tabs = [
+    { id:'picks',   label:'Picks',
+      icon: (on) => <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <rect x="3" y="3"  width="16" height="4" rx="2" fill={on?accent:'#333350'}/>
+        <rect x="3" y="9"  width="16" height="4" rx="2" fill={on?accent:'#333350'}/>
+        <rect x="3" y="15" width="10" height="4" rx="2" fill={on?accent:'#333350'}/>
+      </svg> },
+    { id:'scores',  label:'Scores',
+      icon: (on) => <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <circle cx="11" cy="11" r="8" stroke={on?accent:'#333350'} strokeWidth="2"/>
+        <path d="M11 7v4l3 3" stroke={on?accent:'#333350'} strokeWidth="2" strokeLinecap="round"/>
+      </svg> },
+    { id:'props',   label:'Props',
+      icon: (on) => <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <path d="M3 17L8 11l4 4 7-9" stroke={on?accent:'#333350'} strokeWidth="2"
+          strokeLinecap="round" strokeLinejoin="round"/>
+      </svg> },
+    { id:'results', label:'Results',
+      icon: (on) => <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <path d="M11 3l2.5 5 5.5.8-4 3.9.9 5.5L11 15.5l-4.9 2.7.9-5.5L3 8.8 8.5 8z"
+          stroke={on?accent:'#333350'} strokeWidth="1.8" strokeLinejoin="round"
+          fill={on?`${accent}22`:'none'}/>
+      </svg> },
+  ];
+  return (
+    <div style={{ position:'absolute', bottom:0, left:0, right:0, height:80, zIndex:200,
+      background:'rgba(8,8,14,0.95)', borderTop:'1px solid rgba(255,255,255,0.05)',
+      backdropFilter:'blur(20px)', display:'flex', alignItems:'flex-start', paddingTop:10 }}>
+      {tabs.map(tab => {
+        const on = active === tab.id;
+        return (
+          <button key={tab.id} onClick={() => onSelect(tab.id)} style={{
+            flex:1, display:'flex', flexDirection:'column', alignItems:'center',
+            gap:3, background:'none', border:'none', transition:'opacity 0.1s' }}>
+            {tab.icon(on)}
+            <span style={{ fontSize:10, fontWeight:on?700:500,
+              color: on ? accent : '#333355', letterSpacing:'0.02em' }}>{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// ─── TWEAKS PANEL ─────────────────────────────────────────────────────────────
+const TweaksPanel = ({ tweaks, onChange }) => (
+  <div style={{ position:'absolute', bottom:100, right:-190, width:176,
+    background:'#12121e', border:'1px solid #2a2a3a', borderRadius:14,
+    padding:14, fontFamily:"'DM Sans',sans-serif", animation:'fadeIn 0.2s ease',
+    zIndex:500 }}>
+    <div style={{ fontSize:11, fontWeight:700, color:'#555575', marginBottom:11, letterSpacing:'0.08em' }}>TWEAKS</div>
+    <div style={{ marginBottom:12 }}>
+      <div style={{ fontSize:10, color:'#444460', marginBottom:7, fontWeight:600 }}>COLOR THEME</div>
+      {Object.entries(THEMES).map(([k,t]) => (
+        <button key={k} onClick={() => onChange('theme',k)} style={{
+          display:'flex', alignItems:'center', gap:8, width:'100%',
+          background: tweaks.theme===k ? 'rgba(255,255,255,0.05)' : 'none',
+          border:'none', borderRadius:7, padding:'5px 6px', cursor:'pointer', marginBottom:2 }}>
+          <div style={{ width:11, height:11, borderRadius:'50%', background:t.accent, flexShrink:0 }} />
+          <span style={{ fontSize:12, color: tweaks.theme===k ? '#f0f0ff' : '#666688' }}>{t.name}</span>
+          {tweaks.theme===k && <span style={{ marginLeft:'auto', color:t.accent, fontSize:10 }}>✓</span>}
+        </button>
+      ))}
+    </div>
+    <div>
+      <div style={{ fontSize:10, color:'#444460', marginBottom:7, fontWeight:600 }}>CARD STYLE</div>
+      {[['standard','Standard'],['compact','Compact']].map(([k,l]) => (
+        <button key={k} onClick={() => onChange('cardStyle',k)} style={{
+          display:'flex', alignItems:'center', justifyContent:'space-between', width:'100%',
+          background: tweaks.cardStyle===k ? 'rgba(255,255,255,0.05)' : 'none',
+          border:'none', borderRadius:7, padding:'5px 6px', cursor:'pointer', marginBottom:2 }}>
+          <span style={{ fontSize:12, color: tweaks.cardStyle===k ? '#f0f0ff' : '#666688' }}>{l}</span>
+          {tweaks.cardStyle===k && <span style={{ color:'#8888aa', fontSize:10 }}>✓</span>}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
+// ─── ROOT APP ─────────────────────────────────────────────────────────────────
+const App = () => {
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+  const [activeTab, setActiveTab] = useState('picks');
+  const [showTweaks, setShowTweaks] = useState(false);
+
+  const theme = THEMES[tweaks.theme] || THEMES.midnight;
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.data?.type === '__activate_edit_mode')   setShowTweaks(true);
+      if (e.data?.type === '__deactivate_edit_mode') setShowTweaks(false);
+    };
+    window.addEventListener('message', handler);
+    window.parent.postMessage({ type:'__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  const updateTweak = (key, val) => {
+    const next = { ...tweaks, [key]:val };
+    setTweaks(next);
+    window.parent.postMessage({ type:'__edit_mode_set_keys', edits:{ [key]:val } }, '*');
+  };
+
+  const renderTab = () => {
+    switch(activeTab) {
+      case 'picks':   return <PicksTab accent={theme.accent} accentDim={theme.accentDim} accentBorder={theme.accentBorder} cardStyle={tweaks.cardStyle} />;
+      case 'scores':  return <ScoresTab accent={theme.accent} />;
+      case 'props':   return <PropsTab accent={theme.accent} />;
+      case 'results': return <ResultsTab accent={theme.accent} />;
+    }
+  };
+
+  return (
+    <div style={{ position:'relative' }}>
+      <IOSDevice dark width={390} height={844}>
+        <div style={{ height:'100%', background:'#08080e', fontFamily:"'DM Sans',sans-serif",
+          WebkitFontSmoothing:'antialiased', position:'relative', overflow:'hidden' }}>
+          <div style={{ height:60 }} />
+          <div style={{ height:'calc(100% - 60px)', position:'relative' }}>
+            {renderTab()}
+            <BottomNav active={activeTab} onSelect={setActiveTab} accent={theme.accent} />
+          </div>
+        </div>
+      </IOSDevice>
+      {showTweaks && <TweaksPanel tweaks={tweaks} onChange={updateTweak} />}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

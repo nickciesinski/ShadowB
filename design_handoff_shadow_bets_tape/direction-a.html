@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shadow Bets — Direction A: Tape</title>
+<link rel="stylesheet" href="sb.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+.a{--bg:#0a0b0d;--panel:#101216;--panel2:#15181c;--line:#1f242a;--line2:#2a3138;--text:#e7e9ec;--dim:#79818b;--dim2:#7c848f;--take:#4c9aff;--fade:#ff8a3d;--win:#34c77b;--loss:#e5484d;--body:"IBM Plex Sans",sans-serif;--mono:"IBM Plex Mono",monospace}
+.a .screen{background:var(--bg)}
+/* header */
+.ah{padding:2px 16px 10px;display:flex;align-items:baseline;justify-content:space-between}
+.ah b{font:600 13px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--text)}
+.ah span{font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim2)}
+/* slate strip */
+.astrip{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--panel)}
+.astrip>div{padding:10px 14px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+.astrip>div:last-child{border-right:0}
+.astrip .k{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
+.astrip .v{font:600 19px/1 var(--mono);letter-spacing:-.02em;color:var(--text)}
+.astrip .v s{text-decoration:none;font-size:11px;color:var(--dim);margin-left:1px}
+.astrip .v.hot{color:var(--take)}
+/* rule bar */
+.arule{background:var(--panel2);border-bottom:1px solid var(--line);padding:11px 14px 12px;display:flex;flex-direction:column;gap:9px}
+.arule-top{display:flex;align-items:center;justify-content:space-between}
+.arule-top .lb{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
+.arule-top .rs{font:500 11px/1 var(--mono);color:var(--dim)}
+.arule-top .rs b{color:var(--take);font-weight:600}
+.ruler{position:relative;height:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.ruler .seg{border:1px solid var(--line2);border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:#0d0f12}
+.ruler .seg em{font:600 12px/1 var(--mono);font-style:normal;color:var(--dim)}
+.ruler .seg i{font:500 8px/1 var(--mono);letter-spacing:.08em;color:var(--dim2);font-style:normal}
+.ruler .seg.on{background:rgba(76,154,255,.13);border-color:rgba(76,154,255,.5)}
+.ruler .seg.on em{color:#a9cfff}
+.ruler .seg.on i{color:rgba(169,207,255,.6)}
+.ruler .handle{position:absolute;top:-4px;bottom:-4px;left:calc(66.6% - 1px);width:2px;background:var(--take);box-shadow:0 0 8px rgba(76,154,255,.7)}
+.ruler .handle::after{content:"";position:absolute;top:50%;left:-4px;width:10px;height:10px;margin-top:-5px;border-radius:2px;background:var(--take)}
+.arule-act{display:grid;grid-template-columns:1fr auto;gap:8px}
+.abtn{height:38px;border-radius:4px;border:1px solid rgba(76,154,255,.45);background:rgba(76,154,255,.14);color:#bcd9ff;font:600 12px/1 var(--body);letter-spacing:.09em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:8px}
+.abtn.solid{background:var(--take);border-color:var(--take);color:#03142c}
+.abtn.ghost{border-color:var(--line2);background:transparent;color:var(--dim);padding:0 14px}
+/* leagues */
+.aleagues{display:flex;border-bottom:1px solid var(--line);background:var(--bg)}
+.aleagues button{flex:1;background:none;border:0;border-right:1px solid var(--line);padding:9px 0 8px;display:flex;flex-direction:column;align-items:center;gap:3px}
+.aleagues button:last-child{border-right:0;flex:0 0 42px}
+.aleagues .lg{font:600 10px/1 var(--body);letter-spacing:.1em;color:var(--dim2)}
+.aleagues .ct{font:500 10px/1 var(--mono);color:var(--dim2)}
+.aleagues .sel{background:var(--panel)}
+.aleagues .sel .lg{color:var(--text)}
+.aleagues .sel .ct{color:var(--take)}
+.aleagues .glyph{font:500 13px/1 var(--mono);color:var(--dim2)}
+/* game + rows */
+.agame{border-bottom:1px solid var(--line)}
+.agh{display:flex;align-items:center;gap:8px;padding:8px 14px 7px;background:#0c0e11}
+.agh .lgm{font:600 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim2);width:26px}
+.agh .tm2{font:600 11px/1 var(--body);color:var(--text);letter-spacing:.01em}
+.agh .at{font:400 11px/1 var(--body);color:var(--dim2)}
+.agh .tme{margin-left:auto;font:500 10px/1 var(--mono);color:var(--dim2);letter-spacing:.03em}
+.agh .live{margin-left:auto;display:flex;align-items:center;gap:6px;font:500 10px/1 var(--mono);color:var(--win)}
+.agh .live b{width:5px;height:5px;border-radius:50%;background:var(--win)}
+.agh .sc{font:600 12px/1 var(--mono);color:var(--text);margin-left:2px}
+.r{display:grid;grid-template-columns:3px 1fr 54px 46px 72px;align-items:center;gap:9px;height:46px;padding-right:12px;border-top:1px solid #14171b;background:var(--bg)}
+.r:first-of-type{border-top:0}
+.tick{height:0;width:3px;background:var(--dim2);align-self:end;margin-bottom:9px}
+.t10{height:26px}.t7{height:17px}.t5{height:9px}
+.rm{display:flex;align-items:center;gap:8px;min-width:0;padding-left:6px}
+.mkt{font:500 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim2);width:24px;flex:0 0 24px}
+.tm{flex:0 0 22px;width:22px;height:22px;border-radius:5px;background:var(--c);display:flex;align-items:center;justify-content:center;font:700 8px/1 var(--body);color:#fff;letter-spacing:.02em;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.side{font:500 13px/1.1 var(--body);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.side i{font-style:normal;color:var(--dim);font-weight:400}
+.u{font:600 17px/1 var(--mono);letter-spacing:-.02em;color:var(--text);text-align:right}
+.u em{font-style:normal;font-size:9px;color:var(--dim2);margin-left:1px}
+.p{font:400 11px/1 var(--mono);color:var(--dim);text-align:right}
+.tri{display:grid;grid-template-columns:repeat(3,1fr);height:28px;border:1px solid var(--line2);border-radius:4px;overflow:hidden}
+.tri s{text-decoration:none;display:flex;align-items:center;justify-content:center;font:600 9px/1 var(--mono);color:var(--dim2);border-right:1px solid var(--line2);background:#0d0f12}
+.tri s:last-child{border-right:0}
+.tri s.on{background:var(--take);color:#03142c}
+.tri s.onf{background:var(--fade);color:#2b1200}
+.r.take{background:rgba(76,154,255,.05)}
+.r.take .tick{background:var(--take)}
+.r.take .u{color:#cfe4ff}
+.r.fade{background:rgba(255,138,61,.05)}
+.r.fade .tick{background:var(--fade)}
+.r.fade .u{color:#ffd6b3}
+.r.fade .side i{color:var(--fade)}
+.more{padding:7px 14px 8px 32px;font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim2);border-top:1px solid #14171b;background:#0c0e11}
+/* watch mode extras */
+.apnl{font:600 15px/1 var(--mono);text-align:right;letter-spacing:-.02em}
+.apnl.up{color:var(--win)}.apnl.dn{color:var(--loss)}.apnl.fl{color:var(--dim)}
+.prog{grid-column:5;height:4px;border-radius:2px;background:#191d22;position:relative;overflow:hidden}
+.prog b{position:absolute;inset:0 auto 0 0;background:var(--win)}
+.prog.dn b{background:var(--loss)}
+.r.locked .tri{display:none}
+.tapebar{display:flex;height:6px;border-bottom:1px solid var(--line)}
+.tapebar i{display:block;height:100%}
+/* results */
+.agrid{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
+.agrid>div{padding:13px 14px;border-right:1px solid var(--line);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:5px}
+.agrid>div:nth-child(2n){border-right:0}
+.agrid>div:nth-child(-n+2){border-top:0}
+.agrid .k{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
+.agrid .v{font:600 24px/1 var(--mono);letter-spacing:-.03em;color:var(--text)}
+.agrid .v.up{color:var(--win)}
+.chart{height:120px;padding:14px 14px 10px;display:flex;align-items:flex-end;gap:2px;border-bottom:1px solid var(--line);position:relative}
+.chart i{flex:1;background:var(--take);opacity:.9;min-height:2px;border-radius:1px}
+.chart i.n{background:var(--loss);opacity:.55}
+.chart .zero{position:absolute;left:14px;right:14px;bottom:38px;height:1px;background:var(--line2)}
+.chart .cap{position:absolute;top:12px;right:14px;font:500 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim2)}
+.dayh{padding:9px 14px 7px;background:#0c0e11;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.dayh .d{font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.dayh .t{font:600 11px/1 var(--mono)}
+.lr{display:grid;grid-template-columns:14px 16px 1fr auto auto;gap:9px;align-items:center;padding:9px 14px;border-bottom:1px solid #14171b}
+.lr .res{font:700 11px/1 var(--mono)}
+.lr .res.w{color:var(--win)}.lr .res.l{color:var(--loss)}.lr .res.p{color:var(--dim2)}
+.lr .nm{font:500 12px/1.2 var(--body);color:#cfd4da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lr .nm span{color:var(--dim2);font-size:11px}
+.lr .pr{font:400 10px/1 var(--mono);color:var(--dim2)}
+.lr .un{font:600 12px/1 var(--mono);width:52px;text-align:right}
+.lr .un.w{color:var(--win)}.lr .un.l{color:var(--loss)}.lr .un.p{color:var(--dim2)}
+.health{margin-top:auto;border-top:1px solid var(--line);background:var(--panel)}
+.health-h{display:flex;align-items:center;gap:8px;padding:10px 14px 8px}
+.health-h b{width:6px;height:6px;border-radius:50%;background:var(--win)}
+.health-h span{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+.health-h i{margin-left:auto;font:400 10px/1 var(--mono);color:var(--dim2);font-style:normal}
+.health-r{display:flex;justify-content:space-between;padding:5px 14px;font:400 10px/1.4 var(--mono);color:var(--dim2)}
+.health-r b{color:#c4cad1;font-weight:500}
+.health-r.warn b{color:var(--fade)}
+/* tabbar */
+.tabs{flex:0 0 76px;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:var(--panel);padding-bottom:18px}
+.tabs button{background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding-top:9px}
+.tabs .ti{width:16px;height:16px;border:1.4px solid var(--dim2);border-radius:3px}
+.tabs .tl{font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
+.tabs .on .ti{border-color:var(--take);background:rgba(76,154,255,.22)}
+.tabs .on .tl{color:var(--take)}
+.sr{display:grid;grid-template-columns:3px 1fr 46px 42px 50px;gap:9px;align-items:center;height:44px;padding-right:12px;border-top:1px solid #14171b}
+.sr .rm{padding-left:6px}
+.sr.take{background:rgba(76,154,255,.05)}
+.sr.take .tick{background:var(--take)}
+.sr.fade{background:rgba(255,138,61,.05)}
+.sr.fade .tick{background:var(--fade)}
+.sr .un{font:500 12px/1 var(--mono);color:var(--dim);text-align:right}
+.ls{padding:11px 13px 12px;border-top:1px solid #14171b;background:#0c0e11;display:grid;grid-template-columns:1fr repeat(6,25px);gap:7px 0;align-items:center}
+.ls .hd{font:500 9px/1 var(--mono);color:var(--dim2);text-align:center}
+.ls .tn{font:500 11px/1 var(--body);color:var(--dim)}
+.ls .n{font:500 11px/1 var(--mono);text-align:center;color:#c4cad1}
+.ls .n.t{color:var(--text);font-weight:600}
+.adet{padding:10px 13px 11px;border-top:1px solid #14171b;display:flex;flex-direction:column;gap:5px}
+.adet .p1{font:500 12px/1 var(--body);color:var(--text)}
+.adet .p2{font:400 10px/1 var(--mono);color:var(--dim2)}
+.astat{display:grid;grid-template-columns:28px 1fr auto;gap:9px;align-items:baseline;padding:4px 13px}
+.astat .k{font:500 9px/1 var(--mono);letter-spacing:.11em;color:var(--dim2)}
+.astat .n{font:500 11px/1 var(--body);color:#c4cad1}
+.astat .n s{text-decoration:none;color:var(--dim2);font-size:10px}
+.astat .v{font:400 10px/1 var(--mono);color:var(--dim)}
+.ameta{padding:9px 13px 10px;margin-top:5px;border-top:1px solid #14171b;background:#0c0e11;display:flex;gap:11px;font:400 9px/1.3 var(--mono);color:var(--dim2)}
+.acon{display:grid;grid-template-columns:26px auto 1fr auto 40px 50px;gap:8px;align-items:center;height:44px;padding:0 12px 0 13px;border-top:1px solid #14171b}
+.acon .pos{justify-self:end}
+.acon .lg{font:600 9px/1 var(--mono);color:var(--dim2)}
+.acon .mt{font:500 12px/1 var(--body);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acon .mt s{text-decoration:none;color:var(--dim2);font-weight:400}
+.acon .sc{font:600 12px/1 var(--mono);color:var(--text);letter-spacing:.02em}
+.acon .pos{font:500 11px/1 var(--mono);text-align:right}
+.acon .pos s{text-decoration:none;display:block;font:400 9px/1.5 var(--mono);color:var(--dim2)}
+.acon.live .lg{color:var(--win)}
+.tmini{flex:0 0 16px;width:16px;height:16px;border-radius:4px;background:var(--c);display:flex;align-items:center;justify-content:center;font:700 6px/1 var(--body);color:#fff;letter-spacing:.01em;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
+.duo{display:flex;gap:3px;flex:0 0 auto}
+.pips{display:flex;gap:3px;align-items:center;justify-content:flex-end}
+.pips i{width:6px;height:6px;border-radius:50%;background:#252b31;flex:0 0 6px}
+.pips i.t{background:var(--take)}
+.pips i.f{background:var(--fade)}
+.pips em{font:500 9px/1 var(--mono);font-style:normal;color:var(--dim2);margin-left:2px}
+.pips.none{color:var(--dim2);font:500 10px/1 var(--mono)}
+.legend{display:flex;align-items:center;gap:13px;padding:7px 14px 8px;background:#0c0e11;border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend u{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:15px;border:1px solid var(--line2);border-radius:3px;background:#0d0f12;font:600 9px/1 var(--mono);color:#c4cad1}
+.legend u.on{background:var(--take);border-color:var(--take);color:#03142c}
+.legend u.onf{background:var(--fade);border-color:var(--fade);color:#2b1200}
+.legend i{font-style:normal}
+.consec{padding:8px 13px 7px;background:#0c0e11;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim);display:flex;justify-content:space-between}
+</style>
+</head>
+<body class="a">
+<div class="sheet">
+<div class="sheet-head">
+<div class="sheet-kicker">Direction A</div>
+<div class="sheet-title">Tape <em>— dense instrument</em></div>
+<div class="sheet-lede">One continuous ledger, no cards. Every pixel of vertical space is a row you can read or act on. Tier stops being a badge and becomes a tick in the left gutter, so the only two numbers competing in a row are unit size and price — and unit wins. Build and watch are the same tape; locking changes what the columns mean rather than where you are.</div>
+</div>
+<div class="tokens">
+<div class="tok"><div class="tok-label">Palette</div><div class="tok-swatches"><i style="background:#0a0b0d"></i><i style="background:#15181c"></i><i style="background:#4c9aff"></i><i style="background:#ff8a3d"></i><i style="background:#34c77b"></i><i style="background:#e5484d"></i></div><div class="tok-body"><b>#0A0B0D</b> ink · <b>#15181C</b> panel · <b>#4C9AFF</b> my bet · <b>#FF8A3D</b> fade · <b>#34C77B</b> win · <b>#E5484D</b> loss</div></div>
+<div class="tok"><div class="tok-label">Type</div><div class="tok-body">Display &amp; body <b>IBM Plex Sans</b> 500/600. Numeric <b>IBM Plex Mono</b>, tabular — negative American odds and 0.46u decimals stay aligned at 11px.</div></div>
+<div class="tok"><div class="tok-label">Layout</div><div class="tok-body">Full-bleed 46px rows on a 3px tier gutter. Hairlines instead of cards; game headers are dividers, not containers. Zero radius except controls.</div></div>
+<div class="tok"><div class="tok-label">Signature</div><div class="tok-body"><b>The rule bar.</b> A tier ruler with a threshold handle at the top of the list: slide it, the count and unit consequence update, then one press commits the whole set.</div></div>
+</div>
+<div class="frames">
+
+<!-- ══ A1 BUILD ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Picks · Build mode</b><span>Rule set to tier ≥ 7, refined by hand. Two rows faded.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">6:42</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="ah"><b>Shadow Bets</b><span>WED AUG 26 · RUN 06:15 OK</span></div>
+<div class="astrip">
+<div><span class="k">Plays</span><span class="v">45</span></div>
+<div><span class="k">At risk</span><span class="v">10.9<s>u</s></span></div>
+<div><span class="k">Locked</span><span class="v hot">18<s>/45</s></span></div>
+</div>
+<div class="arule">
+<div class="arule-top"><span class="lb">Rule · tier threshold</span><span class="rs">commits <b>18 picks · 6.2u</b></span></div>
+<div class="ruler"><div class="seg on"><em>10</em><i>9 PICKS</i></div><div class="seg on"><em>7</em><i>11 PICKS</i></div><div class="seg"><em>5</em><i>25 PICKS</i></div><div class="handle"></div></div>
+<div class="arule-act"><button class="abtn solid">Take 18 · 6.2u</button><button class="abtn ghost">0.3u+</button></div>
+</div>
+<div class="aleagues">
+<button><span class="lg">ALL</span><span class="ct">45</span></button>
+<button class="sel"><span class="lg">MLB</span><span class="ct">22</span></button>
+<button><span class="lg">EPL</span><span class="ct">9</span></button>
+<button><span class="lg">NFL</span><span class="ct">14</span></button>
+<button><span class="glyph">⇅</span></button>
+</div>
+<div class="legend"><span><u>–</u><i>Pass</i></span><span><u class="on">✓</u><i>Take</i></span><span><u class="onf">F</u><i>Fade the model</i></span><span style="margin-left:auto"><i>Tick = tier</i></span></div>
+<div class="scroll">
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#132448">NYY</i><i class="tmini" style="--c:#bd3039">BOS</i></span><span class="tm2">Yankees</span><span class="at">@</span><span class="tm2">Red Sox</span><span class="tme">7:10P</span></div>
+<div class="r take"><b class="tick t10"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#132448">NYY</i><span class="side">Yankees</span></div><span class="u num">0.46<em>u</em></span><span class="p num">−176</span><div class="tri"><s>–</s><s class="on">✓</s><s>F</s></div></div>
+<div class="r take"><b class="tick t7"></b><div class="rm"><span class="mkt">TOT</span><i class="tm" style="--c:#2f3439">O</i><span class="side">Over 9.5</span></div><span class="u num">0.31<em>u</em></span><span class="p num">+101</span><div class="tri"><s>–</s><s class="on">✓</s><s>F</s></div></div>
+<div class="more">+ 1 market · spread 1.5 · tier 5</div>
+</div>
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#005a9c">LAD</i><i class="tmini" style="--c:#2f241a">SD</i></span><span class="tm2">Dodgers</span><span class="at">@</span><span class="tm2">Padres</span><span class="tme">9:40P</span></div>
+<div class="r fade"><b class="tick t10"></b><div class="rm"><span class="mkt">SPR</span><i class="tm" style="--c:#2f241a">SD</i><span class="side">Padres +1.5 <i>· fading LAD</i></span></div><span class="u num">0.28<em>u</em></span><span class="p num">−134</span><div class="tri"><s>–</s><s>✓</s><s class="onf">F</s></div></div>
+<div class="r take"><b class="tick t7"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#005a9c">LAD</i><span class="side">Dodgers</span></div><span class="u num">0.52<em>u</em></span><span class="p num">−142</span><div class="tri"><s>–</s><s class="on">✓</s><s>F</s></div></div>
+<div class="more">+ 1 market · total over 8.5 · tier 5</div>
+</div>
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#002d62">HOU</i><i class="tmini" style="--c:#0c2c56">SEA</i></span><span class="tm2">Astros</span><span class="at">@</span><span class="tm2">Mariners</span><span class="tme">10:10P</span></div>
+<div class="r"><b class="tick t5"></b><div class="rm"><span class="mkt">TOT</span><i class="tm" style="--c:#2f3439">U</i><span class="side">Under 7.5</span></div><span class="u num">0.14<em>u</em></span><span class="p num">−108</span><div class="tri"><s class="on">–</s><s>✓</s><s>F</s></div></div>
+<div class="r take"><b class="tick t7"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#0c2c56">SEA</i><span class="side">Mariners</span></div><span class="u num">0.37<em>u</em></span><span class="p num">+118</span><div class="tri"><s>–</s><s class="on">✓</s><s>F</s></div></div>
+</div>
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#13274f">ATL</i><i class="tmini" style="--c:#002d72">NYM</i></span><span class="tm2">Braves</span><span class="at">@</span><span class="tm2">Mets</span><span class="tme">7:15P</span></div>
+<div class="r fade"><b class="tick t7"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#002d72">NYM</i><span class="side">Mets <i>· fading ATL</i></span></div><span class="u num">0.22<em>u</em></span><span class="p num">+126</span><div class="tri"><s>–</s><s>✓</s><s class="onf">F</s></div></div>
+</div>
+</div>
+<div class="tabs">
+<button class="on"><span class="ti"></span><span class="tl">Picks</span></button>
+<button><span class="ti"></span><span class="tl">Scores</span></button>
+<button><span class="ti"></span><span class="tl">Props</span></button>
+<button><span class="ti"></span><span class="tl">Results</span></button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+<!-- ══ A2 WATCH ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Picks · Watch mode</b><span>Same tape after lock. Unit column becomes live P/L; only positions show.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">3:28</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="ah"><b>Shadow Bets</b><span>18 POSITIONS · LOCKED 07:04</span></div>
+<div class="astrip">
+<div><span class="k">Live</span><span class="v">11<s>/18</s></span></div>
+<div><span class="k">At risk</span><span class="v">6.2<s>u</s></span></div>
+<div><span class="k">Day P/L</span><span class="v" style="color:#34c77b">+1.34<s>u</s></span></div>
+</div>
+<div class="tapebar"><i style="background:#34c77b;width:38%"></i><i style="background:#2a3138;width:14%"></i><i style="background:#e5484d;width:24%"></i><i style="background:#15181c;width:24%"></i></div>
+<div class="aleagues">
+<button class="sel"><span class="lg">ALL</span><span class="ct">18</span></button>
+<button><span class="lg">MLB</span><span class="ct">9</span></button>
+<button><span class="lg">EPL</span><span class="ct">4</span></button>
+<button><span class="lg">NFL</span><span class="ct">5</span></button>
+<button><span class="glyph">⇅</span></button>
+</div>
+<div class="scroll">
+<div class="agame">
+<div class="agh"><span class="lgm">EPL</span><span class="duo"><i class="tmini" style="--c:#9c1420">ARS</i><i class="tmini" style="--c:#8b1c22">LIV</i></span><span class="tm2">Arsenal</span><span class="sc">2</span><span class="at">–</span><span class="sc">1</span><span class="tm2">Liverpool</span><span class="live"><b></b>67'</span></div>
+<div class="r take locked"><b class="tick t10"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#9c1420">ARS</i><span class="side">Arsenal</span></div><span class="p num">−110</span><span class="apnl up">+0.58</span><div class="prog"><b style="width:82%"></b></div></div>
+<div class="r fade locked"><b class="tick t7"></b><div class="rm"><span class="mkt">TOT</span><i class="tm" style="--c:#2f3439">U</i><span class="side">Under 3.5 <i>· fade</i></span></div><span class="p num">+104</span><span class="apnl dn">−0.30</span><div class="prog dn"><b style="width:28%"></b></div></div>
+</div>
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#0e3386">CHC</i><i class="tmini" style="--c:#12284b">MIL</i></span><span class="tm2">Cubs</span><span class="sc">4</span><span class="at">–</span><span class="sc">4</span><span class="tm2">Brewers</span><span class="live"><b></b>T7</span></div>
+<div class="r take locked"><b class="tick t7"></b><div class="rm"><span class="mkt">TOT</span><i class="tm" style="--c:#2f3439">O</i><span class="side">Over 8.5</span></div><span class="p num">−105</span><span class="apnl up">+0.24</span><div class="prog"><b style="width:64%"></b></div></div>
+<div class="r take locked"><b class="tick t5"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#0e3386">CHC</i><span class="side">Cubs</span></div><span class="p num">+128</span><span class="apnl fl">0.00</span><div class="prog"><b style="width:50%;background:#2a3138"></b></div></div>
+</div>
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#0c2340">CLE</i><i class="tmini" style="--c:#0c2340">DET</i></span><span class="tm2">Guardians</span><span class="sc">1</span><span class="at">–</span><span class="sc">6</span><span class="tm2">Tigers</span><span class="live"><b style="background:#565e68"></b>FINAL</span></div>
+<div class="r fade locked"><b class="tick t10"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#0c2340">DET</i><span class="side">Tigers <i>· fade won</i></span></div><span class="p num">+145</span><span class="apnl up">+0.51</span><div class="prog"><b style="width:100%"></b></div></div>
+</div>
+<div class="agame">
+<div class="agh"><span class="lgm">NFL</span><span class="duo"><i class="tmini" style="--c:#00338d">BUF</i><i class="tmini" style="--c:#0085ca">CAR</i></span><span class="tm2">Bills</span><span class="at">@</span><span class="tm2">Panthers</span><span class="tme">8:00P</span></div>
+<div class="r take locked"><b class="tick t7"></b><div class="rm"><span class="mkt">SPR</span><i class="tm" style="--c:#00338d">BUF</i><span class="side">Bills −3.5</span></div><span class="p num">−112</span><span class="apnl fl">0.44<em style="font-size:9px;color:#565e68">u</em></span><div class="prog"><b style="width:0"></b></div></div>
+<div class="r take locked"><b class="tick t5"></b><div class="rm"><span class="mkt">TOT</span><i class="tm" style="--c:#2f3439">U</i><span class="side">Under 41.5</span></div><span class="p num">−102</span><span class="apnl fl">0.18<em style="font-size:9px;color:#565e68">u</em></span><div class="prog"><b style="width:0"></b></div></div>
+</div>
+</div>
+<div class="tabs">
+<button class="on"><span class="ti"></span><span class="tl">Picks</span></button>
+<button><span class="ti"></span><span class="tl">Scores</span></button>
+<button><span class="ti"></span><span class="tl">Props</span></button>
+<button><span class="ti"></span><span class="tl">Results</span></button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+<!-- ══ A3 RESULTS ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Results</b><span>Same hairline system. System health folded in as a footer panel.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">9:14</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="ah"><b>Results</b><span>LAST 30 DAYS ▾</span></div>
+<div class="agrid">
+<div><span class="k">Record</span><span class="v">218–184<s style="text-decoration:none;font-size:12px;color:#565e68">–7</s></span></div>
+<div><span class="k">Win %</span><span class="v">54.2</span></div>
+<div><span class="k">Units</span><span class="v up">+16.4</span></div>
+<div><span class="k">ROI</span><span class="v up">+4.1%</span></div>
+</div>
+<div class="chart">
+<span class="cap">UNIT CURVE · 30D</span><span class="zero"></span>
+<i style="height:22%"></i><i style="height:14%"></i><i class="n" style="height:9%"></i><i style="height:30%"></i><i style="height:41%"></i><i class="n" style="height:12%"></i><i style="height:26%"></i><i style="height:52%"></i><i style="height:47%"></i><i class="n" style="height:20%"></i><i style="height:38%"></i><i style="height:61%"></i><i style="height:55%"></i><i class="n" style="height:7%"></i><i style="height:44%"></i><i style="height:70%"></i><i style="height:66%"></i><i style="height:58%"></i><i class="n" style="height:16%"></i><i style="height:74%"></i><i style="height:81%"></i><i style="height:69%"></i><i class="n" style="height:11%"></i><i style="height:63%"></i><i style="height:78%"></i><i style="height:92%"></i><i style="height:85%"></i><i class="n" style="height:18%"></i><i style="height:88%"></i><i style="height:96%"></i>
+</div>
+<div class="scroll">
+<div class="dayh"><span class="d">Tue Aug 25 · 14 graded</span><span class="t num" style="color:#34c77b">+2.10u</span></div>
+<div class="lr"><span class="res w">W</span><i class="tmini" style="--c:#132448">NYY</i><span class="nm">Yankees ML <span>· MLB</span></span><span class="pr">−176</span><span class="un w">+0.26</span></div>
+<div class="lr"><span class="res l">L</span><i class="tmini" style="--c:#2f3439">O/U</i><span class="nm">Over 9.5 <span>· NYY/BOS</span></span><span class="pr">+101</span><span class="un l">−0.31</span></div>
+<div class="lr"><span class="res w">W</span><i class="tmini" style="--c:#2f241a">SD</i><span class="nm">Padres +1.5 <span>· fade</span></span><span class="pr">−134</span><span class="un w">+0.21</span></div>
+<div class="lr"><span class="res w">W</span><i class="tmini" style="--c:#6cabdd">MCI</i><span class="nm">Man City ML <span>· EPL</span></span><span class="pr">−260</span><span class="un w">+0.18</span></div>
+<div class="lr"><span class="res p">P</span><i class="tmini" style="--c:#002d62">HOU</i><span class="nm">Astros −1.5 <span>· push</span></span><span class="pr">+100</span><span class="un p">0.00</span></div>
+<div class="lr"><span class="res w">W</span><i class="tmini" style="--c:#0c2c56">SEA</i><span class="nm">Mariners ML <span>· MLB</span></span><span class="pr">+118</span><span class="un w">+0.44</span></div>
+<div class="lr"><span class="res l">L</span><i class="tmini" style="--c:#2f3439">O/U</i><span class="nm">Under 41.5 <span>· NFL</span></span><span class="pr">−102</span><span class="un l">−0.18</span></div>
+<div class="health">
+<div class="health-h"><b></b><span>System health</span><i>1 warning</i></div>
+<div class="health-r"><span>Last successful run</span><b>Aug 26 · 06:15</b></div>
+<div class="health-r"><span>Daily validation</span><b>Passed · 412 rows</b></div>
+<div class="health-r warn"><span>Odds layer</span><b>Bovada stale 22m</b></div>
+<div class="health-r"><span>Running CLV</span><b>+1.8%</b></div>
+</div>
+</div>
+<div class="tabs">
+<button><span class="ti"></span><span class="tl">Picks</span></button>
+<button><span class="ti"></span><span class="tl">Scores</span></button>
+<button><span class="ti"></span><span class="tl">Props</span></button>
+<button class="on"><span class="ti"></span><span class="tl">Results</span></button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+<!-- ══ A4 SCORES ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Scores</b><span>One game open in the tape. Every other game carries a pip cluster — one dot per position, blue take / orange fade.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">1:56</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="ah"><b>Scores</b><span>5 LIVE · UPDATED 1:56P</span></div>
+<div class="astrip">
+<div><span class="k">Final</span><span class="v">3–0</span></div>
+<div><span class="k">Live</span><span class="v">7–5<s>–3</s></span></div>
+<div><span class="k">Day P/L</span><span class="v" style="color:#34c77b">+0.86<s>u</s></span></div>
+</div>
+<div class="aleagues">
+<button><span class="lg">ALL</span><span class="ct">16</span></button>
+<button class="sel"><span class="lg">MINE</span><span class="ct">9</span></button>
+<button><span class="lg">LIVE</span><span class="ct">5</span></button>
+<button><span class="lg">MLB</span><span class="ct">11</span></button>
+<button><span class="glyph">⇅</span></button>
+</div>
+<div class="scroll">
+<div class="agame">
+<div class="agh"><span class="lgm">MLB</span><span class="duo"><i class="tmini" style="--c:#0e3386">CHC</i><i class="tmini" style="--c:#a71930">ARI</i></span><span class="tm2">Cubs</span><span class="sc">0</span><span class="at">–</span><span class="sc">0</span><span class="tm2">D-backs</span><span class="live"><b></b>BOT 5</span></div>
+<div class="sr take"><b class="tick t7"></b><div class="rm"><span class="mkt">ML</span><i class="tm" style="--c:#0e3386">CHC</i><span class="side">Cubs</span></div><span class="p num">+101</span><span class="un">0.08<em style="font-style:normal;font-size:9px;color:#7c848f">u</em></span><span class="apnl fl">0.00</span></div>
+<div class="sr fade"><b class="tick t10"></b><div class="rm"><span class="mkt">SPR</span><i class="tm" style="--c:#a71930">ARI</i><span class="side">ARI 1.5 <i>· fade</i></span></div><span class="p num">−182</span><span class="un">0.08<em style="font-style:normal;font-size:9px;color:#7c848f">u</em></span><span class="apnl up">+0.04</span></div>
+<div class="sr"><b class="tick t5"></b><div class="rm"><span class="mkt">TOT</span><i class="tm" style="--c:#2f3439">O</i><span class="side">Over 8.5</span></div><span class="p num">−110</span><span class="un">0.11<em style="font-style:normal;font-size:9px;color:#7c848f">u</em></span><span class="apnl dn">−0.06</span></div>
+<div class="ls">
+<span class="tn"></span><span class="hd">1</span><span class="hd">2</span><span class="hd">3</span><span class="hd">4</span><span class="hd">5</span><span class="hd">T</span>
+<span class="tn">Cubs</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n t">0</span>
+<span class="tn">D-backs</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">·</span><span class="n t">0</span>
+</div>
+<div class="adet"><span class="p1">Pitch 6 · strike 2 foul</span><span class="p2">1 OUT · AB J. FERNANDEZ · P M. BOYD</span></div>
+<div class="astat"><span class="k">BAT</span><span class="n">T. Taylor <s>CHC</s></span><span class="v">1-2, SB</span></div>
+<div class="astat"><span class="k">P</span><span class="n">M. Boyd <s>CHC</s></span><span class="v">4.1 IP, 0 ER, 5 K</span></div>
+<div class="ameta"><span>CHC 76-57</span><span>ARI 70-63</span><span>CHASE FIELD</span><span>ESPN UNLMTD</span></div>
+</div>
+<div class="consec"><span>Other games · 15</span><span>▾ tap to open</span></div>
+<div class="acon live"><span class="lg">MLB</span><span class="duo"><i class="tmini" style="--c:#c6011f">CIN</i><i class="tmini" style="--c:#27251f">SF</i></span><span class="mt">Reds <s>at</s> Giants</span><span class="sc">2–2</span><span class="pips"><i class="t"></i><i class="t"></i></span><span class="pos apnl up">+0.22</span></div>
+<div class="acon live"><span class="lg">MLB</span><span class="duo"><i class="tmini" style="--c:#0c2340">CLE</i><i class="tmini" style="--c:#ba0021">LAA</i></span><span class="mt">Guardians <s>at</s> Angels</span><span class="sc">0–3</span><span class="pips"><i class="f"></i></span><span class="pos apnl dn">−0.35</span></div>
+<div class="acon live"><span class="lg">MLB</span><span class="duo"><i class="tmini" style="--c:#e81828">PHI</i><i class="tmini" style="--c:#0c2c56">SEA</i></span><span class="mt">Phillies <s>at</s> Mariners</span><span class="sc">6–0</span><span class="pips"><i class="t"></i><i class="t"></i></span><span class="pos apnl up">+0.51</span></div>
+<div class="acon live"><span class="lg">MLB</span><span class="duo"><i class="tmini" style="--c:#27251f">PIT</i><i class="tmini" style="--c:#2f241a">SD</i></span><span class="mt">Pirates <s>at</s> Padres</span><span class="sc">0–1</span><span class="pips"><i class="t"></i></span><span class="pos apnl fl">0.00</span></div>
+<div class="acon"><span class="lg">MLB</span><span class="duo"><i class="tmini" style="--c:#13274f">ATL</i><i class="tmini" style="--c:#002d72">NYM</i></span><span class="mt">Braves <s>at</s> Mets</span><span class="sc">7:15P</span><span class="pips"><i class="f"></i></span><span class="pos apnl fl">0.22</span></div>
+<div class="acon"><span class="lg">MLB</span><span class="duo"><i class="tmini" style="--c:#003831">OAK</i><i class="tmini" style="--c:#c0111f">TEX</i></span><span class="mt">Athletics <s>at</s> Rangers</span><span class="sc">7:05P</span><span class="pips"><i class="t"></i><i class="t"></i><i class="f"></i><em>+2</em></span><span class="pos apnl fl">0.61</span></div>
+<div class="acon"><span class="lg">EPL</span><span class="duo"><i class="tmini" style="--c:#6cabdd">MCI</i><i class="tmini" style="--c:#0057b8">BHA</i></span><span class="mt">Man City <s>at</s> Brighton</span><span class="sc">SAT</span><span class="pips"><i></i></span><span class="pos" style="color:#7c848f">—</span></div>
+</div>
+<div class="tabs">
+<button><span class="ti"></span><span class="tl">Picks</span></button>
+<button class="on"><span class="ti"></span><span class="tl">Scores</span></button>
+<button><span class="ti"></span><span class="tl">Props</span></button>
+<button><span class="ti"></span><span class="tl">Results</span></button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+</div>
+<div class="tradeoff">
+<div><h4>Optimizes for</h4><p>Volume. 45 plays across five leagues is a lot of rows, and this reads roughly 9 markets per screen without scrolling. The rule bar turns a 45-tap morning into two gestures. Tier lives in the gutter, so unit size is unambiguously the loudest thing in every row.</p></div>
+<div><h4>Gives up</h4><p>Warmth and forgiveness. Hairline rows have no per-game affordance to grab, taps are precise rather than generous, and a mis-tap on the tri-state control is easy. It also asks the user to learn the gutter tick as a tier encoding — legible once taught, invisible before that.</p></div>
+</div>
+<div class="tradeoff" style="margin-top:1px">
+<div><h4>Desktop</h4><p>The tape stays 520px wide as a left column and the right side becomes a detail pane: select a game, get every market, model reasoning, and line movement. The rule bar moves into a persistent left sidebar with league counts, so nothing has to scroll away.</p></div>
+<div><h4>Logos</h4><p>Chips are 16–22px monogram placeholders — real team marks drop into the same 22px slot with no layout change. They carry team color at 22px better than a shrunk logo would, so the chip may be worth keeping as the fallback for leagues without clean assets.</p></div>
+</div>
+</div>
+</body>
+</html>

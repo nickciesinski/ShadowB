@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shadow Bets — Direction B: Block</title>
+<link rel="stylesheet" href="sb.css">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+.b{--bg:#141110;--card:#1e1a18;--card2:#272220;--line:#302a27;--text:#f5f0ea;--dim:#9a8f85;--dim2:#8e857b;--take:#ffb020;--fade:#9c7bff;--win:#56c08a;--loss:#f0534c;--body:"Archivo",sans-serif;--mono:"JetBrains Mono",monospace}
+.b .screen{background:var(--bg)}
+.b .sheet{font-family:"Archivo",sans-serif}
+.b .sheet-title,.b .sheet-lede,.b .framecap b,.b .framecap span,.b .tok-body,.b .tradeoff p{font-family:"Archivo",sans-serif}
+/* header */
+.bh{padding:4px 20px 14px;display:flex;align-items:center;gap:12px}
+.bh .ttl{font:800 26px/1 var(--body);letter-spacing:-.03em;color:var(--text)}
+.bmode{margin-left:auto;display:flex;background:var(--card);border-radius:9px;padding:3px;gap:2px}
+.bmode s{text-decoration:none;padding:7px 13px;border-radius:7px;font:700 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--dim2)}
+.bmode s.on{background:var(--take);color:#2a1a00}
+.bmode s.onw{background:var(--card2);color:var(--text)}
+/* exposure block */
+.bexp{margin:0 16px 14px;background:var(--card);border-radius:16px;padding:17px 18px 15px;display:flex;flex-direction:column;gap:13px}
+.bexp-top{display:flex;align-items:flex-end;justify-content:space-between}
+.bexp .big{font:700 40px/.9 var(--mono);letter-spacing:-.05em;color:var(--text)}
+.bexp .big s{text-decoration:none;font-size:18px;color:var(--dim2);letter-spacing:0}
+.bexp .lbl{font:700 10px/1 var(--body);letter-spacing:.16em;text-transform:uppercase;color:var(--dim2);margin-bottom:7px}
+.bexp .rt{text-align:right;display:flex;flex-direction:column;gap:5px}
+.bexp .rt .a{font:600 12px/1 var(--mono);color:var(--text);white-space:nowrap}
+.bexp .rt .c{font:500 11px/1 var(--body);color:var(--dim)}
+.bbar{height:8px;border-radius:5px;background:#2c2624;display:flex;overflow:hidden;gap:2px}
+.bbar i{display:block;height:100%}
+.bexp .legend{display:flex;gap:14px}
+.bexp .legend span{font:500 10px/1 var(--body);letter-spacing:.04em;color:var(--dim);display:flex;align-items:center;gap:5px}
+.bexp .legend b{width:7px;height:7px;border-radius:2px}
+/* leagues */
+.bleagues{display:flex;gap:8px;padding:0 16px 14px;overflow:hidden}
+.bleagues s{text-decoration:none;flex:0 0 auto;padding:9px 15px;border-radius:20px;background:var(--card);font:600 12px/1 var(--body);letter-spacing:.04em;color:var(--dim);display:flex;gap:7px;align-items:center}
+.bleagues s em{font-style:normal;font:600 11px/1 var(--mono);color:var(--dim2)}
+.bleagues s.on{background:var(--text);color:#171311}
+.bleagues s.on em{color:rgba(23,19,17,.55)}
+/* game card */
+.bcard{margin:0 16px 12px;background:var(--card);border-radius:16px;overflow:hidden}
+.bgh{padding:14px 16px 12px;display:flex;align-items:center;gap:11px}
+.bgh .teams{display:flex;align-items:center;gap:9px;min-width:0}
+.bgh .tm{flex:0 0 30px;width:30px;height:30px;border-radius:9px;background:var(--c);display:flex;align-items:center;justify-content:center;font:700 10px/1 var(--body);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)}
+.bgh .nm{font:700 15px/1.15 var(--body);letter-spacing:-.01em;color:var(--text)}
+.bgh .vs{font:500 11px/1 var(--body);color:var(--dim2);letter-spacing:.08em}
+.bgh .meta{margin-left:auto;text-align:right;display:flex;flex-direction:column;gap:4px;flex:0 0 auto}
+.bgh .meta .t{font:600 11px/1 var(--mono);color:var(--dim)}
+.bgh .meta .lg{font:700 9px/1 var(--body);letter-spacing:.14em;color:var(--dim2)}
+.bgh .live{display:flex;align-items:center;gap:6px;font:700 10px/1 var(--body);letter-spacing:.1em;color:var(--win)}
+.bgh .live b{width:6px;height:6px;border-radius:50%;background:var(--win)}
+.bgh .score{font:700 22px/1 var(--mono);color:var(--text);letter-spacing:-.03em}
+/* market row */
+.bm{padding:12px 16px 13px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.bm .l{display:flex;flex-direction:column;gap:6px;min-width:0}
+.bm .top{display:flex;align-items:center;gap:8px}
+.bm .mk{font:700 9px/1 var(--body);letter-spacing:.14em;color:var(--dim2)}
+.bm .tier{font:700 9px/1 var(--mono);letter-spacing:.06em;color:var(--dim2);display:flex;gap:2px;align-items:center}
+.bm .tier i{width:3px;height:9px;border-radius:1px;background:#3a332f}
+.bm .tier i.f{background:var(--dim)}
+.bm .pick{font:700 17px/1.1 var(--body);letter-spacing:-.02em;color:var(--text)}
+.bm .sub{font:500 11px/1 var(--body);color:var(--dim2)}
+.bm .r{display:flex;align-items:center;gap:14px}
+.bm .unit{text-align:right}
+.bm .unit .u{font:700 22px/1 var(--mono);letter-spacing:-.04em;color:var(--text);display:block}
+.bm .unit .u s{text-decoration:none;font-size:11px;color:var(--dim2)}
+.bm .unit .p{font:500 11px/1.5 var(--mono);color:var(--dim)}
+.bpair{display:flex;gap:5px}
+.bpair s{text-decoration:none;width:46px;height:46px;border-radius:12px;border:1.5px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:700 9px/1 var(--body);letter-spacing:.07em;color:var(--dim2)}
+.bpair s em{font:600 13px/1 var(--body);font-style:normal}
+.bpair s.on{background:var(--take);border-color:var(--take);color:#2a1a00}
+.bpair s.onf{background:var(--fade);border-color:var(--fade);color:#160a33}
+.bm.taken{background:rgba(255,176,32,.055)}
+.bm.faded{background:rgba(156,123,255,.06)}
+.bm.faded .sub{color:var(--fade)}
+.bexpand{padding:11px 16px 12px;border-top:1px solid var(--line);font:600 11px/1 var(--body);letter-spacing:.04em;color:var(--dim2);display:flex;justify-content:space-between}
+/* rule sheet */
+.bscrim{position:absolute;inset:0;background:rgba(10,8,7,.62);z-index:10}
+.bsheet{position:absolute;left:0;right:0;bottom:0;z-index:11;background:var(--card2);border-radius:22px 22px 0 0;padding:12px 18px 30px;display:flex;flex-direction:column;gap:15px;box-shadow:0 -20px 50px rgba(0,0,0,.5)}
+.bsheet .grab{width:38px;height:4px;border-radius:3px;background:#4a423e;align-self:center}
+.bsheet h3{font:800 19px/1.1 var(--body);letter-spacing:-.02em;color:var(--text)}
+.bsheet .sub{font:500 12px/1.4 var(--body);color:var(--dim);margin-top:4px}
+.btiers{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.btier{border-radius:13px;border:1.5px solid var(--line);padding:12px 12px 11px;display:flex;flex-direction:column;gap:6px;background:#221e1c}
+.btier .n{font:700 22px/1 var(--mono);letter-spacing:-.04em;color:var(--dim)}
+.btier .c{font:600 10px/1.3 var(--body);color:var(--dim2)}
+.btier.on{background:rgba(255,176,32,.14);border-color:var(--take)}
+.btier.on .n{color:var(--take)}
+.btier.on .c{color:#d9ab5f}
+.bslider{display:flex;flex-direction:column;gap:10px}
+.bslider .row{display:flex;justify-content:space-between;align-items:baseline}
+.bslider .row .k{font:700 10px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)}
+.bslider .row .v{font:700 15px/1 var(--mono);color:var(--text)}
+.btrack{height:6px;border-radius:4px;background:#3a332f;position:relative}
+.btrack b{position:absolute;left:0;top:0;bottom:0;width:42%;border-radius:4px;background:var(--take)}
+.btrack u{position:absolute;left:42%;top:50%;width:24px;height:24px;margin:-12px 0 0 -12px;border-radius:50%;background:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.5)}
+.bconseq{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-radius:13px;background:#1b1715}
+.bconseq .a{display:flex;flex-direction:column;gap:5px}
+.bconseq .a .k{font:700 9px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--dim2)}
+.bconseq .a .v{font:700 20px/1 var(--mono);letter-spacing:-.03em;color:var(--text)}
+.bconseq .a .v.hl{color:var(--take)}
+.bcta{height:54px;border-radius:14px;background:var(--take);color:#2a1a00;font:800 15px/1 var(--body);letter-spacing:-.01em;display:flex;align-items:center;justify-content:center;border:0}
+/* watch */
+.bpos{display:flex;gap:8px;padding:12px 16px 14px;border-top:1px solid var(--line);align-items:center}
+.bpos .chip{flex:1;border-radius:12px;padding:10px 12px;background:#241f1d;display:flex;flex-direction:column;gap:6px;border-left:3px solid var(--take)}
+.bpos .chip.f{border-left-color:var(--fade)}
+.bpos .chip .t{font:700 12px/1.15 var(--body);color:var(--text)}
+.bpos .chip .b{display:flex;justify-content:space-between;align-items:baseline}
+.bpos .chip .b .u{font:500 10px/1 var(--mono);color:var(--dim2)}
+.bpos .chip .b .pl{font:700 15px/1 var(--mono);letter-spacing:-.03em}
+.pl.up{color:var(--win)}.pl.dn{color:var(--loss)}.pl.fl{color:var(--dim)}
+/* scores */
+.bsh{padding:13px 20px 11px;font:700 10px/1 var(--body);letter-spacing:.16em;text-transform:uppercase;color:var(--dim2)}
+.binn{display:flex;gap:5px;padding:0 16px 13px}
+.binn i{flex:1;height:3px;border-radius:2px;background:#332c29}
+.binn i.f{background:var(--dim2)}
+/* tabs */
+.btabs{flex:0 0 80px;display:grid;grid-template-columns:repeat(4,1fr);background:var(--card);padding:12px 0 22px;margin-top:auto}
+.btabs button{background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+.btabs .ti{width:20px;height:20px;border-radius:6px;border:1.8px solid var(--dim2)}
+.btabs .tl{font:700 9px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--dim2)}
+.btabs .on .ti{border-color:var(--take);background:rgba(255,176,32,.22)}
+.btabs .on .tl{color:var(--take)}
+
+.bprow{padding:11px 16px;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;border-left:3px solid transparent}
+.bprow.take{border-left-color:var(--take);background:rgba(255,176,32,.05)}
+.bprow.faded{border-left-color:var(--fade);background:rgba(156,123,255,.055)}
+.bprow .l{display:flex;flex-direction:column;gap:5px;min-width:0}
+.bprow .mk{font:700 9px/1 var(--body);letter-spacing:.14em;color:var(--dim2)}
+.bprow .pk{font:700 15px/1.1 var(--body);letter-spacing:-.015em;color:var(--text)}
+.bprow .pk i{font-style:normal;font-size:10px;font-weight:600;letter-spacing:.07em;color:var(--fade);margin-left:6px}
+.bprow .n{font:500 11px/1.5 var(--mono);color:var(--dim);text-align:right;white-space:nowrap}
+.bprow .pl{font:700 17px/1 var(--mono);letter-spacing:-.03em;width:62px;text-align:right}
+.bls{padding:13px 16px 14px;border-top:1px solid var(--line);background:#1a1614;display:grid;grid-template-columns:1fr repeat(6,24px);gap:9px 0;align-items:center}
+.bls .hd{font:500 9px/1 var(--mono);color:var(--dim2);text-align:center}
+.bls .tn{font:600 11px/1 var(--body);color:var(--dim)}
+.bls .n{font:500 12px/1 var(--mono);text-align:center;color:#cbc2b8}
+.bls .n.t{color:var(--text);font-weight:600}
+.bdet{padding:12px 16px 13px;border-top:1px solid var(--line);background:#1a1614;display:flex;flex-direction:column;gap:6px}
+.bdet .p1{font:700 13px/1.1 var(--body);color:var(--text)}
+.bdet .p2{font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim2)}
+.bstat{padding:8px 16px;border-top:1px solid var(--line);display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:baseline;background:#1a1614}
+.bstat .k{font:700 9px/1 var(--body);letter-spacing:.13em;color:var(--dim2)}
+.bstat .n{font:600 12px/1 var(--body);color:#ded4c9}
+.bstat .n s{text-decoration:none;font:500 10px/1 var(--mono);color:var(--dim2)}
+.bstat .v{font:500 10px/1 var(--mono);color:var(--dim)}
+.bmeta{padding:10px 16px 12px;background:#1a1614;display:flex;gap:12px;font:500 9px/1.3 var(--mono);letter-spacing:.05em;color:var(--dim2)}
+.bgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 16px 12px}
+.bmini{background:var(--card);border-radius:14px;padding:11px 12px 10px;display:flex;flex-direction:column;gap:9px;border:1.5px solid var(--line)}
+.bmini.up{border-color:rgba(86,192,138,.45)}
+.bmini.dn{border-color:rgba(240,83,76,.4)}
+.bmini .hd{display:flex;align-items:center;justify-content:space-between}
+.bmini .hd .lg{font:700 9px/1 var(--body);letter-spacing:.13em;color:var(--dim2)}
+.bmini .hd .st{font:700 9px/1 var(--body);letter-spacing:.08em;color:var(--win);display:flex;align-items:center;gap:5px}
+.bmini .hd .st b{width:5px;height:5px;border-radius:50%;background:var(--win)}
+.bmini .tr{display:flex;align-items:center;justify-content:space-between}
+.bmini .tr .nm{font:700 13px/1 var(--body);color:var(--text);display:flex;gap:7px;align-items:center}
+.bmini .tr .nm i{flex:0 0 18px;width:18px;height:18px;border-radius:6px;background:var(--c);display:flex;align-items:center;justify-content:center;font:700 7px/1 var(--body);color:#fff}
+.bmini .tr .s{font:700 16px/1 var(--mono);letter-spacing:-.03em;color:var(--text)}
+.bmini .tr.lose .nm,.bmini .tr.lose .s{color:var(--dim)}
+.bmini .ft{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:9px}
+.bmini .ft .c{font:600 10px/1 var(--body);letter-spacing:.04em;color:var(--dim2)}
+.bmini .ft .pl{font:700 14px/1 var(--mono);letter-spacing:-.03em}
+</style>
+</head>
+<body class="b">
+<div class="sheet">
+<div class="sheet-head">
+<div class="sheet-kicker">Direction B</div>
+<div class="sheet-title">Block <em>— spacious, one card per game</em></div>
+<div class="sheet-lede">Warm charcoal, heavy display type, generous 46px targets. A game is a physical object you hold; its markets stack inside it. Taking a position is a two-button decision — Take or Fade — because "model, untouched" is the absence of a choice, not a third button. Build and Watch are an explicit switch in the header, so the app never changes character underneath you.</div>
+</div>
+<div class="tokens">
+<div class="tok"><div class="tok-label">Palette</div><div class="tok-swatches"><i style="background:#141110"></i><i style="background:#1e1a18"></i><i style="background:#ffb020"></i><i style="background:#9c7bff"></i><i style="background:#56c08a"></i><i style="background:#f0534c"></i></div><div class="tok-body"><b>#141110</b> warm ink · <b>#1E1A18</b> card · <b>#FFB020</b> my bet · <b>#9C7BFF</b> fade · <b>#56C08A</b> win · <b>#F0534C</b> loss</div></div>
+<div class="tok"><div class="tok-label">Type</div><div class="tok-body">Display &amp; body <b>Archivo</b> 700/800 at −0.03em — tight, confident, reads bold at 15px. Numeric <b>JetBrains Mono</b> 600, tabular, wide enough that −176 never looks like a stray glyph.</div></div>
+<div class="tok"><div class="tok-label">Layout</div><div class="tok-body">16px gutters, 16px card radius, one card per game, markets as internal rows. Nothing is full-bleed; the background always shows through so cards feel liftable.</div></div>
+<div class="tok"><div class="tok-label">Signature</div><div class="tok-body"><b>The rule sheet.</b> Tier blocks plus a unit-floor slider in a bottom sheet, with a live consequence readout that names the count and units before you commit.</div></div>
+</div>
+<div class="frames">
+
+<!-- ══ B1 BUILD + RULE SHEET ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Picks · Build mode, rule sheet open</b><span>Tier 10 + 7 selected, floor at 0.25u. Consequence updates live.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">6:42</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="bh"><span class="ttl">Today</span><span class="bmode"><s class="on">Build</s><s>Watch</s></span></div>
+<div class="bexp">
+<div class="bexp-top">
+<div><div class="lbl">At risk</div><div class="big">10.9<s>u</s></div></div>
+<div class="rt"><span class="a">45 plays · 18 locked</span><span class="c">Lock window closes 12:05</span></div>
+</div>
+<div class="bbar"><i style="background:#ffb020;width:46%"></i><i style="background:#9c7bff;width:12%"></i><i style="background:#3a332f;width:42%"></i></div>
+<div class="legend"><span><b style="background:#ffb020"></b>16 taken</span><span><b style="background:#9c7bff"></b>2 faded</span><span><b style="background:#3a332f"></b>27 open</span></div>
+</div>
+<div class="bleagues"><s class="on">MLB <em>22</em></s><s>EPL <em>9</em></s><s>NFL <em>14</em></s><s>All <em>45</em></s></div>
+<div class="scroll">
+<div class="bcard">
+<div class="bgh"><div class="teams"><i class="tm" style="--c:#132448">NYY</i><span class="nm">Yankees</span><span class="vs">AT</span><i class="tm" style="--c:#bd3039">BOS</i><span class="nm">Red Sox</span></div><div class="meta"><span class="lg">MLB</span><span class="t">7:10P</span></div></div>
+<div class="bm taken">
+<div class="l"><div class="top"><span class="mk">MONEYLINE</span><span class="tier"><i class="f"></i><i class="f"></i><i class="f"></i>10</span></div><div class="pick">Yankees</div></div>
+<div class="r"><div class="unit"><span class="u">0.46<s>u</s></span><span class="p">−176</span></div><div class="bpair"><s class="on"><em>✓</em>TAKE</s><s><em>⤫</em>FADE</s></div></div>
+</div>
+<div class="bm taken">
+<div class="l"><div class="top"><span class="mk">TOTAL</span><span class="tier"><i class="f"></i><i class="f"></i><i></i>7</span></div><div class="pick">Over 9.5</div></div>
+<div class="r"><div class="unit"><span class="u">0.31<s>u</s></span><span class="p">+101</span></div><div class="bpair"><s class="on"><em>✓</em>TAKE</s><s><em>⤫</em>FADE</s></div></div>
+</div>
+<div class="bexpand"><span>1 more market the model likes less</span><span>▾</span></div>
+</div>
+<div class="bcard">
+<div class="bgh"><div class="teams"><i class="tm" style="--c:#005a9c">LAD</i><span class="nm">Dodgers</span><span class="vs">AT</span><i class="tm" style="--c:#4f3b28">SD</i><span class="nm">Padres</span></div><div class="meta"><span class="lg">MLB</span><span class="t">9:40P</span></div></div>
+<div class="bm faded">
+<div class="l"><div class="top"><span class="mk">SPREAD 1.5</span><span class="tier"><i class="f"></i><i class="f"></i><i class="f"></i>10</span></div><div class="pick">Padres +1.5</div><div class="sub">Fading model's Dodgers −1.5</div></div>
+<div class="r"><div class="unit"><span class="u">0.28<s>u</s></span><span class="p">−134</span></div><div class="bpair"><s><em>✓</em>TAKE</s><s class="onf"><em>⤫</em>FADE</s></div></div>
+</div>
+</div>
+</div>
+<div class="bscrim"></div>
+<div class="bsheet">
+<span class="grab"></span>
+<div><h3>Take by rule</h3><div class="sub">Pick the tiers and the smallest stake worth your time.</div></div>
+<div class="btiers">
+<div class="btier on"><span class="n">10</span><span class="c">9 picks · 3.9u</span></div>
+<div class="btier on"><span class="n">7</span><span class="c">11 picks · 2.6u</span></div>
+<div class="btier"><span class="n">5</span><span class="c">25 picks · 4.4u</span></div>
+</div>
+<div class="bslider"><div class="row"><span class="k">Unit floor</span><span class="v">0.25u</span></div><div class="btrack"><b></b><u></u></div></div>
+<div class="bconseq">
+<div class="a"><span class="k">Commits</span><span class="v hl">18 picks</span></div>
+<div class="a"><span class="k">Units</span><span class="v">6.2u</span></div>
+<div class="a"><span class="k">Avg price</span><span class="v">−118</span></div>
+</div>
+<button class="bcta">Take these 18 · 6.2u</button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+<!-- ══ B2 WATCH ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Picks · Watch mode</b><span>Cards sorted by how live they are. Positions become P/L chips.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">3:28</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="bh"><span class="ttl">Live</span><span class="bmode"><s>Build</s><s class="onw">Watch</s></span></div>
+<div class="bexp">
+<div class="bexp-top">
+<div><div class="lbl">Day P/L</div><div class="big" style="color:#56c08a">+1.34<s style="color:#56c08a;opacity:.5">u</s></div></div>
+<div class="rt"><span class="a">18 positions · 6.2u risked</span><span class="c">11 live · 4 final · 3 pregame</span></div>
+</div>
+<div class="bbar"><i style="background:#56c08a;width:40%"></i><i style="background:#f0534c;width:22%"></i><i style="background:#4a423e;width:16%"></i><i style="background:#2c2624;width:22%"></i></div>
+<div class="legend"><span><b style="background:#56c08a"></b>7 ahead</span><span><b style="background:#f0534c"></b>4 behind</span><span><b style="background:#4a423e"></b>3 even</span></div>
+</div>
+<div class="bleagues"><s class="on">All <em>18</em></s><s>MLB <em>9</em></s><s>EPL <em>4</em></s><s>NFL <em>5</em></s></div>
+<div class="scroll">
+<div class="bcard">
+<div class="bgh"><div class="teams"><i class="tm" style="--c:#9c1420">ARS</i><span class="score">2</span><span class="vs">–</span><span class="score">1</span><i class="tm" style="--c:#c8102e">LIV</i></div><div class="meta"><span class="live"><b></b>67'</span><span class="t">EPL</span></div></div>
+<div class="bpos">
+<div class="chip"><span class="t">Arsenal ML</span><span class="b"><span class="u">0.58u · −110</span><span class="pl up">+0.58</span></span></div>
+<div class="chip f"><span class="t">Under 3.5</span><span class="b"><span class="u">0.30u · +104</span><span class="pl dn">−0.30</span></span></div>
+</div>
+</div>
+<div class="bcard">
+<div class="bgh"><div class="teams"><i class="tm" style="--c:#0e3386">CHC</i><span class="score">4</span><span class="vs">–</span><span class="score">4</span><i class="tm" style="--c:#0a2351">MIL</i></div><div class="meta"><span class="live"><b></b>TOP 7</span><span class="t">MLB</span></div></div>
+<div class="binn"><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i></i><i></i><i></i></div>
+<div class="bpos">
+<div class="chip"><span class="t">Over 8.5</span><span class="b"><span class="u">0.24u · −105</span><span class="pl up">+0.24</span></span></div>
+<div class="chip"><span class="t">Cubs ML</span><span class="b"><span class="u">0.19u · +128</span><span class="pl fl">even</span></span></div>
+</div>
+</div>
+<div class="bcard">
+<div class="bgh"><div class="teams"><i class="tm" style="--c:#0c2340">DET</i><span class="score">6</span><span class="vs">–</span><span class="score">1</span><i class="tm" style="--c:#0f223e">CLE</i></div><div class="meta"><span class="t" style="color:#6d645c;font-weight:700;letter-spacing:.1em">FINAL</span><span class="t">MLB</span></div></div>
+<div class="bpos">
+<div class="chip f"><span class="t">Tigers ML · fade won</span><span class="b"><span class="u">0.35u · +145</span><span class="pl up">+0.51</span></span></div>
+</div>
+</div>
+</div>
+<div class="btabs">
+<button class="on"><span class="ti"></span><span class="tl">Picks</span></button>
+<button><span class="ti"></span><span class="tl">Scores</span></button>
+<button><span class="ti"></span><span class="tl">Props</span></button>
+<button><span class="ti"></span><span class="tl">Results</span></button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+<!-- ══ B3 SCORES ══ -->
+<div class="framewrap">
+<div class="framecap"><b>Scores</b><span>The game you care about opens; the rest compress to a 2-up grid.</span></div>
+<div class="phone">
+<div class="statusbar"><span class="num">3:29</span><span class="sb-r"><u></u><i></i></span></div>
+<div class="screen">
+<div class="bh"><span class="ttl">Scores</span><span class="bmode"><s class="onw">Mine</s><s>All</s></span></div>
+<div class="bleagues"><s class="on">All</s><s>MLB <em>11</em></s><s>EPL <em>5</em></s><s>NFL <em>7</em></s></div>
+<div class="scroll">
+<div class="bsh">Open · 3 positions</div>
+<div class="bcard">
+<div class="bgh"><div class="teams"><i class="tm" style="--c:#0e3386">CHC</i><span class="score">0</span><span class="vs">–</span><span class="score">0</span><i class="tm" style="--c:#a71930">ARI</i></div><div class="meta"><span class="live"><b></b>BOT 5</span><span class="t">MLB</span></div></div>
+<div class="bprow take"><div class="l"><span class="mk">MONEYLINE</span><span class="pk">Cubs</span></div><span class="n">0.08u<br>+101</span><span class="pl fl">even</span></div>
+<div class="bprow faded"><div class="l"><span class="mk">SPREAD 1.5</span><span class="pk">D-backs 1.5 <i>FADE</i></span></div><span class="n">0.08u<br>−182</span><span class="pl up">+0.04</span></div>
+<div class="bprow take"><div class="l"><span class="mk">TOTAL 8.5</span><span class="pk">Over 8.5</span></div><span class="n">0.11u<br>−110</span><span class="pl dn">−0.06</span></div>
+<div class="bls">
+<span class="tn"></span><span class="hd">1</span><span class="hd">2</span><span class="hd">3</span><span class="hd">4</span><span class="hd">5</span><span class="hd">T</span>
+<span class="tn">Cubs</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n t">0</span>
+<span class="tn">D-backs</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">0</span><span class="n">·</span><span class="n t">0</span>
+</div>
+<div class="bdet"><span class="p1">Pitch 6 · strike 2 foul</span><span class="p2">1 OUT · AB J. FERNANDEZ · P M. BOYD</span></div>
+<div class="bstat"><span class="k">BAT</span><span class="n">T. Taylor <s>CHC</s></span><span class="v">1-2, SB</span></div>
+<div class="bstat"><span class="k">P</span><span class="n">M. Boyd <s>CHC</s></span><span class="v">4.1 IP, 0 ER, 5 K</span></div>
+<div class="bmeta"><span>CHC 76-57</span><span>ARI 70-63</span><span>CHASE FIELD</span><span>ESPN UNLMTD</span></div>
+</div>
+<div class="bsh">Also live · 4</div>
+<div class="bgrid">
+<div class="bmini up">
+<div class="hd"><span class="lg">MLB</span><span class="st"><b></b>TOP 4</span></div>
+<div class="tr"><span class="nm"><i style="--c:#c6011f">CIN</i>Reds</span><span class="s">2</span></div>
+<div class="tr"><span class="nm"><i style="--c:#8b6f4e">SF</i>Giants</span><span class="s">2</span></div>
+<div class="ft"><span class="c">2 positions</span><span class="pl up">+0.22</span></div>
+</div>
+<div class="bmini dn">
+<div class="hd"><span class="lg">MLB</span><span class="st" style="color:#f0534c"><b style="background:#f0534c"></b>TOP 3</span></div>
+<div class="tr lose"><span class="nm"><i style="--c:#0f223e">CLE</i>Guardians</span><span class="s">0</span></div>
+<div class="tr"><span class="nm"><i style="--c:#ba0021">LAA</i>Angels</span><span class="s">3</span></div>
+<div class="ft"><span class="c">1 · fade</span><span class="pl dn">−0.35</span></div>
+</div>
+<div class="bmini up">
+<div class="hd"><span class="lg">MLB</span><span class="st"><b></b>TOP 3</span></div>
+<div class="tr"><span class="nm"><i style="--c:#e81828">PHI</i>Phillies</span><span class="s">6</span></div>
+<div class="tr lose"><span class="nm"><i style="--c:#0c2c56">SEA</i>Mariners</span><span class="s">0</span></div>
+<div class="ft"><span class="c">2 positions</span><span class="pl up">+0.51</span></div>
+</div>
+<div class="bmini">
+<div class="hd"><span class="lg">MLB</span><span class="st"><b></b>TOP 4</span></div>
+<div class="tr lose"><span class="nm"><i style="--c:#27251f">PIT</i>Pirates</span><span class="s">0</span></div>
+<div class="tr"><span class="nm"><i style="--c:#4f3b28">SD</i>Padres</span><span class="s">1</span></div>
+<div class="ft"><span class="c">1 position</span><span class="pl fl">even</span></div>
+</div>
+</div>
+</div>
+<div class="btabs">
+<button><span class="ti"></span><span class="tl">Picks</span></button>
+<button class="on"><span class="ti"></span><span class="tl">Scores</span></button>
+<button><span class="ti"></span><span class="tl">Props</span></button>
+<button><span class="ti"></span><span class="tl">Results</span></button>
+</div>
+</div>
+<div class="homebar"></div>
+</div>
+</div>
+
+</div>
+<div class="tradeoff">
+<div><h4>Optimizes for</h4><p>Confidence and thumb comfort. 46px Take/Fade targets are impossible to mis-hit, the fade state gets its own hue and a plain-English line naming what's being faded, and the exposure block at the top is legible from across a room. Watch mode is genuinely three-second scannable.</p></div>
+<div><h4>Gives up</h4><p>Density. Roughly two games per screen instead of four, so a 45-play slate is a lot of scrolling — the rule sheet has to carry more weight because working row by row through this layout would be slow. Cards also make it harder to compare unit sizes across games at a glance.</p></div>
+</div>
+<div class="tradeoff" style="margin-top:1px">
+<div><h4>Desktop</h4><p>Cards become a two- or three-column masonry at the same 390px intrinsic width, so nothing restyles. The rule sheet un-sheets into a right sidebar that stays open while you refine, and the exposure block spans the top as a full-width bar.</p></div>
+<div><h4>Logos</h4><p>30px rounded chips carry real marks comfortably. Team color already does the identification work here, so if an asset is missing the monogram is a genuine fallback rather than a placeholder.</p></div>
+</div>
+</div>
+</body>
+</html>
