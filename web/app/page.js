@@ -762,15 +762,6 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     return sa.localeCompare(sb);
   });
 
-  if (!allPicks.length) {
-    return (
-      <div className="tp">
-        <div className="ah"><b>Shadow Bets</b><span>{dayLabel} · {runLabel}</span></div>
-        <div className="empty">No plays today.</div>
-      </div>
-    );
-  }
-
   const marketMeta = (p) => {
     const bt = (p.betType || p.market || '').toLowerCase();
     const code = bt === 'moneyline' ? 'ML' : bt === 'spread' ? 'SPR' : 'TOT';
@@ -968,7 +959,11 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
             </div>
           );
         })}
-        {gameList.length === 0 && <div className="empty">{pickMode === 'watch' ? 'No positions locked yet.' : 'No picks match this filter.'}</div>}
+        {gameList.length === 0 && (
+          <div className="empty">
+            {pickMode === 'watch' ? 'No positions locked yet.' : allPicks.length === 0 ? 'No plays for this day.' : 'No picks match this filter.'}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2221,16 +2216,20 @@ export default function App() {
   });
   // Picks tape mode — 'build' (triaging the morning slate) or 'watch' (locked,
   // read-only). Persisted per-day so a reload after locking stays in watch mode.
-  const [pickMode, setPickMode] = useState(() => {
+  // Always starts 'build' (matching the server-rendered HTML) and is restored
+  // from localStorage in an effect — reading localStorage inside the useState
+  // initializer would make the client's first render disagree with the
+  // server's and throw a React hydration-mismatch error every day after lock.
+  const [pickMode, setPickMode] = useState('build');
+  useEffect(() => {
     try {
-      const saved = typeof window !== 'undefined' && localStorage.getItem('shadowbets_pickmode');
+      const saved = localStorage.getItem('shadowbets_pickmode');
       if (saved) {
         const { date, mode } = JSON.parse(saved);
-        if (date === new Date().toLocaleDateString()) return mode;
+        if (date === new Date().toLocaleDateString()) setPickMode(mode);
       }
     } catch (e) {}
-    return 'build';
-  });
+  }, []);
   const [tierThreshold, setTierThreshold] = useState(7);
   useEffect(() => {
     try {
@@ -2485,12 +2484,14 @@ export default function App() {
     if (sf === 'My Bets' && newTab === 'props' && propBetCount === 0) setSf('All');
   };
 
+  // Settings has no bottom-tab entry point right now (dropped per Nick's request —
+  // may get a way back in later). The tab/route and SettingsTab component are
+  // still here, just unreachable from the tab bar.
   const tabs = [
     { id: 'picks', label: 'Picks', icon: '📋' },
     { id: 'scores', label: 'Scores', icon: '🏟️' },
     { id: 'props', label: 'Props', icon: '🎯' },
     { id: 'results', label: 'Results', icon: '📊' },
-    { id: 'settings', label: 'Settings', icon: '⚙️' },
   ];
 
   // Picks/Scores/Results are self-contained tape screens with their own header,
@@ -2561,7 +2562,12 @@ export default function App() {
           />
         )}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
-        {data && tab === 'results' && resultType === 'Changelog' && <ChangelogTab />}
+        {data && tab === 'results' && resultType === 'Changelog' && (
+          <div className="tp">
+            <div className="ah"><b>Changelog</b><span className="clickable" onClick={() => setResultType('Games')}>BACK TO RESULTS</span></div>
+            <div style={{ padding: '10px 14px' }}><ChangelogTab /></div>
+          </div>
+        )}
         {data && tab === 'results' && resultType !== 'Changelog' && (
           resultsData
             ? <ResultsTab results={resultsData.gradedPicks} gradedProps={resultsData.gradedProps || []} isBet={isBet} isPropBet={isPropBet} lastUpdated={lastUpdated} onChangelog={() => setResultType('Changelog')} />
@@ -2573,7 +2579,7 @@ export default function App() {
       {/* Tab Bar */}
       <div className="tp tabs" style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 480, gridTemplateColumns: 'repeat(5, 1fr)', zIndex: 30,
+        width: '100%', maxWidth: 480, gridTemplateColumns: 'repeat(4, 1fr)', zIndex: 30,
       }}>
         {tabs.map(t => (
           <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => handleTabChange(t.id)} style={{ position: 'relative' }}>
