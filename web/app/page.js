@@ -186,7 +186,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .pips i{width:6px;height:6px;border-radius:50%;background:#252b31;flex:0 0 6px;font-style:normal}
     .pips i.t{background:var(--take)}
     .pips i.f{background:var(--fade)}
-    .pips em{font:500 9px/1 var(--mono);font-style:normal;color:var(--dim2);margin-left:2px}
+    .pips i.empty{background:var(--bg);border:1px solid var(--dim2)}
     .legend{display:flex;align-items:center;gap:13px;padding:7px 14px 8px;background:#0c0e11;border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
     .legend span{display:flex;align-items:center;gap:5px}
     .legend u{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:15px;border:1px solid var(--line2);border-radius:3px;background:#0d0f12;font:600 9px/1 var(--mono);color:#c4cad1}
@@ -1036,19 +1036,24 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
   const sorted = sortAlt ? [...sportFiltered].sort((a, b) => (a.gameDate || '').localeCompare(b.gameDate || '')) : sortGames(sportFiltered);
 
   const gameData = sorted.map(game => {
+    // gamePicks: every market the model has for this game (ExpandedGame's full
+    // context view). myPicks: just the ones actually taken/faded — the condensed
+    // row's pips, stake total, and live P/L must only ever reflect these, never
+    // the whole slate, or a game you have one market on reads as if you had all.
     const gamePicks = picks.filter(p => p.league === game.league && p.away === game.away && p.home === game.home && pickBelongs(p, game));
-    const displayPicks = gamePicks.map(p => isFade(p) ? flipPick(p) : p);
+    const myPicks = gamePicks.filter(p => isBet(p) || isFade(p));
+    const displayPicks = myPicks.map(p => isFade(p) ? flipPick(p) : p);
     const isPre = game.status === 'pre';
     const isLive = game.status === 'in';
     const isPost = game.status === 'post' || game.status === 'postponed';
     const key = `${game.league}|${game.away}@${game.home}|${game.gameDate || ''}`;
     let dayPL = 0;
-    for (let i = 0; i < gamePicks.length; i++) {
+    for (let i = 0; i < myPicks.length; i++) {
       if (isPre) continue;
       const status = getEffectiveStatus(displayPicks[i], game);
-      dayPL += status === 'winning' ? calcProfit(displayPicks[i].odds, gamePicks[i].units) : status === 'losing' ? -(gamePicks[i].units || 0) : 0;
+      dayPL += status === 'winning' ? calcProfit(displayPicks[i].odds, myPicks[i].units) : status === 'losing' ? -(myPicks[i].units || 0) : 0;
     }
-    return { game, gamePicks, displayPicks, isPre, isLive, isPost, key, dayPL };
+    return { game, gamePicks, myPicks, displayPicks, isPre, isLive, isPost, key, dayPL };
   });
 
   // Slate strip: final W-L and live W-L(-push) across ALL of today's positions,
@@ -1079,17 +1084,18 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
       </span>
     );
   };
-  const positionPips = (gamePicks) => {
-    if (!gamePicks.length) return <span className="pips"><i></i></span>;
-    const shown = gamePicks.slice(0, 3);
-    const extra = gamePicks.length - shown.length;
-    return (
-      <span className="pips">
-        {shown.map((p, i) => <i key={i} className={isFade(p) ? 'f' : 't'}></i>)}
-        {extra > 0 && <em>+{extra}</em>}
-      </span>
-    );
-  };
+  // Fixed ML / Spread / Total slots, always in that order, so the same
+  // position always lands in the same dot — filled (blue take / orange fade)
+  // if you have that market, a hollow ring if you don't.
+  const PIP_MARKETS = ['moneyline', 'spread', 'total'];
+  const positionPips = (myPicks) => (
+    <span className="pips">
+      {PIP_MARKETS.map(mkt => {
+        const p = myPicks.find(pk => (pk.betType || pk.market || '').toLowerCase() === mkt);
+        return <i key={mkt} className={p ? (isFade(p) ? 'f' : 't') : 'empty'}></i>;
+      })}
+    </span>
+  );
 
   const isEmpty = gameData.length === 0;
 
@@ -1120,16 +1126,16 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
       {gameData.map(d => d.key === openKey
         ? <ExpandedGame key={d.key} d={d} isBet={isBet} isFade={isFade} teamChip={teamChip} onClose={() => setExpandedKey(null)} />
         : (() => {
-          const { game, gamePicks, isPre, key } = d;
+          const { game, myPicks, isPre, key } = d;
           return (
             <div key={key} className={`acon${d.isLive ? ' live' : ''}`} onClick={() => setExpandedKey(key)}>
               <span className="lg">{game.league}</span>
               <span className="duo">{teamChip(game.away, game.league, true)}{teamChip(game.home, game.league, true)}</span>
               <span className="mt">{abbr(game.away)} <s>at</s> {abbr(game.home)}</span>
               <span className="sc">{isPre ? cleanTime(game.period) : `${game.awayScore}–${game.homeScore}`}</span>
-              {positionPips(gamePicks)}
-              {gamePicks.length > 0
-                ? <span className={`pos apnl ${isPre ? 'fl' : d.dayPL > 0 ? 'up' : d.dayPL < 0 ? 'dn' : 'fl'}`}>{isPre ? gamePicks.reduce((s, p) => s + (p.units || 0), 0).toFixed(2) : `${d.dayPL >= 0 ? '+' : ''}${d.dayPL.toFixed(2)}`}<em>u</em></span>
+              {positionPips(myPicks)}
+              {myPicks.length > 0
+                ? <span className={`pos apnl ${isPre ? 'fl' : d.dayPL > 0 ? 'up' : d.dayPL < 0 ? 'dn' : 'fl'}`}>{isPre ? myPicks.reduce((s, p) => s + (p.units || 0), 0).toFixed(2) : `${d.dayPL >= 0 ? '+' : ''}${d.dayPL.toFixed(2)}`}<em>u</em></span>
                 : <span className="pos" style={{ color: 'var(--dim2)' }}>—</span>}
             </div>
           );
