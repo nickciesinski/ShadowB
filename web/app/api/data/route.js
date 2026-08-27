@@ -113,11 +113,16 @@ export async function GET() {
     // Supabase queries for the MAIN load only (today-through-next-week picks +
     // odds snapshot). Graded-history queries were moved to /api/results. Each
     // resolves to null on error so the Sheets fallbacks below still work.
+    let sbTodayDebug = { hasSb: !!sb, urlHost: SUPABASE_URL ? new URL(SUPABASE_URL).host : null };
     const sbTodayQ = sb
       ? sb.from('performance_log')
           .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result')
           .gte('date', isoToday).lte('date', isoWeekAhead)
-          .then(r => (r.error ? null : r.data)).catch(() => null)
+          .then(r => {
+            sbTodayDebug.error = r.error ? r.error.message : null;
+            sbTodayDebug.count = r.data ? r.data.length : null;
+            return r.error ? null : r.data;
+          }).catch(e => { sbTodayDebug.thrown = e.message; return null; })
       : Promise.resolve(null);
 
     const sbSnapQ = sb
@@ -186,8 +191,9 @@ export async function GET() {
       props,
       todayGames,
       lastUpdated: new Date().toISOString(),
+      _debug: sbTodayDebug,
     }, {
-      headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' },
+      headers: { 'Cache-Control': 'no-store' },
     });
   } catch (err) {
     console.error('API error:', err);
