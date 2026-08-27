@@ -661,11 +661,15 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   const allPicks = dedup(picks);
   const pool = minUnitOn ? allPicks.filter(p => p.units >= 0.3) : allPicks;
 
-  // Effective state: manual myBets entry wins; otherwise the rule default
-  // (take if tier >= threshold, else pass). This is what "commits" previews.
+  // Effective state: an explicit manual tri-state tap always wins ('pass'
+  // included — it's how you exclude a pick the threshold rule auto-selected);
+  // otherwise the rule default (take if tier >= threshold, else pass). This
+  // is both what the tri-state row displays and what "Take" commits.
   const effState = (p) => {
     const manual = myBets.get(pickKey(p));
-    if (manual) return manual === 'fade' ? 'fade' : 'take';
+    if (manual === 'pass') return 'pass';
+    if (manual === 'fade') return 'fade';
+    if (manual === 'bet') return 'take';
     return tierOf(p) >= tierThreshold ? 'take' : 'pass';
   };
 
@@ -753,11 +757,20 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     <span className="tm ou">{isOver ? 'O' : 'U'}</span>
   );
 
-  const renderBuildRow = (p, idx, faded, selected) => {
+  const renderBuildRow = (p, idx) => {
+    const eff = effState(p);
+    const faded = eff === 'fade';
+    const selected = eff === 'take';
     const display = faded ? findOppositePick(p, allPicks) : p;
     const { code, isTotal, isOver } = marketMeta(display);
     const tier = tierOf(p);
     const state = faded ? 'F' : selected ? 'T' : '-';
+    // Tapping the button that already matches the effective state clears the
+    // manual override (reverts to whatever the threshold rule says); tapping
+    // any other button sets an explicit override — 'pass' included, so a
+    // rule-auto-selected pick can actually be excluded, not just left alone.
+    const manual = myBets.get(pickKey(p));
+    const tap = (val) => setPickState(p, manual === val ? null : val);
     return (
       <div key={pickKey(p) + idx} className={`r${idx === 0 ? ' first' : ''}${selected ? ' take' : ''}${faded ? ' fade' : ''}`}>
         <b className={`tick ${tierHeightClass(tier)}`}></b>
@@ -769,9 +782,9 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
         <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
         <span className="p num">{fmt(display.odds)}</span>
         <div className="tri">
-          <s className={state === '-' ? 'on' : ''} onClick={() => setPickState(p, null)}>–</s>
-          <s className={state === 'T' ? 'on' : ''} onClick={() => setPickState(p, 'bet')}>✓</s>
-          <s className={state === 'F' ? 'onf' : ''} onClick={() => setPickState(p, 'fade')}>F</s>
+          <s className={state === '-' ? 'on' : ''} onClick={() => tap('pass')}>–</s>
+          <s className={state === 'T' ? 'on' : ''} onClick={() => tap('bet')}>✓</s>
+          <s className={state === 'F' ? 'onf' : ''} onClick={() => tap('fade')}>F</s>
         </div>
       </div>
     );
@@ -931,7 +944,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
                 <span className="tme">{cleanTime(g.startTime, showDate)}</span>
               </div>
               {shown.map((p, i) => pickMode === 'build'
-                ? renderBuildRow(p, i, isFade(p), isBet(p) && !isFade(p))
+                ? renderBuildRow(p, i)
                 : renderWatchRow(p, i))}
               {hidden.length > 0 && (
                 <div className="more" onClick={() => setExpandedGames(prev => ({ ...prev, [gi]: true }))}>
@@ -2350,7 +2363,11 @@ export default function App() {
       return next;
     });
   };
-  const isBet = (p) => myBets.has(pickKey(p));
+  // Value-specific, not .has() — myBets can also hold an explicit 'pass'
+  // entry (a manual exclusion from the Picks threshold rule; see PicksTab's
+  // effState), which must never register as a real position anywhere else
+  // in the app (Scores, Results, badges, etc.).
+  const isBet = (p) => myBets.get(pickKey(p)) === 'bet';
   const isFade = (p) => myBets.get(pickKey(p)) === 'fade';
   const isPropBet = (p) => {
     const v = myBets.get(propKey(p));
