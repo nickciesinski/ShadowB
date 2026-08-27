@@ -145,9 +145,9 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .lr .un.w{color:var(--win)}.lr .un.l{color:var(--loss)}.lr .un.p{color:var(--dim2)}
     .tabs{display:grid;border-top:1px solid var(--line);background:var(--panel);padding:9px 0 calc(10px + env(safe-area-inset-bottom, 8px))}
     .tabs button{background:none;border:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;position:relative}
-    .tabs .ti{width:16px;height:16px;border:1.4px solid var(--dim2);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:11px}
+    .tabs .ti{width:20px;height:20px;object-fit:contain;opacity:.4;filter:grayscale(1);transition:opacity .15s,filter .15s}
     .tabs .tl{font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
-    .tabs .on .ti{border-color:var(--take);background:rgba(76,154,255,.22);color:var(--take)}
+    .tabs .on .ti{opacity:1;filter:none}
     .tabs .on .tl{color:var(--take)}
     .tabs .badge{position:absolute;top:-2px;right:14px;background:var(--fade);color:#2b1200;font:700 8px/1 var(--mono);width:13px;height:13px;border-radius:7px;display:flex;align-items:center;justify-content:center}
     .sr{display:grid;grid-template-columns:3px 1fr 46px 42px 50px;gap:9px;align-items:center;height:44px;padding-right:12px;border-top:1px solid #14171b}
@@ -2574,10 +2574,10 @@ export default function App() {
   // may get a way back in later). The tab/route and SettingsTab component are
   // still here, just unreachable from the tab bar.
   const tabs = [
-    { id: 'picks', label: 'Picks' },
-    { id: 'scores', label: 'Scores' },
-    { id: 'props', label: 'Props' },
-    { id: 'results', label: 'Results' },
+    { id: 'picks', label: 'Picks', icon: '/icons/sonic.png' },
+    { id: 'scores', label: 'Scores', icon: '/icons/shadow.png' },
+    { id: 'props', label: 'Props', icon: '/icons/knuckles.png' },
+    { id: 'results', label: 'Results', icon: '/icons/tails.png' },
   ];
 
   // Picks/Scores/Results are self-contained tape screens with their own header,
@@ -2689,7 +2689,7 @@ export default function App() {
       }}>
         {tabs.map(t => (
           <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => handleTabChange(t.id)} style={{ position: 'relative' }}>
-            <span className="ti"></span>
+            <img className="ti" src={t.icon} alt="" />
             <span className="tl">{t.label}</span>
             {t.id === 'scores' && closeCount > 0 && <span className="badge">{closeCount}</span>}
             {t.id === 'scores' && betCount > 0 && closeCount === 0 && <span className="badge" style={{ background: 'var(--take)', color: '#03142c' }}>{betCount}</span>}
