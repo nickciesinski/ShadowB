@@ -186,7 +186,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .pips i{width:6px;height:6px;border-radius:50%;background:#252b31;flex:0 0 6px;font-style:normal}
     .pips i.t{background:var(--take)}
     .pips i.f{background:var(--fade)}
-    .pips i.empty{background:var(--bg);border:1px solid var(--dim2)}
+    .pips i.off{background:var(--bg);border:1px solid var(--dim2)}
     .legend{display:flex;align-items:center;gap:13px;padding:7px 14px 8px;background:#0c0e11;border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
     .legend span{display:flex;align-items:center;gap:5px}
     .legend u{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:15px;border:1px solid var(--line2);border-radius:3px;background:#0d0f12;font:600 9px/1 var(--mono);color:#c4cad1}
@@ -1092,7 +1092,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
     <span className="pips">
       {PIP_MARKETS.map(mkt => {
         const p = myPicks.find(pk => (pk.betType || pk.market || '').toLowerCase() === mkt);
-        return <i key={mkt} className={p ? (isFade(p) ? 'f' : 't') : 'empty'}></i>;
+        return <i key={mkt} className={p ? (isFade(p) ? 'f' : 't') : 'off'}></i>;
       })}
     </span>
   );
