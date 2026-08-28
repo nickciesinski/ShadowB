@@ -756,7 +756,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     );
   };
   const ouChip = (isOver) => (
-    <span className="tm ou">{isOver ? 'O' : 'U'}</span>
+    <span className="tm ou">{isOver ? '▲' : '▼'}</span>
   );
 
   const renderBuildRow = (p, idx) => {
@@ -1112,10 +1112,10 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
         const display = faded ? flipPick(p) : p;
         const isTotal = mkt === 'total';
         const url = isTotal ? null : teamLogo(teamOnly(display), display.league);
-        const letter = isTotal ? ((display.pick || '').toLowerCase().includes('over') ? 'O' : 'U') : null;
+        const glyph = isTotal ? ((display.pick || '').toLowerCase().includes('over') ? '▲' : '▼') : null;
         return (
           <span key={mkt} className={`pslot pchip${faded ? ' fd' : ''}`}>
-            {url ? <img src={url} alt="" /> : <b>{letter || (teamOnly(display) || '').slice(0, 3).toUpperCase()}</b>}
+            {url ? <img src={url} alt="" /> : <b>{glyph || (teamOnly(display) || '').slice(0, 3).toUpperCase()}</b>}
           </span>
         );
       })}
@@ -1200,7 +1200,7 @@ function ExpandedGame({ d, isBet, isFade, teamChip, onClose }) {
             <b className={`tick ${tierHeightClass(tierOf(p))}`}></b>
             <div className="rm">
               <span className="mkt">{code}</span>
-              {isTotal ? <span className="tm ou">{isOver ? 'O' : 'U'}</span> : teamChip(display.pick, p.league)}
+              {isTotal ? <span className="tm ou">{isOver ? '▲' : '▼'}</span> : teamChip(display.pick, p.league)}
               <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · fade</i>}</span>
             </div>
             <span className="p num">{fmt(display.odds)}</span>
