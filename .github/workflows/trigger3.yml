@@ -1,8 +1,11 @@
 name: Trigger 3 — Odds + Grade + CLV
 
 on:
-  schedule:
-    - cron: '30 6 * * *'  # 2:30 AM EDT = 06:30 UTC
+  # 2026-08-28: cron removed. This trigger now runs as a STEP in
+  # morning-chain.yml, which fixed both the ordering bug and the
+  # scheduled-run drops. Kept dispatch-only so it can still be run on its own
+  # for debugging. Do NOT re-add a schedule here — that reintroduces the
+  # slot-count problem and the unordered-chain problem at the same time.
   workflow_dispatch:
 
 jobs:

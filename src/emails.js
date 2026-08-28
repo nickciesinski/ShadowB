@@ -199,11 +199,22 @@ async function sendDailyPicksEmail() {
 </html>
 `;
 
+  // A zero-pick slate is almost never a real "quiet day" — it means trigger4
+  // did not write anything before this ran. That used to be invisible: the old
+  // schedule fired this email on its own cron 30 min after trigger4's, so
+  // whenever GitHub delivered them out of order Nick got a normal-looking
+  // "0 Recommended Plays" email at 2 AM and never got a second one. Say it in
+  // the subject so a broken pipeline cannot masquerade as a slow slate.
+  const noPicks = allPicks.length === 0;
+  const subject = noPicks
+    ? `⚠️ Shadow Bets — NO PICKS GENERATED — ${todayFmt} (check morning-chain run)`
+    : `🎯 Shadow Bets — ${approved.length} Recommended Plays — ${todayFmt}`;
+
   const transporter = getTransporter();
   await transporter.sendMail({
     from: GMAIL_USER,
     to: EMAIL_RECIPIENTS.join(', '),
-    subject: `🎯 Shadow Bets — ${approved.length} Recommended Plays — ${todayFmt}`,
+    subject,
     html,
   });
 

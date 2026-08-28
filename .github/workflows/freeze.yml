@@ -1,8 +1,28 @@
-name: CLV Freeze (hourly)
+name: CLV Freeze (every 4h)
 
+# WAS HOURLY, AND THAT WAS THE ROOT CAUSE OF THE AUG 2026 PICKS OUTAGE.
+#
+# 24 slots/day from this one workflow took the repo from ~14 scheduled runs/day
+# (May-July: rock solid, picks email landed 09:28-10:10 UTC every single day) to
+# ~45/day. GitHub responded by dropping runs. Evidence from Supabase trigger_log:
+# this job never once achieved its 24 runs/day even at its healthiest (best was
+# 23), and by 2026-08-27 it was landing 2 runs/day while the rest of the repo's
+# scheduled work was being batch-delivered 8-11 hours late or dropped outright.
+#
+# Every 4h = 6 slots/day. Combined with folding the eight morning triggers into
+# morning-chain.yml, that puts the repo back near the ~20 runs/day that ran
+# without incident for three months.
+#
+# BEFORE YOU MAKE THIS MORE FREQUENT AGAIN: the CLV freeze only needs to catch a
+# ticket between its game starting and the line being lost. 4h is a coarser
+# last_seen roll, which is a real but small accuracy cost. Adding slots back is
+# not free — it is what broke the picks. See also trigger19.yml's header, where
+# seven slots caused GitHub to queue and cancel runs back in August.
+#
+# :20 past is deliberate — :00 and :30 are GitHub's highest-load cron minutes.
 on:
   schedule:
-    - cron: '0 * * * *'  # top of every hour
+    - cron: '20 */4 * * *'  # 6x daily: 00:20, 04:20, 08:20, 12:20, 16:20, 20:20 UTC
   workflow_dispatch:
 
 jobs:

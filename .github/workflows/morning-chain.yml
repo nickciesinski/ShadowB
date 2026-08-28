@@ -1,0 +1,106 @@
+name: Morning Chain — Stats → Predictions → Picks Email
+
+# THE ONE JOB THAT PRODUCES NICK'S MORNING PICKS.
+#
+# WHY THIS IS A SINGLE WORKFLOW. This used to be eight separately-cron'd
+# workflows (trigger1,2,3,4,6,7,8,9) fired 30 minutes apart from 05:30 to 09:00
+# UTC, chained by nothing but wall-clock hope. Two things killed that design:
+#
+#   1. ORDER WAS NEVER GUARANTEED. GitHub's scheduled-run jitter routinely ran
+#      25-45 min late, and on 2026-08-27 it batch-delivered a 10.5h backlog:
+#      trigger4 (predictions) ran at 15:13 UTC, BEFORE trigger1/2/3 (16:40,
+#      17:26, 17:51). Predictions were built on the previous day's player stats,
+#      team stats, and pre-refresh odds. Nobody noticed because every job
+#      reported SUCCESS.
+#   2. SLOT COUNT WAS THE ROOT CAUSE. Eight slots here were part of the ~45
+#      scheduled runs/day this repo was asking GitHub for. See the header on
+#      freeze.yml for the full accounting — GitHub started dropping ~90% of
+#      them and the picks email landed at 19:40 UTC (12:40 PM PT) instead of
+#      ~09:30 UTC. Collapsing these eight into one removes seven slots.
+#
+# The whole chain takes ~2.5 minutes of actual compute (the eight jobs' summed
+# durations). Spreading that over 3.5 hours bought nothing and cost correctness.
+#
+# ORDER MATTERS AND IS NOW ENFORCED BY STEP ORDER: stats (1,2) and odds (3) must
+# land before predictions (4); props/combos/tiers (6,7,8) enrich the sheet before
+# the email (9) reads it. Do not reorder without understanding those reads.
+#
+# 07:05 UTC = 12:05 AM PDT / 11:05 PM PST, ~5 hours of cushion before Nick's
+# 5 AM PT deadline even with GitHub's worst routine jitter. The :05 is
+# deliberate — :00 and :30 are GitHub's highest-load cron minutes.
+on:
+  schedule:
+    - cron: '5 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Full env block on purpose. Every trigger loads all modules, so
+    # validateConfig() throws and the step exits 1 if any of these are missing.
+    # Do not trim this to "just what each step needs" — that is exactly how
+    # freeze.yml failed silently for its first 15 runs.
+    env:
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+      RANKINGS_SPREADSHEET_ID: ${{ secrets.RANKINGS_SPREADSHEET_ID }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+
+      - name: Smoke-test approval engine
+        run: node -e "require('./src/approval-engine')"
+
+      # ── Data refresh ─────────────────────────────────────────────
+      # continue-on-error: a flaky ESPN/odds call must NOT cost Nick the whole
+      # slate. Predictions run on slightly staler inputs; that beats no picks.
+      # The step still shows red in the run summary, so failures stay visible.
+      - name: Trigger 1 — Update player stats
+        run: node src/triggers.js trigger1
+        continue-on-error: true
+
+      - name: Trigger 2 — Update team stats
+        run: node src/triggers.js trigger2
+        continue-on-error: true
+
+      - name: Trigger 3 — Odds + grade yesterday + CLV snapshot
+        run: node src/triggers.js trigger3
+        continue-on-error: true
+
+      # ── Predictions: the step that actually writes the picks ─────
+      # NO continue-on-error. If this fails there is nothing to email and the
+      # run must go red.
+      - name: Trigger 4 — MLB + NBA predictions
+        run: node src/triggers.js trigger4
+
+      # ── Enrichment ───────────────────────────────────────────────
+      - name: Trigger 6 — Player props
+        run: node src/triggers.js trigger6
+        continue-on-error: true
+
+      - name: Trigger 7 — Platform combos
+        run: node src/triggers.js trigger7
+        continue-on-error: true
+
+      - name: Trigger 8 — Player tiers
+        run: node src/triggers.js trigger8
+        continue-on-error: true
+
+      # ── The email ────────────────────────────────────────────────
+      # if: always() — even if trigger4 blew up, send. sendDailyPicksEmail()
+      # flags a zero-pick slate in the subject line, so a silent failure
+      # upstream still reaches Nick as an obviously-wrong email rather than as
+      # no email at all.
+      - name: Trigger 9 — Send daily picks email
+        if: always()
+        run: node src/triggers.js trigger9
