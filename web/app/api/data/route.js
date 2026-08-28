@@ -125,7 +125,7 @@ export async function GET() {
     // resolves to null on error so the Sheets fallbacks below still work.
     const sbTodayQ = sb
       ? sb.from('performance_log')
-          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result')
+          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices')
           .gte('date', isoToday).lte('date', isoWeekAhead)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
@@ -164,6 +164,11 @@ export async function GET() {
           odds: r.odds || -110, units: r.final_units || 0,
           confidence: r.confidence != null ? String(r.confidence) : '', result: r.result || '',
           unitReturn: 0,
+          // 3-way (soccer) side selection: `selection` is which of home/draw/away the
+          // model took, `altPrices` the American price for all three. Null on US-sports
+          // rows and on any soccer row written before the 2026-08-28 migration — the
+          // app treats absent prices as "side unavailable", never as a number to guess.
+          selection: r.selection || '', altPrices: r.alt_prices || null,
         };
       });
     }

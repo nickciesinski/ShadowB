@@ -113,6 +113,19 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .tri s:last-child{border-right:0}
     .tri s.on{background:var(--take);color:#03142c}
     .tri s.onf{background:var(--fade);color:#2b1200}
+    /* 3-way soccer moneyline: four outcome segments (– H D A) instead of three
+       action segments. The row borrows 20px from the name column so each segment
+       keeps roughly the width the 3-segment control has, rather than shrinking to
+       an untappable sliver. */
+    .tri.quad{grid-template-columns:repeat(4,1fr)}
+    .r.q3{grid-template-columns:3px 1fr 52px 44px 88px}
+    /* Marker dot = the side the model itself took. Tapping it is a Take; tapping
+       any other segment is a Fade to that side. */
+    .tri s.mdl{position:relative}
+    .tri s.mdl::after{content:'';position:absolute;top:5px;left:50%;margin-left:-1.5px;width:3px;height:3px;border-radius:2px;background:var(--dim2)}
+    .tri s.mdl.on::after,.tri s.mdl.onf::after{background:rgba(0,0,0,.5)}
+    /* No price for this side (pre-migration row, or a match never quoted 3-way). */
+    .tri s.off{color:#333940;background:#0a0c0e;cursor:default}
     .r.take{background:rgba(76,154,255,.05)}
     .r.take .tick{background:var(--take)}
     .r.take .u{color:#cfe4ff}
@@ -206,6 +219,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .pchip.fd{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),inset 0 -1.5px 0 var(--fade)}
     .legend{display:flex;align-items:center;gap:13px;padding:7px 14px 8px;background:#0c0e11;border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
     .legend span{display:flex;align-items:center;gap:5px}
+    .legend u + u{margin-left:-4px}
     .legend u{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:15px;border:1px solid var(--line2);border-radius:3px;background:#0d0f12;font:600 9px/1 var(--mono);color:#c4cad1}
     .legend u.on{background:var(--take);border-color:var(--take);color:#03142c}
     .legend u.onf{background:var(--fade);border-color:var(--fade);color:#2b1200}
@@ -219,6 +233,12 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
 
 // ── Constants ───────────────────────────────────────────────────────
 const SPORTS = ['All', 'NBA', 'NHL', 'MLB', 'NFL', 'EPL'];
+// Soccer leagues are THREE-way (home/draw/away) everywhere the US sports are
+// two-way. Gate on this set rather than `league === 'EPL'` — ShadowB-Soccer's
+// config.js already has LaLiga/Serie A/Bundesliga/UCL/MLS queued behind
+// `enabled: false`, and each one flips on with a config edit, not a code change.
+const SOCCER_LEAGUES = new Set(['EPL', 'LALIGA', 'SERIEA', 'BUNDESLIGA', 'UCL', 'MLS']);
+const isSoccer = (league) => SOCCER_LEAGUES.has(league);
 // PLATFORMS is built dynamically from props data (see bookPills in App)
 const LEAGUE_COLORS = { NBA: '#F97316', NHL: '#6B7280', MLB: '#1D4ED8', NFL: '#795548', EPL: '#37003C' };
 const LEAGUE_TEXT = { NBA: 'white', NHL: 'white', MLB: 'white', NFL: 'white', EPL: 'white' }; // all league badges dark enough for white text
@@ -336,7 +356,7 @@ function getPickStatus(pick, game) {
     const pickTeam = (pick.pick || '').toLowerCase();
     const home = (game.home || '').toLowerCase();
     const away = (game.away || '').toLowerCase();
-    if (pick.league === 'EPL') {
+    if (isSoccer(pick.league)) {
       // 3-way: Draw is a real outcome, not a push.
       const level = aS === hS;
       if (pickTeam === 'draw') return level ? 'winning' : 'losing';
@@ -392,8 +412,8 @@ function getLiveState(pick, game) {
   const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
 
   if (bt === 'moneyline') {
-    // EPL is 3-way: a "Draw" pick trends well while level, poorly once someone leads.
-    if (pick.league === 'EPL' && pickTeam === 'draw') return aS === hS ? 'good' : 'bad';
+    // Soccer is 3-way: a "Draw" pick trends well while level, poorly once someone leads.
+    if (isSoccer(pick.league) && pickTeam === 'draw') return aS === hS ? 'good' : 'bad';
     if (aS === hS) return 'neutral';
     const leadOwn = pickedHome ? hS - aS : aS - hS;
     return leadOwn > 0 ? 'good' : 'bad';
@@ -495,7 +515,7 @@ function getGameProgress(game) {
   if (!game || game.status === 'pre') return 0;
   if (game.status === 'post' || game.status === 'postponed') return 1;
   const pNum = game.periodNum || 0;
-  const totalPeriods = { NBA: 4, NHL: 3, NFL: 4, MLB: 9, EPL: 2 }[game.league] || 4;
+  const totalPeriods = isSoccer(game.league) ? 2 : ({ NBA: 4, NHL: 3, NFL: 4, MLB: 9 }[game.league] || 4);
   // pNum is 1-indexed current period; for MLB "Top 5th" = period 5
   // Base progress = completed periods / total
   const base = Math.max(0, (pNum - 1)) / totalPeriods;
@@ -522,6 +542,10 @@ function calcProfit(odds, units) {
 // from before stake stamping) or a stamped object { state, stakeUsed, at }.
 // Every reader has to accept both shapes.
 const entryState = (v) => (typeof v === 'string' ? v : v && v.state);
+// Which of home/draw/away you put yourself on (3-way soccer moneylines only).
+// Undefined on every US-sports entry and on anything saved before 2026-08-28 —
+// callers fall back to the model's own side, which is the pre-existing behaviour.
+const entrySide = (v) => (v && typeof v === 'object' ? v.side : undefined);
 const entryStake = (v, p) => (v && typeof v === 'object' && v.stakeUsed != null)
   ? v.stakeUsed
   : (p.units || 0); // legacy/pre-stamp bet: fall back to model units
@@ -676,7 +700,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
+function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, displayPick, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
@@ -721,8 +745,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   let winU = 0, loseU = 0, liveN = 0, finalOrLiveN = 0;
   const tape = { win: 0, mid: 0, loss: 0, pre: 0 }; // unit sums, not position counts — see fix #9
   for (const { p, game } of posWithGame) {
-    const faded = isFade(p);
-    const display = faded ? findOppositePick(p, allPicks) : p;
+    const display = displayPick(p, allPicks);
     if (!game || game.status === 'pre') { tape.pre += stake(p); continue; }
     finalOrLiveN++;
     if (game.status === 'in') liveN++;
@@ -781,12 +804,18 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   const ouChip = (isOver) => (
     <span className="tm ou">{isOver ? '▲' : '▼'}</span>
   );
+  // The draw has no crest to show, so it gets the "level" glyph rather than
+  // teamChip's 3-letter fallback (which would render a meaningless "DRA").
+  const drawChip = () => <span className="tm ou">=</span>;
+  const sideChip = (display, p, isTotal, isOver) => (
+    isTotal ? ouChip(isOver) : isDrawPick(display) ? drawChip() : teamChip(display.pick, p.league)
+  );
 
   const renderBuildRow = (p, idx) => {
     const eff = effState(p);
     const faded = eff === 'fade';
     const selected = eff === 'take';
-    const display = faded ? findOppositePick(p, allPicks) : p;
+    const display = displayPick(p, allPicks);
     const { code, isTotal, isOver } = marketMeta(display);
     const tier = tierOf(p);
     const state = faded ? 'F' : selected ? 'T' : '-';
@@ -796,30 +825,72 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     // rule-auto-selected pick can actually be excluded, not just left alone.
     const manual = entryState(myBets.get(pickKey(p)));
     const tap = (val) => setPickState(p, manual === val ? null : val);
+
+    // A soccer moneyline has three outcomes, so its control names the OUTCOMES
+    // (– H D A) instead of the two-way actions (– ✓ F). The model's own side
+    // carries a marker dot; tapping it means you're with the model, tapping any
+    // other means you're fading to that side. This is what makes the draw always
+    // reachable — including the awkward case where the draw IS the model's pick,
+    // which needs no special handling here: D simply wears the marker and H/A
+    // become the two fade options.
+    const threeWay = isThreeWay(p);
+    const mSide = threeWay ? modelSide(p) : null;
+    const selSide = threeWay && eff !== 'pass' ? (entrySide(myBets.get(pickKey(p))) || mSide) : null;
+    const tapSide = (sd) => {
+      const want = sd === mSide ? 'bet' : 'fade';
+      if (manual === want && selSide === sd) setPickState(p, null);
+      else setPickState(p, want, sd);
+    };
+
     return (
-      <div key={pickKey(p) + idx} className={`r${idx === 0 ? ' first' : ''}${selected ? ' take' : ''}${faded ? ' fade' : ''}`}>
+      <div key={pickKey(p) + idx} className={`r${idx === 0 ? ' first' : ''}${selected ? ' take' : ''}${faded ? ' fade' : ''}${threeWay ? ' q3' : ''}`}>
         <b className={`tick ${tierHeightClass(tier)}`}></b>
         <div className="rm">
           <span className="mkt">{code}</span>
-          {isTotal ? ouChip(isOver) : teamChip(display.pick, p.league)}
-          <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · fading {p.pick}</i>}</span>
+          {sideChip(display, p, isTotal, isOver)}
+          {/* Two-way rows spell out what you're fading. Three-way rows don't: the
+              name column is ~64px on a phone, so "Draw · fading Chelsea" just
+              ellipses into noise — and the control right there already marks the
+              model's side with a dot, which is the same information, legibly. */}
+          <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && !threeWay && <i> · fading {p.pick}</i>}</span>
         </div>
         {sizing === 'model'
           ? <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
           : <span className="u num conv">{(p.units || 0).toFixed(2)}</span>}
         <span className="p num">{fmt(display.odds)}</span>
-        <div className="tri">
-          <s className={state === '-' ? 'on' : ''} onClick={() => tap('pass')}>–</s>
-          <s className={state === 'T' ? 'on' : ''} onClick={() => tap('bet')}>✓</s>
-          <s className={state === 'F' ? 'onf' : ''} onClick={() => tap('fade')}>F</s>
-        </div>
+        {threeWay ? (
+          <div className="tri quad">
+            <s className={state === '-' ? 'on' : ''} onClick={() => tap('pass')}>–</s>
+            {SIDES.map(sd => {
+              // No price for a side means we genuinely don't have it (pre-migration
+              // row, or a match the feed never quoted 3-way). Show it dead rather
+              // than let anyone bet against a number we made up.
+              const avail = sideAvailable(p, sd);
+              const cls = [
+                selSide === sd ? (sd === mSide ? 'on' : 'onf') : '',
+                sd === mSide ? 'mdl' : '',
+                avail ? '' : 'off',
+              ].filter(Boolean).join(' ');
+              return (
+                <s key={sd} className={cls} title={avail ? `${sideLabel(p, sd)} ${fmt(sidePrice(p, sd))}` : 'no price for this side'}
+                   onClick={avail ? () => tapSide(sd) : undefined}>{sd[0].toUpperCase()}</s>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="tri">
+            <s className={state === '-' ? 'on' : ''} onClick={() => tap('pass')}>–</s>
+            <s className={state === 'T' ? 'on' : ''} onClick={() => tap('bet')}>✓</s>
+            <s className={state === 'F' ? 'onf' : ''} onClick={() => tap('fade')}>F</s>
+          </div>
+        )}
       </div>
     );
   };
 
   const renderWatchRow = (p, idx) => {
     const faded = isFade(p);
-    const display = faded ? findOppositePick(p, allPicks) : p;
+    const display = displayPick(p, allPicks);
     const { code, isTotal, isOver } = marketMeta(display);
     const tier = tierOf(p);
     const game = findGameForPick(liveGames, matchupGames, p);
@@ -832,7 +903,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
         <b className={`tick ${tierHeightClass(tier)}`}></b>
         <div className="rm">
           <span className="mkt">{code}</span>
-          {isTotal ? ouChip(isOver) : teamChip(display.pick, p.league)}
+          {sideChip(display, p, isTotal, isOver)}
           <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
         </div>
         <span className="p num">{fmt(display.odds)}</span>
@@ -967,6 +1038,14 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
           <span style={{ marginLeft: 'auto' }}><i>Tick = tier</i></span>
         </div>
       )}
+      {/* The –/✓/F legend above doesn't describe a soccer moneyline, whose control
+          names the three outcomes instead. Only shown when such a row is on screen. */}
+      {pickMode === 'build' && visible.some(isThreeWay) && (
+        <div className="legend">
+          <span><u className="on">H</u><u>D</u><u>A</u><i>Home · draw · away</i></span>
+          <span style={{ marginLeft: 'auto' }}><i>Dot = model’s side</i></span>
+        </div>
+      )}
 
       {pickMode === 'build' && sizing !== 'model' && (
         <div className="consec">
@@ -1033,8 +1112,75 @@ function findOppositePick(p, allPicks) {
   return flipPick(p); // fallback to approximation
 }
 
+// ── 3-way (soccer) side selection ───────────────────────────────────
+// A soccer moneyline has THREE outcomes, but the model logs only one pick per
+// match (its best-edge side). Before 2026-08-28 putting yourself on a different
+// side ran through flipPick() below — a two-way helper that swaps home/away and
+// inverts the odds sign. That can't express a draw at all, and the inverted
+// price is fiction in a 3-outcome market. Now the ledger row carries
+// `altPrices` ({home,draw,away} American odds, all de-vigged the same way the
+// pick's own `odds` is), and these helpers read the real number.
+const SIDES = ['home', 'draw', 'away'];
+
+function isThreeWay(p) {
+  return isSoccer(p.league) && (p.betType || p.market || '').toLowerCase() === 'moneyline';
+}
+
+// Which side the MODEL took. Prefer the explicit `selection` column; fall back to
+// matching the pick text against the team names for rows written before it existed.
+function modelSide(p) {
+  if (p.selection && SIDES.includes(p.selection)) return p.selection;
+  const t = (p.pick || '').toLowerCase().trim();
+  if (t === 'draw') return 'draw';
+  const home = (p.home || '').toLowerCase();
+  if (t && home && (t.includes(home) || home.includes(t))) return 'home';
+  return 'away';
+}
+
+// A rendered pick is the draw when its text says so — true for the model's own
+// draw pick and for one you switched to, on new rows and legacy rows alike.
+const isDrawPick = (d) => (d.pick || '').toLowerCase().trim() === 'draw';
+
+function sideLabel(p, side) {
+  return side === 'draw' ? 'Draw' : side === 'home' ? p.home : p.away;
+}
+
+// The price for one side. The model's own side is quoted from `odds` (authoritative,
+// and present on every row ever written); the other two come from altPrices. Returns
+// null when we genuinely don't have it — callers must disable the side, not guess.
+function sidePrice(p, side) {
+  if (side === modelSide(p)) return p.odds ?? null;
+  const v = p.altPrices && p.altPrices[side];
+  return Number.isFinite(v) ? v : null;
+}
+
+function sideAvailable(p, side) {
+  return sidePrice(p, side) != null;
+}
+
+// Build the pick object as if the model had taken `side` — real name, real price.
+function pickForSide(p, side) {
+  if (side === modelSide(p)) return p;
+  return { ...p, pick: sideLabel(p, side), odds: sidePrice(p, side), selection: side };
+}
+
+// THE single place that answers "which pick object do I render for this row?".
+// Every surface (Picks build/watch rows, Scores pips, expanded game, P/L maths)
+// goes through this, so a position can never display as one side here and another
+// side there. `allPicks` is optional: it's only used by the two-way path, to find
+// a real opposite-side row before falling back to flipPick's approximation.
+function displayPickFor(p, entry, allPicks) {
+  if (isThreeWay(p)) {
+    const side = entrySide(entry) || modelSide(p);
+    return sideAvailable(p, side) ? pickForSide(p, side) : p;
+  }
+  if (entryState(entry) !== 'fade') return p;
+  return allPicks ? findOppositePick(p, allPicks) : flipPick(p);
+}
+
 // ── Scores Tab ──────────────────────────────────────────────────────
-// Flip a pick to the opposite side (for fades)
+// Flip a pick to the opposite side (for fades). TWO-WAY MARKETS ONLY — soccer
+// moneylines must go through pickForSide() above, which has real prices.
 function flipPick(p) {
   const bt = (p.betType || p.market || '').toLowerCase();
   if (bt === 'moneyline') {
@@ -1069,7 +1215,7 @@ function teamOnly(p) {
 // One game open in the tape at a time; every other game is a condensed row
 // carrying a fixed ML/Spread/Total pip cluster (team mark or O/U per held
 // slot, faint dot when empty).
-function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
+function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, stake }) {
   const hasAnyPosition = picks.some(p => isBet(p) || isFade(p));
   const [sf, setSf] = useState(() => (hasAnyPosition ? 'My Bets' : 'All'));
   const [sortAlt, setSortAlt] = useState(false);
@@ -1099,7 +1245,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
     // the whole slate, or a game you have one market on reads as if you had all.
     const gamePicks = picks.filter(p => p.league === game.league && p.away === game.away && p.home === game.home && pickBelongs(p, game));
     const myPicks = gamePicks.filter(p => isBet(p) || isFade(p));
-    const displayPicks = myPicks.map(p => isFade(p) ? flipPick(p) : p);
+    const displayPicks = myPicks.map(p => displayPick(p, picks));
     const isPre = game.status === 'pre';
     const isLive = game.status === 'in';
     const isPost = game.status === 'post' || game.status === 'postponed';
@@ -1121,7 +1267,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
     if (g.status === 'pre') continue;
     const gPicks = picks.filter(p => p.league === g.league && p.away === g.away && p.home === g.home && pickBelongs(p, g) && (isBet(p) || isFade(p)));
     for (const p of gPicks) {
-      const disp = isFade(p) ? flipPick(p) : p;
+      const disp = displayPick(p, picks);
       const status = getEffectiveStatus(disp, g);
       const bucket = g.status === 'in' ? tally.live : tally.final;
       if (status === 'winning') { bucket.w++; dayPLTotal += calcProfit(disp.odds, stake(p)); }
@@ -1154,10 +1300,12 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
         const p = myPicks.find(pk => (pk.betType || pk.market || '').toLowerCase() === mkt);
         if (!p) return <span key={mkt} className="pslot"><i className="off"></i></span>;
         const faded = isFade(p);
-        const display = faded ? flipPick(p) : p;
+        const display = displayPick(p, picks);
         const isTotal = mkt === 'total';
-        const url = isTotal ? null : teamLogo(teamOnly(display), display.league);
-        const glyph = isTotal ? ((display.pick || '').toLowerCase().includes('over') ? '▲' : '▼') : null;
+        const url = isTotal || isDrawPick(display) ? null : teamLogo(teamOnly(display), display.league);
+        // The draw has no crest — give it the "level" glyph instead of letting the
+        // 3-letter fallback below render "DRA".
+        const glyph = isTotal ? ((display.pick || '').toLowerCase().includes('over') ? '▲' : '▼') : isDrawPick(display) ? '=' : null;
         return (
           <span key={mkt} className={`pslot pchip${faded ? ' fd' : ''}`}>
             {url ? <img src={url} alt="" /> : <b>{glyph || (teamOnly(display) || '').slice(0, 3).toUpperCase()}</b>}
@@ -1194,7 +1342,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
 
       {gameData.length > 0 && <div className="consec"><span>Today · {gameData.length} game{gameData.length > 1 ? 's' : ''}</span></div>}
       {gameData.map(d => d.key === openKey
-        ? <ExpandedGame key={d.key} d={d} isBet={isBet} isFade={isFade} teamChip={teamChip} stake={stake} onClose={() => setExpandedKey(null)} />
+        ? <ExpandedGame key={d.key} d={d} isBet={isBet} isFade={isFade} displayPick={displayPick} allPicks={picks} teamChip={teamChip} stake={stake} onClose={() => setExpandedKey(null)} />
         : (() => {
           const { game, myPicks, isPre, key } = d;
           return (
@@ -1214,7 +1362,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
   );
 }
 
-function ExpandedGame({ d, isBet, isFade, teamChip, stake, onClose }) {
+function ExpandedGame({ d, isBet, isFade, displayPick, allPicks, teamChip, stake, onClose }) {
   const { game, gamePicks, isPre } = d;
   const aw = game.awayLinescores || [];
   const ho = game.homeLinescores || [];
@@ -1233,7 +1381,7 @@ function ExpandedGame({ d, isBet, isFade, teamChip, stake, onClose }) {
       </div>
       {gamePicks.map((p, j) => {
         const faded = isFade(p);
-        const display = faded ? flipPick(p) : p;
+        const display = displayPick(p, allPicks);
         const bt = (display.betType || display.market || '').toLowerCase();
         const code = bt === 'moneyline' ? 'ML' : bt === 'spread' ? 'SPR' : 'TOT';
         const isTotal = bt === 'total';
@@ -1245,7 +1393,7 @@ function ExpandedGame({ d, isBet, isFade, teamChip, stake, onClose }) {
             <b className={`tick ${tierHeightClass(tierOf(p))}`}></b>
             <div className="rm">
               <span className="mkt">{code}</span>
-              {isTotal ? <span className="tm ou">{isOver ? '▲' : '▼'}</span> : teamChip(display.pick, p.league)}
+              {isTotal ? <span className="tm ou">{isOver ? '▲' : '▼'}</span> : isDrawPick(display) ? <span className="tm ou">=</span> : teamChip(display.pick, p.league)}
               <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · fade</i>}</span>
             </div>
             <span className="p num">{fmt(display.odds)}</span>
@@ -1934,7 +2082,7 @@ async function fetchLiveScores() {
         if (league === 'NHL' && periodNum >= 3) isLate = true;
         if (league === 'NFL' && periodNum >= 4) isLate = true;
         if (league === 'MLB' && periodNum >= 7) isLate = true;
-        if (league === 'EPL' && periodNum >= 2) isLate = true;
+        if (isSoccer(league) && periodNum >= 2) isLate = true;
 
         // Detect postponed/canceled/suspended
         const statusName = event.status?.type?.name || '';  // e.g. 'STATUS_POSTPONED', 'STATUS_CANCELED'
@@ -2501,13 +2649,16 @@ export default function App() {
   // real positions and get the stake stamped right now, at the moment the
   // tap makes them one — not deferred to whenever Take gets pressed, since a
   // fade never goes through commitTake at all (see PicksTab's tap()).
-  const setPickState = (p, state) => {
+  // `side` is only passed for 3-way soccer moneylines — it records WHICH of
+  // home/draw/away you put yourself on. Omitted everywhere else, where the model
+  // has only one side and `state` alone says whether you're with it or against it.
+  const setPickState = (p, state, side) => {
     const key = pickKey(p);
     setMyBets(prev => {
       const next = new Map(prev);
       if (!state) next.delete(key);
       else if (state === 'pass') next.set(key, 'pass');
-      else next.set(key, { state, stakeUsed: stake(p), at: Date.now() });
+      else next.set(key, { state, side, stakeUsed: stake(p), at: Date.now() });
       return next;
     });
   };
@@ -2529,6 +2680,11 @@ export default function App() {
   // in the app (Scores, Results, badges, etc.).
   const isBet = (p) => entryState(myBets.get(pickKey(p))) === 'bet';
   const isFade = (p) => entryState(myBets.get(pickKey(p))) === 'fade';
+  // Resolves a pick to the side you're actually on, and is handed to every tab so
+  // one position can't read as Draw on Picks and as the home team on Scores.
+  // Pass `allPicks` where the full slate is in hand (lets the two-way path find a
+  // real opposite-side row instead of approximating one).
+  const displayPick = (p, allPicks) => displayPickFor(p, myBets.get(pickKey(p)), allPicks);
   const isPropBet = (p) => {
     const v = myBets.get(propKey(p));
     return !!v;
@@ -2791,7 +2947,7 @@ export default function App() {
         {data && tab === 'picks' && (
           <PicksTab
             picks={picksForTab} liveGames={liveGames} myBets={myBets} setMyBets={setMyBets}
-            isBet={isBet} isFade={isFade} toggleBet={toggleBet} setPickState={setPickState}
+            isBet={isBet} isFade={isFade} toggleBet={toggleBet} setPickState={setPickState} displayPick={displayPick}
             pickMode={pickMode} setPickMode={setPickMode} tierThreshold={tierThreshold} setTierThreshold={setTierThreshold}
             picksDateFilter={picksDateFilter} setPicksDateFilter={setPicksDateFilter}
             showDate={picksDateFilter === 'This Week'} lastUpdated={lastUpdated}
@@ -2809,7 +2965,7 @@ export default function App() {
               try { return new Date(g.gameDate).toLocaleDateString('en-CA') === todayDateISO; }
               catch { return false; }
             })}
-            picks={todaysPicksOnly} isBet={isBet} isFade={isFade} lastUpdated={lastUpdated} stake={stake}
+            picks={todaysPicksOnly} isBet={isBet} isFade={isFade} displayPick={displayPick} lastUpdated={lastUpdated} stake={stake}
           />
         )}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
