@@ -172,7 +172,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .astat .n s{text-decoration:none;color:var(--dim2);font-size:10px}
     .astat .v{font:400 10px/1 var(--mono);color:var(--dim)}
     .ameta{padding:9px 13px 10px;margin-top:5px;border-top:1px solid #14171b;background:#0c0e11;display:flex;gap:11px;flex-wrap:wrap;font:400 9px/1.3 var(--mono);color:var(--dim2)}
-    .acon{display:grid;grid-template-columns:26px auto 1fr auto 40px 50px;gap:8px;align-items:center;height:44px;padding:0 12px 0 13px;border-top:1px solid #14171b;cursor:pointer}
+    .acon{display:grid;grid-template-columns:26px auto 1fr auto auto 50px;gap:8px;align-items:center;height:44px;padding:0 12px 0 13px;border-top:1px solid #14171b;cursor:pointer}
     .acon .lg{font:600 9px/1 var(--mono);color:var(--dim2)}
     .acon .mt{font:500 12px/1 var(--body);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .acon .mt s{text-decoration:none;color:var(--dim2);font-weight:400}
@@ -183,10 +183,12 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .tmini img{width:100%;height:100%;object-fit:contain}
     .duo{display:flex;gap:3px;flex:0 0 auto}
     .pips{display:flex;gap:3px;align-items:center;justify-content:flex-end}
-    .pips i{width:6px;height:6px;border-radius:50%;background:#252b31;flex:0 0 6px;font-style:normal}
-    .pips i.t{background:var(--take)}
-    .pips i.f{background:var(--fade)}
-    .pips i.off{background:var(--bg);border:1px solid var(--dim2)}
+    .pslot{flex:0 0 18px;width:18px;height:18px;display:flex;align-items:center;justify-content:center}
+    .pslot i{width:6px;height:6px;border-radius:50%;background:var(--bg);border:1px solid var(--dim2);font-style:normal;display:block}
+    .pchip{border-radius:4px;overflow:hidden;background:#171a1e;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+    .pchip img{width:100%;height:100%;object-fit:contain}
+    .pchip b{font:700 8px/1 var(--body);font-style:normal;color:var(--dim)}
+    .pchip.fd{box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),inset 0 -1.5px 0 var(--fade)}
     .legend{display:flex;align-items:center;gap:13px;padding:7px 14px 8px;background:#0c0e11;border-bottom:1px solid var(--line);font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
     .legend span{display:flex;align-items:center;gap:5px}
     .legend u{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:15px;border:1px solid var(--line2);border-radius:3px;background:#0d0f12;font:600 9px/1 var(--mono);color:#c4cad1}
@@ -1009,9 +1011,19 @@ function flipPick(p) {
   return p;
 }
 
+// A pick's `pick` field is "Team Name" for moneyline but "Team Name +3.5" for
+// spread (the line is duplicated as its own field and also baked into the
+// display string) — strip that suffix so team-logo lookups match TEAM_CODES.
+// Safe no-op for moneyline/total, where there's no line substring to strip.
+function teamOnly(p) {
+  if (!p.line) return p.pick || '';
+  return (p.pick || '').replace(p.line, '').trim();
+}
+
 // ── Scores Tab (Direction A — Tape) ───────────────────────────────────
 // One game open in the tape at a time; every other game is a condensed row
-// carrying a pip cluster (one dot per position, blue take / orange fade).
+// carrying a fixed ML/Spread/Total pip cluster (team mark or O/U per held
+// slot, faint dot when empty).
 function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
   const hasAnyPosition = picks.some(p => isBet(p) || isFade(p));
   const [sf, setSf] = useState(() => (hasAnyPosition ? 'My Bets' : 'All'));
@@ -1085,14 +1097,27 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
     );
   };
   // Fixed ML / Spread / Total slots, always in that order, so the same
-  // position always lands in the same dot — filled (blue take / orange fade)
-  // if you have that market, a hollow ring if you don't.
+  // market always lands in the same slot. A held slot shows the side you
+  // need — team mark for ML/Spread, O/U for Total — reading a fade as its
+  // flipped (effective) side with a thin orange underline, so the row reads
+  // "who am I on" without having to remember which picks were fades. An
+  // empty slot stays a faint dot.
   const PIP_MARKETS = ['moneyline', 'spread', 'total'];
   const positionPips = (myPicks) => (
     <span className="pips">
       {PIP_MARKETS.map(mkt => {
         const p = myPicks.find(pk => (pk.betType || pk.market || '').toLowerCase() === mkt);
-        return <i key={mkt} className={p ? (isFade(p) ? 'f' : 't') : 'off'}></i>;
+        if (!p) return <span key={mkt} className="pslot"><i className="off"></i></span>;
+        const faded = isFade(p);
+        const display = faded ? flipPick(p) : p;
+        const isTotal = mkt === 'total';
+        const url = isTotal ? null : teamLogo(teamOnly(display), display.league);
+        const letter = isTotal ? ((display.pick || '').toLowerCase().includes('over') ? 'O' : 'U') : null;
+        return (
+          <span key={mkt} className={`pslot pchip${faded ? ' fd' : ''}`}>
+            {url ? <img src={url} alt="" /> : <b>{letter || (teamOnly(display) || '').slice(0, 3).toUpperCase()}</b>}
+          </span>
+        );
       })}
     </span>
   );
