@@ -26,6 +26,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .astrip>div{padding:10px 14px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
     .astrip>div:last-child{border-right:0}
     .astrip .k{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
+    .astrip .k em{font-style:normal;font-size:9px;color:#565e68;margin-left:4px;text-transform:none;letter-spacing:0}
     .astrip .v{font:600 19px/1 var(--mono);letter-spacing:-.02em;color:var(--text)}
     .astrip .v s{text-decoration:none;font-size:11px;color:var(--dim);margin-left:1px}
     .astrip .v.hot{color:var(--take)}
@@ -34,6 +35,12 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .datepick{display:flex;gap:6px;padding:7px 14px;background:var(--panel3);border-bottom:1px solid var(--line)}
     .datepick button{font:500 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim2);background:none;border:1px solid var(--line2);border-radius:3px;padding:4px 9px}
     .datepick button.on{color:var(--take);border-color:rgba(76,154,255,.5);background:rgba(76,154,255,.12)}
+    .sizerow{display:flex;align-items:center;background:var(--panel3);border-bottom:1px solid var(--line)}
+    .sizerow .sl{flex:0 0 auto;padding:0 11px 0 14px;font:500 9px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--dim2)}
+    .sizerow .seg{display:flex;flex:1;border-left:1px solid var(--line)}
+    .sizerow .seg button{flex:1;background:none;border:0;border-right:1px solid var(--line);padding:10px 0;font:500 9.5px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--dim2);font-variant-numeric:tabular-nums}
+    .sizerow .seg button:last-child{border-right:0}
+    .sizerow .seg button.on{background:var(--panel);color:var(--take);box-shadow:inset 0 1px 0 var(--take)}
     .rangerow{display:flex;background:var(--panel3);border-bottom:1px solid var(--line)}
     .rangerow button{flex:1;background:none;border:0;border-right:1px solid var(--line);padding:9px 0;font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
     .rangerow button:last-child{border-right:0}
@@ -99,6 +106,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .side i{font-style:normal;color:var(--dim);font-weight:400}
     .u{font:600 17px/1 var(--mono);letter-spacing:-.02em;color:var(--text);text-align:right}
     .u em{font-style:normal;font-size:9px;color:var(--dim2);margin-left:1px}
+    .u.conv{color:var(--dim2)}
     .p{font:400 11px/1 var(--mono);color:var(--dim);text-align:right}
     .tri{display:grid;grid-template-columns:repeat(3,1fr);height:44px;border:1px solid var(--line2);border-radius:4px;overflow:hidden}
     .tri s{text-decoration:none;display:flex;align-items:center;justify-content:center;font:600 9px/1 var(--mono);color:var(--dim2);border-right:1px solid var(--line2);background:#0d0f12;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -130,6 +138,13 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .agrid .v.up{color:var(--win)}
     .agrid .v.dn{color:var(--loss)}
     .agrid .v s{text-decoration:none;font-size:12px;color:#565e68;margin-left:4px}
+    .agrid .v.same{color:#4A5058}
+    .agrid .d{display:block;font:500 9px/1 var(--mono);color:var(--dim2);margin-top:2px}
+    .priced{display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:rgba(76,154,255,.07);border-bottom:1px solid var(--line)}
+    .priced .pl{font:500 9px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#9FD0FF}
+    .priced .pr{display:flex;border:1px solid var(--line2);border-radius:3px;overflow:hidden}
+    .priced .pr button{background:none;border:0;padding:6px 11px;font:500 9px/1 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--dim2)}
+    .priced .pr button.on{background:rgba(76,154,255,.16);color:#9FD0FF}
     .chart{height:120px;padding:14px 14px 10px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}
     .chart .cap{position:absolute;top:12px;right:14px;font:500 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim2)}
     .dayh{padding:9px 14px 7px;background:#0c0e11;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
@@ -503,6 +518,14 @@ function calcProfit(odds, units) {
   return odds > 0 ? units * (odds / 100) : units * (100 / Math.abs(odds));
 }
 
+// myBets pick-entries are either a plain string ('pass', or legacy 'bet'/'fade'
+// from before stake stamping) or a stamped object { state, stakeUsed, at }.
+// Every reader has to accept both shapes.
+const entryState = (v) => (typeof v === 'string' ? v : v && v.state);
+const entryStake = (v, p) => (v && typeof v === 'object' && v.stakeUsed != null)
+  ? v.stakeUsed
+  : (p.units || 0); // legacy/pre-stamp bet: fall back to model units
+
 // Doubleheader-aware game matching, shared by the Picks (watch mode) and
 // Scores tapes so a pick always resolves to the correct sibling game.
 function buildMatchupGames(liveGames) {
@@ -653,7 +676,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit }) {
+function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
@@ -668,7 +691,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   // otherwise the rule default (take if tier >= threshold, else pass). This
   // is both what the tri-state row displays and what "Take" commits.
   const effState = (p) => {
-    const manual = myBets.get(pickKey(p));
+    const manual = entryState(myBets.get(pickKey(p)));
     if (manual === 'pass') return 'pass';
     if (manual === 'fade') return 'fade';
     if (manual === 'bet') return 'take';
@@ -677,7 +700,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
 
   const commitList = pool.filter(p => effState(p) === 'take');
   const commitCount = commitList.length;
-  const commitUnits = commitList.reduce((s, p) => s + (p.units || 0), 0);
+  const commitUnits = commitList.reduce((s, p) => s + stake(p), 0);
   const lockedCount = pickMode === 'build' ? commitCount : pool.filter(p => isBet(p) || isFade(p)).length;
 
   const leagueCounts = {};
@@ -700,17 +723,17 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   for (const { p, game } of posWithGame) {
     const faded = isFade(p);
     const display = faded ? findOppositePick(p, allPicks) : p;
-    if (!game || game.status === 'pre') { tape.pre += (p.units || 0); continue; }
+    if (!game || game.status === 'pre') { tape.pre += stake(p); continue; }
     finalOrLiveN++;
     if (game.status === 'in') liveN++;
     const status = getEffectiveStatus(display, game);
-    const pl = status === 'winning' ? calcProfit(display.odds, p.units) : status === 'losing' ? -(p.units || 0) : 0;
-    if (status === 'winning') { winU += pl; tape.win += (p.units || 0); }
-    else if (status === 'losing') { loseU += p.units || 0; tape.loss += (p.units || 0); }
-    else tape.mid += (p.units || 0);
+    const pl = status === 'winning' ? calcProfit(display.odds, stake(p)) : status === 'losing' ? -stake(p) : 0;
+    if (status === 'winning') { winU += pl; tape.win += stake(p); }
+    else if (status === 'losing') { loseU += stake(p); tape.loss += stake(p); }
+    else tape.mid += stake(p);
   }
   const dayPL = winU - loseU;
-  const tapeTotal = Math.max(positions.reduce((s, p) => s + (p.units || 0), 0), 0.01);
+  const tapeTotal = Math.max(positions.reduce((s, p) => s + stake(p), 0), 0.01);
   const tapePct = { win: tape.win / tapeTotal * 100, mid: tape.mid / tapeTotal * 100, loss: tape.loss / tapeTotal * 100, pre: tape.pre / tapeTotal * 100 };
 
   const runLabel = lastUpdated
@@ -771,7 +794,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     // manual override (reverts to whatever the threshold rule says); tapping
     // any other button sets an explicit override — 'pass' included, so a
     // rule-auto-selected pick can actually be excluded, not just left alone.
-    const manual = myBets.get(pickKey(p));
+    const manual = entryState(myBets.get(pickKey(p)));
     const tap = (val) => setPickState(p, manual === val ? null : val);
     return (
       <div key={pickKey(p) + idx} className={`r${idx === 0 ? ' first' : ''}${selected ? ' take' : ''}${faded ? ' fade' : ''}`}>
@@ -781,7 +804,9 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
           {isTotal ? ouChip(isOver) : teamChip(display.pick, p.league)}
           <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · fading {p.pick}</i>}</span>
         </div>
-        <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
+        {sizing === 'model'
+          ? <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
+          : <span className="u num conv">{(p.units || 0).toFixed(2)}</span>}
         <span className="p num">{fmt(display.odds)}</span>
         <div className="tri">
           <s className={state === '-' ? 'on' : ''} onClick={() => tap('pass')}>–</s>
@@ -800,7 +825,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
     const game = findGameForPick(liveGames, matchupGames, p);
     const isPre = !game || game.status === 'pre';
     const status = game ? getEffectiveStatus(display, game) : 'pending';
-    const pl = status === 'winning' ? calcProfit(display.odds, p.units) : status === 'losing' ? -(p.units || 0) : 0;
+    const pl = status === 'winning' ? calcProfit(display.odds, stake(p)) : status === 'losing' ? -stake(p) : 0;
     const plCls = isPre ? 'fl' : status === 'winning' ? 'up' : status === 'losing' ? 'dn' : 'fl';
     return (
       <div key={pickKey(p) + idx} className={`r locked${idx === 0 ? ' first' : ''}${!faded ? ' take' : ' fade'}`}>
@@ -812,7 +837,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
         </div>
         <span className="p num">{fmt(display.odds)}</span>
         {isPre
-          ? <span className="apnl fl num">{(p.units || 0).toFixed(2)}<em>u</em></span>
+          ? <span className="apnl fl num">{stake(p).toFixed(2)}<em>u</em></span>
           : <span className={`apnl ${plCls} num`}>{pl >= 0 ? '+' : ''}{pl.toFixed(2)}<em>u</em></span>}
         <div className="clockbar"><b style={{ width: `${Math.round(getGameProgress(game) * 100)}%` }}></b></div>
       </div>
@@ -830,6 +855,19 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
           : <span className="clickable" onClick={() => setPickMode('build')}>{lockedCount} POSITIONS · VIEW: BUILD ▸</span>}
       </div>
 
+      <div className="sizerow">
+        <span className="sl">Sizing</span>
+        <span className="seg">
+          {sizingPresets.map(s => (
+            <button
+              key={s}
+              className={sizing === s ? 'on' : ''}
+              onClick={() => setSizing(s)}
+            >{s === 'model' ? 'Model' : s.toFixed(2).slice(1)}</button>
+          ))}
+        </span>
+      </div>
+
       {picksDateFilter && (
         <div className="datepick">
           {['Today', 'Tomorrow', 'This Week'].map(d => (
@@ -841,13 +879,13 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
       {pickMode === 'build' ? (
         <div className="astrip">
           <div><span className="k">Plays</span><span className="v">{allPicks.length}</span></div>
-          <div><span className="k">At risk</span><span className="v">{allPicks.reduce((s, p) => s + (p.units || 0), 0).toFixed(1)}<s>u</s></span></div>
+          <div><span className="k">At risk{sizing !== 'model' && <em>flat</em>}</span><span className="v">{allPicks.reduce((s, p) => s + stake(p), 0).toFixed(1)}<s>u</s></span></div>
           <div><span className="k">Locked</span><span className="v hot">{lockedCount}<s>/{allPicks.length}</s></span></div>
         </div>
       ) : (
         <div className="astrip">
           <div><span className="k">Live</span><span className="v">{liveN}<s>/{positions.length}</s></span></div>
-          <div><span className="k">At risk</span><span className="v">{positions.reduce((s, p) => s + (p.units || 0), 0).toFixed(1)}<s>u</s></span></div>
+          <div><span className="k">At risk{sizing !== 'model' && <em>flat</em>}</span><span className="v">{positions.reduce((s, p) => s + stake(p), 0).toFixed(1)}<s>u</s></span></div>
           <div><span className="k">Day P/L</span><span className={`v ${dayPL >= 0 ? 'up' : 'dn'}`}>{dayPL >= 0 ? '+' : ''}{dayPL.toFixed(2)}<s>u</s></span></div>
         </div>
       )}
@@ -927,6 +965,13 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
           <span><u className="on">✓</u><i>Take</i></span>
           <span><u className="onf">F</u><i>Fade the model</i></span>
           <span style={{ marginLeft: 'auto' }}><i>Tick = tier</i></span>
+        </div>
+      )}
+
+      {pickMode === 'build' && sizing !== 'model' && (
+        <div className="consec">
+          <span>All plays · {sizing.toFixed(2)}u each</span>
+          <span>column = model units</span>
         </div>
       )}
 
@@ -1024,7 +1069,7 @@ function teamOnly(p) {
 // One game open in the tape at a time; every other game is a condensed row
 // carrying a fixed ML/Spread/Total pip cluster (team mark or O/U per held
 // slot, faint dot when empty).
-function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
+function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated, stake }) {
   const hasAnyPosition = picks.some(p => isBet(p) || isFade(p));
   const [sf, setSf] = useState(() => (hasAnyPosition ? 'My Bets' : 'All'));
   const [sortAlt, setSortAlt] = useState(false);
@@ -1063,7 +1108,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
     for (let i = 0; i < myPicks.length; i++) {
       if (isPre) continue;
       const status = getEffectiveStatus(displayPicks[i], game);
-      dayPL += status === 'winning' ? calcProfit(displayPicks[i].odds, myPicks[i].units) : status === 'losing' ? -(myPicks[i].units || 0) : 0;
+      dayPL += status === 'winning' ? calcProfit(displayPicks[i].odds, stake(myPicks[i])) : status === 'losing' ? -stake(myPicks[i]) : 0;
     }
     return { game, gamePicks, myPicks, displayPicks, isPre, isLive, isPost, key, dayPL };
   });
@@ -1079,8 +1124,8 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
       const disp = isFade(p) ? flipPick(p) : p;
       const status = getEffectiveStatus(disp, g);
       const bucket = g.status === 'in' ? tally.live : tally.final;
-      if (status === 'winning') { bucket.w++; dayPLTotal += calcProfit(disp.odds, p.units); }
-      else if (status === 'losing') { bucket.l++; dayPLTotal -= (p.units || 0); }
+      if (status === 'winning') { bucket.w++; dayPLTotal += calcProfit(disp.odds, stake(p)); }
+      else if (status === 'losing') { bucket.l++; dayPLTotal -= stake(p); }
       else if (g.status === 'in') { tally.live.t++; }
     }
   }
@@ -1149,7 +1194,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
 
       {gameData.length > 0 && <div className="consec"><span>Today · {gameData.length} game{gameData.length > 1 ? 's' : ''}</span></div>}
       {gameData.map(d => d.key === openKey
-        ? <ExpandedGame key={d.key} d={d} isBet={isBet} isFade={isFade} teamChip={teamChip} onClose={() => setExpandedKey(null)} />
+        ? <ExpandedGame key={d.key} d={d} isBet={isBet} isFade={isFade} teamChip={teamChip} stake={stake} onClose={() => setExpandedKey(null)} />
         : (() => {
           const { game, myPicks, isPre, key } = d;
           return (
@@ -1160,7 +1205,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
               <span className="sc">{isPre ? cleanTime(game.period) : `${game.awayScore}–${game.homeScore}`}</span>
               {positionPips(myPicks)}
               {myPicks.length > 0
-                ? <span className={`pos apnl ${isPre ? 'fl' : d.dayPL > 0 ? 'up' : d.dayPL < 0 ? 'dn' : 'fl'}`}>{isPre ? myPicks.reduce((s, p) => s + (p.units || 0), 0).toFixed(2) : `${d.dayPL >= 0 ? '+' : ''}${d.dayPL.toFixed(2)}`}<em>u</em></span>
+                ? <span className={`pos apnl ${isPre ? 'fl' : d.dayPL > 0 ? 'up' : d.dayPL < 0 ? 'dn' : 'fl'}`}>{isPre ? myPicks.reduce((s, p) => s + stake(p), 0).toFixed(2) : `${d.dayPL >= 0 ? '+' : ''}${d.dayPL.toFixed(2)}`}<em>u</em></span>
                 : <span className="pos" style={{ color: 'var(--dim2)' }}>—</span>}
             </div>
           );
@@ -1169,7 +1214,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, lastUpdated }) {
   );
 }
 
-function ExpandedGame({ d, isBet, isFade, teamChip, onClose }) {
+function ExpandedGame({ d, isBet, isFade, teamChip, stake, onClose }) {
   const { game, gamePicks, isPre } = d;
   const aw = game.awayLinescores || [];
   const ho = game.homeLinescores || [];
@@ -1194,7 +1239,7 @@ function ExpandedGame({ d, isBet, isFade, teamChip, onClose }) {
         const isTotal = bt === 'total';
         const isOver = isTotal && (display.pick || '').toLowerCase().includes('over');
         const status = isPre ? 'pending' : getEffectiveStatus(display, game);
-        const pl = status === 'winning' ? calcProfit(display.odds, p.units) : status === 'losing' ? -(p.units || 0) : 0;
+        const pl = status === 'winning' ? calcProfit(display.odds, stake(p)) : status === 'losing' ? -stake(p) : 0;
         return (
           <div key={j} className={`sr${j === 0 ? ' first' : ''}${!faded && isBet(p) ? ' take' : ''}${faded ? ' fade' : ''}`}>
             <b className={`tick ${tierHeightClass(tierOf(p))}`}></b>
@@ -1204,7 +1249,7 @@ function ExpandedGame({ d, isBet, isFade, teamChip, onClose }) {
               <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · fade</i>}</span>
             </div>
             <span className="p num">{fmt(display.odds)}</span>
-            <span className="un num">{(p.units || 0).toFixed(2)}<em style={{ fontStyle: 'normal', fontSize: 9, color: 'var(--dim2)' }}>u</em></span>
+            <span className="un num">{stake(p).toFixed(2)}<em style={{ fontStyle: 'normal', fontSize: 9, color: 'var(--dim2)' }}>u</em></span>
             <span className={`apnl num ${isPre ? 'fl' : status === 'winning' ? 'up' : status === 'losing' ? 'dn' : 'fl'}`}>{isPre ? '0.00' : `${pl >= 0 ? '+' : ''}${pl.toFixed(2)}`}</span>
           </div>
         );
@@ -1688,6 +1733,12 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
   const [viewType, setViewType] = useState('Games');
   const [range, setRange] = useState('Last 30 Days');
   const [sf, setSf] = useState('All');
+  // Re-price comparison: recompute the graded window as if every bet had been
+  // a flat 0.20u, to see whether the model's own sizing is earning its keep.
+  // Read-only — never touches how history was actually bet (that's stake(),
+  // which this tab deliberately does not use).
+  const [priceAt, setPriceAt] = useState(null); // null = as bet, or 0.20
+  const priceable = (r) => (r.units || 0) > 0;
 
   const now = new Date();
   const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
@@ -1732,13 +1783,30 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
   const rangeAll = showProps ? rangeProps : rangeGames;
   const leagueCount = (l) => rangeAll.filter(r => r.league === l).length;
 
+  // Record and Win % are identical by construction whether priced or as-bet —
+  // same bets, same outcomes — so they always read off `filtered` directly.
   const wins = filtered.filter(r => r.result === 'W').length;
   const losses = filtered.filter(r => r.result === 'L').length;
   const pushes = filtered.filter(r => r.result === 'P').length;
-  const totalReturn = filtered.reduce((s, r) => s + (r.unitReturn || 0), 0);
-  const totalWagered = filtered.reduce((s, r) => s + (r.units || 0), 0);
   const winPct = wins + losses > 0 ? ((wins / (wins + losses)) * 100).toFixed(1) : '0.0';
+
+  // Units/ROI: as-bet always (for the delta baseline), plus the active
+  // (possibly re-priced) figures actually shown. A unitReturn:unit ratio
+  // scales exactly for win/loss/push, no odds lookup needed — but a
+  // zero-units row can't be scaled, so re-priced mode excludes it from both
+  // totals entirely rather than dividing by zero or mixing an unscaled
+  // straggler into a supposedly-flat total.
+  const zeroUnitCount = filtered.filter(r => !priceable(r)).length;
+  const pricedRows = priceAt ? filtered.filter(priceable) : filtered;
+  const rowReturn = (r) => priceAt ? (r.unitReturn || 0) * (priceAt / r.units) : (r.unitReturn || 0);
+  const rowWager = (r) => priceAt ? priceAt : (r.units || 0);
+  const totalReturn = pricedRows.reduce((s, r) => s + rowReturn(r), 0);
+  const totalWagered = pricedRows.reduce((s, r) => s + rowWager(r), 0);
   const roi = totalWagered > 0 ? ((totalReturn / totalWagered) * 100).toFixed(1) : '0.0';
+  const asBetReturn = filtered.reduce((s, r) => s + (r.unitReturn || 0), 0);
+  const asBetWagered = filtered.reduce((s, r) => s + (r.units || 0), 0);
+  const roiAsBet = asBetWagered > 0 ? (asBetReturn / asBetWagered) * 100 : 0;
+  const chartResults = priceAt ? pricedRows.map(r => ({ ...r, unitReturn: rowReturn(r) })) : filtered;
 
   const byDate = {};
   for (const r of filtered) { if (!byDate[r.date]) byDate[r.date] = []; byDate[r.date].push(r); }
@@ -1757,11 +1825,26 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
         ))}
       </div>
 
+      <div className="priced">
+        <span className="pl">
+          {priceAt ? `Re-priced at ${priceAt.toFixed(2)}u · view only` : 'Priced as bet'}
+          {priceAt && zeroUnitCount > 0 ? ` · ${zeroUnitCount} zero-unit row${zeroUnitCount > 1 ? 's' : ''} excluded` : ''}
+        </span>
+        <span className="pr">
+          <button className={!priceAt ? 'on' : ''} onClick={() => setPriceAt(null)}>As bet</button>
+          <button className={priceAt ? 'on' : ''} onClick={() => setPriceAt(0.20)}>At 0.20u</button>
+        </span>
+      </div>
+
       <div className="agrid">
-        <div><span className="k">Record</span><span className="v">{wins}–{losses}{pushes ? <s>–{pushes}</s> : null}</span></div>
-        <div><span className="k">Win %</span><span className="v">{winPct}</span></div>
+        <div><span className="k">Record</span><span className={`v${priceAt ? ' same' : ''}`}>{wins}–{losses}{pushes ? <s>–{pushes}</s> : null}</span></div>
+        <div><span className="k">Win %</span><span className={`v${priceAt ? ' same' : ''}`}>{winPct}</span></div>
         <div><span className="k">Units</span><span className={`v ${totalReturn >= 0 ? 'up' : 'dn'}`}>{totalReturn >= 0 ? '+' : ''}{totalReturn.toFixed(1)}</span></div>
-        <div><span className="k">ROI</span><span className={`v ${parseFloat(roi) >= 0 ? 'up' : 'dn'}`}>{parseFloat(roi) >= 0 ? '+' : ''}{roi}%</span></div>
+        <div>
+          <span className="k">ROI</span>
+          <span className={`v ${parseFloat(roi) >= 0 ? 'up' : 'dn'}`}>{parseFloat(roi) >= 0 ? '+' : ''}{roi}%</span>
+          {priceAt && <span className="d">{`${(parseFloat(roi) - roiAsBet >= 0 ? '+' : '')}${(parseFloat(roi) - roiAsBet).toFixed(1)} vs as bet`}</span>}
+        </div>
       </div>
 
       <div className="datepick">
@@ -1782,7 +1865,7 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
       {filtered.length >= 2 && (
         <div style={{ position: 'relative' }}>
           <span style={{ position: 'absolute', top: 12, right: 14, font: '500 9px/1 var(--mono)', letterSpacing: '.1em', color: 'var(--dim2)', zIndex: 1 }}>UNIT CURVE</span>
-          <UnitsChart results={filtered} />
+          <UnitsChart results={chartResults} />
         </div>
       )}
 
@@ -2242,6 +2325,36 @@ export default function App() {
     } catch (e) {}
     return new Map();
   });
+  // Flat unit sizing — while the model's own sizing is still being tuned, Nick
+  // bets a flat stake on every play instead. 'model' reads p.units (the
+  // model's conviction) as the stake; a number overrides it. Conviction
+  // itself (tier bar, sort, 0.3u+ filter) always reads p.units regardless —
+  // this only ever swaps what counts as MONEY. See stake() below.
+  const SIZING_PRESETS = ['model', 0.10, 0.20, 0.50];
+  const [sizing, setSizing] = useState('model');
+  // See pickModeWriteSkip above — same race, same fix: skip the write-effect's
+  // mount-time run so it can't overwrite the saved value with the default
+  // before the read-effect's setSizing has taken effect.
+  const sizingWriteSkip = useRef(true);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('sb.sizing');
+      if (saved) setSizing(saved === 'model' ? 'model' : parseFloat(saved));
+    } catch (e) {}
+  }, []);
+  useEffect(() => {
+    if (sizingWriteSkip.current) { sizingWriteSkip.current = false; return; }
+    try { localStorage.setItem('sb.sizing', String(sizing)); } catch (e) {}
+  }, [sizing]);
+  // The actual money stake for a pick. A locked entry (stamped at the moment
+  // it became a real position — see setPickState/commitTake) always prices at
+  // whatever sizing was active then, regardless of what the toggle reads now;
+  // only a pick with no entry yet takes the current sizing live.
+  const stake = (p) => {
+    const v = myBets.get(pickKey(p));
+    if (v) return entryStake(v, p);
+    return sizing === 'model' ? (p.units || 0) : sizing;
+  };
   // Picks tape mode — 'build' (triaging the morning slate) or 'watch' (locked,
   // read-only). Persisted per-day so a reload after locking stays in watch mode.
   // Always starts 'build' (matching the server-rendered HTML) and is restored
@@ -2249,6 +2362,12 @@ export default function App() {
   // initializer would make the client's first render disagree with the
   // server's and throw a React hydration-mismatch error every day after lock.
   const [pickMode, setPickMode] = useState('build');
+  // Both effects below run on the same initial mount. Without this guard, the
+  // write-effect's first run fires with the just-declared default ('build')
+  // — before the read-effect's setPickMode has taken effect — and clobbers
+  // today's already-saved 'watch' with 'build' on every reload. Skip exactly
+  // one write: the one from mount.
+  const pickModeWriteSkip = useRef(true);
   useEffect(() => {
     try {
       const saved = localStorage.getItem('shadowbets_pickmode');
@@ -2260,6 +2379,7 @@ export default function App() {
   }, []);
   const [tierThreshold, setTierThreshold] = useState(7);
   useEffect(() => {
+    if (pickModeWriteSkip.current) { pickModeWriteSkip.current = false; return; }
     try {
       localStorage.setItem('shadowbets_pickmode', JSON.stringify({ date: new Date().toLocaleDateString(), mode: pickMode }));
     } catch (e) {}
@@ -2312,18 +2432,22 @@ export default function App() {
   const commitTake = useCallback((commitList) => {
     setCommitSnapshot(myBets);
     setCommittedCount(commitList.length);
-    setCommittedUnits(commitList.reduce((s, p) => s + (p.units || 0), 0));
+    setCommittedUnits(commitList.reduce((s, p) => s + stake(p), 0));
     setMyBets(prev => {
       const next = new Map(prev);
       for (const p of commitList) {
         const key = pickKey(p);
-        if (!next.has(key)) next.set(key, 'bet');
+        // Only stamp picks the rule auto-selected and were never manually
+        // touched — a manual tap already stamped its own stake the moment it
+        // was set (see setPickState), and that's the true "locked at" moment
+        // for that pick, not whenever Take happens to get pressed afterward.
+        if (!next.has(key)) next.set(key, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
       }
       return next;
     });
     setPickMode('watch');
     setUndoLeft(UNDO_SECONDS);
-  }, [myBets]);
+  }, [myBets, stake]);
   const undoCommit = useCallback(() => {
     if (!commitSnapshot) return;
     setMyBets(commitSnapshot);
@@ -2365,20 +2489,25 @@ export default function App() {
     const key = pickKey(p);
     setMyBets(prev => {
       const next = new Map(prev);
-      const cur = next.get(key);
-      if (!cur) next.set(key, 'bet');
-      else if (cur === 'bet') next.set(key, 'fade');
+      const cur = entryState(next.get(key));
+      if (!cur) next.set(key, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
+      else if (cur === 'bet') next.set(key, { state: 'fade', stakeUsed: stake(p), at: Date.now() });
       else next.delete(key);
       return next;
     });
   };
   // Force a pick to a specific state (used by the rule-bar commit flow) —
-  // unlike toggleBet this doesn't cycle, it sets directly.
+  // unlike toggleBet this doesn't cycle, it sets directly. 'bet'/'fade' are
+  // real positions and get the stake stamped right now, at the moment the
+  // tap makes them one — not deferred to whenever Take gets pressed, since a
+  // fade never goes through commitTake at all (see PicksTab's tap()).
   const setPickState = (p, state) => {
     const key = pickKey(p);
     setMyBets(prev => {
       const next = new Map(prev);
-      if (!state) next.delete(key); else next.set(key, state);
+      if (!state) next.delete(key);
+      else if (state === 'pass') next.set(key, 'pass');
+      else next.set(key, { state, stakeUsed: stake(p), at: Date.now() });
       return next;
     });
   };
@@ -2398,8 +2527,8 @@ export default function App() {
   // entry (a manual exclusion from the Picks threshold rule; see PicksTab's
   // effState), which must never register as a real position anywhere else
   // in the app (Scores, Results, badges, etc.).
-  const isBet = (p) => myBets.get(pickKey(p)) === 'bet';
-  const isFade = (p) => myBets.get(pickKey(p)) === 'fade';
+  const isBet = (p) => entryState(myBets.get(pickKey(p))) === 'bet';
+  const isFade = (p) => entryState(myBets.get(pickKey(p))) === 'fade';
   const isPropBet = (p) => {
     const v = myBets.get(propKey(p));
     return !!v;
@@ -2420,11 +2549,11 @@ export default function App() {
       const next = new Map(prev);
       for (const p of qualified) {
         const key = pickKey(p);
-        if (!next.has(key)) next.set(key, 'bet');
+        if (!next.has(key)) next.set(key, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
       }
       return next;
     });
-  }, [data?.todayPicks]);
+  }, [data?.todayPicks, stake]);
 
   const getMyPropBets = () => {
     const result = [];
@@ -2543,7 +2672,7 @@ export default function App() {
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;
 
   const betCount = myBets.size;
-  const fadeCount = [...myBets.values()].filter(v => v === 'fade').length;
+  const fadeCount = [...myBets.values()].filter(v => entryState(v) === 'fade').length;
   // Only show leagues that have real games today (hides off-season leagues like NFL in April)
   const todayDateISO = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
   // Picks tab date picker: /api/data now returns today-through-next-week (soccer
@@ -2668,6 +2797,7 @@ export default function App() {
             showDate={picksDateFilter === 'This Week'} lastUpdated={lastUpdated}
             commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
             undoLeft={undoLeft} commitTake={commitTake} undoCommit={undoCommit}
+            stake={stake} sizing={sizing} setSizing={setSizing} sizingPresets={SIZING_PRESETS}
           />
         )}
         {data && tab === 'scores' && (
@@ -2679,7 +2809,7 @@ export default function App() {
               try { return new Date(g.gameDate).toLocaleDateString('en-CA') === todayDateISO; }
               catch { return false; }
             })}
-            picks={todaysPicksOnly} isBet={isBet} isFade={isFade} lastUpdated={lastUpdated}
+            picks={todaysPicksOnly} isBet={isBet} isFade={isFade} lastUpdated={lastUpdated} stake={stake}
           />
         )}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
