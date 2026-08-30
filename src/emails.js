@@ -69,8 +69,31 @@ async function sendDailyPicksEmail() {
     return normalized === todayStr;
   });
 
-  const approved = todayPicks.filter(r => (r[21] || '').toString().trim() === 'approved');
-  const allPicks = todayPicks;
+  // Drop games that have already started. The slate is now built at ~8 PM PT the
+  // night before (slate-build runs 03:05 UTC), so it can contain a game starting
+  // later that same evening — which is long over by the time Nick reads this card
+  // at 5 AM. A "place these bets" email must never list a bet he cannot place.
+  //
+  // FAILS OPEN BY DESIGN: a missing or unparseable start_time keeps the pick.
+  // Hiding a live bet because a timestamp was malformed is far worse than showing
+  // a stale one, and column 5 is not guaranteed populated on every row.
+  const nowMs = Date.now();
+  const notStarted = (r) => {
+    const raw = r[5];
+    if (raw == null || String(raw).trim() === '') return true;
+    const t = new Date(raw).getTime();
+    if (!Number.isFinite(t)) return true;
+    return t > nowMs;
+  };
+
+  const livePicks = todayPicks.filter(notStarted);
+  const droppedStarted = todayPicks.length - livePicks.length;
+  if (droppedStarted > 0) {
+    console.log(`[emails] Omitted ${droppedStarted} pick(s) whose game already started`);
+  }
+
+  const approved = livePicks.filter(r => (r[21] || '').toString().trim() === 'approved');
+  const allPicks = livePicks;
 
   console.log(`[emails] Today's picks: ${allPicks.length} total, ${approved.length} approved`);
 

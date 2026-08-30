@@ -1,13 +1,16 @@
 name: Evening Digest — Tomorrow's Picks Email
 
-# Runs ~8:30pm PT (during PDT; ~7:30pm during PST — cron is fixed UTC) and emails
+# Runs 9:00pm PDT (8:00pm during PST — cron is fixed UTC) and emails
 # the full slate of picks for TOMORROW across every league in the shared ledger,
 # so the bets can be reviewed the night before and the earliest lines are captured.
-# Fires 30 min early to land ~9pm PT after GitHub Actions' typical scheduling delay.
-# 03:30 UTC = 20:30 PDT (UTC-7) / 19:30 PST (UTC-8).
+# 04:00 UTC = 21:00 PDT (UTC-7) / 20:00 PST (UTC-8). This is Nick's 9 PM PT
+# "show me as many lines as possible" checkpoint. It runs 55 min after
+# slate-build (03:05 UTC) so the US rows exist by the time it reads them.
+# Both carry independent GitHub delivery lag, so on a bad night the digest can
+# still win the race and show a short card — cosmetic, not a correctness bug.
 on:
   schedule:
-    - cron: '30 3 * * *'
+    - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
       date:

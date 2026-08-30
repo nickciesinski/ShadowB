@@ -1,0 +1,70 @@
+name: Final Card — Place These Bets Email
+
+# NICK'S 5 AM PT DELIVERABLE. This is the email he acts on.
+#
+# WHY IT IS SEPARATE FROM slate-build (morning-chain.yml). The two things Nick
+# needs happen at different times:
+#   - 9 PM PT night before: as many lines/picks as possible  -> evening-digest.yml
+#   - 5 AM PT next morning:  the final "place these bets"     -> THIS FILE
+# For a few days trigger9 was a step inside the slate build, which meant the bet
+# card arrived at 8 PM the night before. That is what this split fixes.
+#
+# WHY 05:50 UTC AND NOT SOMETHING CLOSER TO 5 AM. GitHub's delivery lag on this
+# repo is still unreliable — measured 2026-08-30: freeze +1h11, trigger19 +2h54,
+# trigger4b +4h14, trigger16 +4h58, trigger14 +5h31. Scheduling near 5 AM PT
+# would miss on any high-lag day. 05:50 UTC lands between 10:50 PM PT (zero lag)
+# and 5:00 AM PT (6h10 lag), so the card is waiting for him across the whole
+# observed range. MOVE THIS LATER ONLY AFTER re-measuring lag — the deadline is
+# 12:00 UTC and there is no second chance in the day.
+#
+# IT RE-RUNS ODDS + PREDICTIONS FIRST, ON PURPOSE. trigger4 is idempotent for a
+# given UTC slate date (verified: Aug 27's double run wrote nothing the second
+# time; all rows kept their original timestamps). So this is a cheap top-up, not
+# a regeneration — it catches games whose odds posted after the 03:05 build, and
+# if that build was dropped entirely it generates the slate from scratch. That
+# makes the bet card self-healing rather than dependent on an earlier job having
+# landed, which is the failure mode that started this whole mess.
+on:
+  schedule:
+    - cron: '50 5 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+      RANKINGS_SPREADSHEET_ID: ${{ secrets.RANKINGS_SPREADSHEET_ID }}
+      ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+      GMAIL_USER: ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+
+      - name: Smoke-test approval engine
+        run: node -e "require('./src/approval-engine')"
+
+      # Top-up, not regeneration. continue-on-error: a flaky odds call must not
+      # cost Nick the email — he would still rather have the card built at 03:05.
+      - name: Trigger 3 — Refresh odds
+        run: node src/triggers.js trigger3
+        continue-on-error: true
+
+      - name: Trigger 4 — Top up predictions (idempotent)
+        run: node src/triggers.js trigger4
+        continue-on-error: true
+
+      # if: always() — the card goes out even if the top-up failed.
+      # sendDailyPicksEmail() flags a zero-pick slate in the subject line.
+      - name: Trigger 9 — Send "place these bets" email
+        if: always()
+        run: node src/triggers.js trigger9

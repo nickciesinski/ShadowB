@@ -1,6 +1,15 @@
-name: Morning Chain — Stats → Predictions → Picks Email
+name: Slate Build — Stats → Odds → Predictions
 
-# THE ONE JOB THAT PRODUCES NICK'S MORNING PICKS.
+# BUILDS THE SLATE. DOES NOT EMAIL IT.
+#
+# Nick's actual requirement, stated 2026-08-30:
+#   - 9 PM PT the night before: as many lines/picks as possible (the preview)
+#   - 5 AM PT the next day:     the final "place these bets" card
+#
+# Those are two deliverables at two times, so they are two jobs. This one builds
+# the slate early enough that evening-digest.yml (04:00 UTC = 9 PM PDT) has
+# something to show. The "place these bets" email is final-card.yml at 05:50 UTC.
+# Folding the email in here is what put Nick's bet card at 8 PM the night before.
 #
 # WHY THIS IS A SINGLE WORKFLOW. This used to be eight separately-cron'd
 # workflows (trigger1,2,3,4,6,7,8,9) fired 30 minutes apart from 05:30 to 09:00
@@ -120,11 +129,5 @@ jobs:
         run: node src/triggers.js trigger8
         continue-on-error: true
 
-      # ── The email ────────────────────────────────────────────────
-      # if: always() — even if trigger4 blew up, send. sendDailyPicksEmail()
-      # flags a zero-pick slate in the subject line, so a silent failure
-      # upstream still reaches Nick as an obviously-wrong email rather than as
-      # no email at all.
-      - name: Trigger 9 — Send daily picks email
-        if: always()
-        run: node src/triggers.js trigger9
+      # NO EMAIL STEP HERE ON PURPOSE. trigger9 lives in final-card.yml so the
+      # bet card lands by 5 AM PT, not at 8 PM the night before. See that file.
