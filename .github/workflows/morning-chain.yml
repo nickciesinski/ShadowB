@@ -25,12 +25,36 @@ name: Morning Chain — Stats → Predictions → Picks Email
 # land before predictions (4); props/combos/tiers (6,7,8) enrich the sheet before
 # the email (9) reads it. Do not reorder without understanding those reads.
 #
-# 07:05 UTC = 12:05 AM PDT / 11:05 PM PST, ~5 hours of cushion before Nick's
-# 5 AM PT deadline even with GitHub's worst routine jitter. The :05 is
-# deliberate — :00 and :30 are GitHub's highest-load cron minutes.
+# WHY 03:05 UTC AND NOT SOMETHING SANER-LOOKING.
+#
+# This is set by GitHub's delivery lag, not by when the picks "should" be made.
+# After the Aug 2026 outage GitHub kept delivering this repo's scheduled runs
+# hours after their cron, decaying only gradually as load dropped. Measured lag
+# medians: Aug 27 10h24, Aug 28 9h46, Aug 29 4h01, Aug 30 2h09. The 07:05 slot
+# this replaced fired at 13:07 UTC on Aug 29 — 6h02 late, which is 6:07 AM PT
+# and past the point Nick needs the card.
+#
+# 03:05 UTC gives ~8h55 of headroom before 12:00 UTC (5:00 AM PT), so the picks
+# land in time across the entire observed lag range. The tradeoff Nick accepted
+# explicitly: at low lag this generates the slate around 8 PM PT the night
+# before, earlier than the old ~12:40 AM PT. Earlier picks mean earlier lines.
+#
+# SIDE EFFECT, AND IT IS THE ONE evening-digest.js WAS BUILT FOR. That script's
+# header says US rows will appear in the night-before digest "once US generation
+# is shifted to the night before" — this is that shift. At 03:05 UTC the picks
+# are stamped with the current UTC date, and the digest at 03:30 UTC asks for
+# "tomorrow in PT", which is the same date. They now line up. Both jobs carry
+# independent lag, so on any given night the digest may still win the race and
+# show a short card; that is cosmetic, not a correctness problem.
+#
+# DO NOT move this later without re-measuring the lag. DO NOT move it before
+# 00:00 UTC — the picks' date stamp comes from the UTC calendar day, so
+# crossing midnight UTC files the whole slate under the wrong date.
+#
+# The :05 is deliberate — :00 and :30 are GitHub's highest-load cron minutes.
 on:
   schedule:
-    - cron: '5 7 * * *'
+    - cron: '5 3 * * *'
   workflow_dispatch:
 
 jobs:
