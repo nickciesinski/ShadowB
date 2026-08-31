@@ -1236,6 +1236,13 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
     // pick and its onConflict(pick_id) upsert is the exactly-once arbiter. (Gating
     // on finalRows meant a re-run whose picks were already in the sheet wrote
     // nothing to the DB.)
+    // 2026-08-31 — prediction_features had no join key to performance_log and
+    // stamped today's date rather than the game date, so a natural-key join
+    // matched only ~65% of rows and feature-level CLV was unmeasurable. This
+    // map is declared out here so the feature-logging block below (a separate
+    // try) can stamp the SAME pick_id the ledger uses.
+    const pickIdByFeatureKey = {};   // "market|away@home" -> pick_id
+    const gameKeyByFeatureKey = {};  // "market|away@home" -> game_key
     if (db.isEnabled() && dedupedPerfRows && dedupedPerfRows.length > 0) {
       try {
         // Identity lookup from the odds feed (now carries event.id at col 10).
@@ -1361,7 +1368,13 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           // fallback to the raw number, which is the fiction being removed.
           calibrated_prob: calibrate(r[1], meta.predicted_prob, meta.market_prob),
           // --- v2 CLV lifecycle identity + lock metadata ---
-          pick_id: makePickId(gKey, market),
+          pick_id: (() => {
+            const pid = makePickId(gKey, market);
+            // Same shape the feature rows key on (see below): market + matchup.
+            const fk = `${market}|${away}@${home}`;
+            if (!pickIdByFeatureKey[fk]) { pickIdByFeatureKey[fk] = pid; gameKeyByFeatureKey[fk] = gKey; }
+            return pid;
+          })(),
           game_key: gKey,
           event_id: eventId || null,
           game_number: gameNumber,
@@ -1423,6 +1436,12 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
             edge_driver: p._edgeDriver || 'base_model',
             pick_purpose: p.pick_purpose || 'tracking',
             top_contributions: p._topContributions || [],
+            // 2026-08-31 — the join key. null when the matching ledger row was
+            // not written this run (a re-run whose picks already existed), which
+            // is honest: an unjoinable feature row should be visibly unjoinable
+            // rather than carry a guessed id that silently attributes CLV to the
+            // wrong pick.
+            pick_id: pickIdByFeatureKey[`${p.betType || ''}|${p._awayTeam || ''}@${p._homeTeam || ''}`] || null,
           }));
         if (featureRows.length > 0) {
           await db.insertPredictionFeatures(featureRows);

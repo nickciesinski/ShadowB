@@ -544,7 +544,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     mlPick._disagreement = modelDisagreement(mlMainProb, simpleHomeProb, 'moneyline');
     const mlContribs = decomposeScore(features, mlWeights);
     mlPick._edgeDriver = mlContribs.length > 0 ? mlContribs[0].feature : 'base_model';
-    mlPick._topContributions = mlContribs.slice(0, 5);
+    // 2026-08-31 — was slice(0, 5). decomposeScore already returns only
+    // features with a non-zero weight AND a present value, so the full list
+    // is short. Truncating to 5 made every other feature invisible to CLV
+    // attribution, which is the measurement that decides what to reweight.
+    mlPick._topContributions = mlContribs;
     picks.push(mlPick);
   }
 
@@ -555,7 +559,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     spreadPick._disagreement = modelDisagreement(spreadMainProb, simpleHomeProb, 'spread');
     const spContribs = decomposeScore(features, spreadWeights);
     spreadPick._edgeDriver = spContribs.length > 0 ? spContribs[0].feature : 'base_model';
-    spreadPick._topContributions = spContribs.slice(0, 5);
+    // 2026-08-31 — was slice(0, 5). decomposeScore already returns only
+    // features with a non-zero weight AND a present value, so the full list
+    // is short. Truncating to 5 made every other feature invisible to CLV
+    // attribution, which is the measurement that decides what to reweight.
+    spreadPick._topContributions = spContribs;
     picks.push(spreadPick);
   }
 
@@ -589,7 +597,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     totalPick._disagreement = 0; // Simple model has no total projection
     const totContribs = decomposeScore(features, totalWeights);
     totalPick._edgeDriver = totContribs.length > 0 ? totContribs[0].feature : 'base_model';
-    totalPick._topContributions = totContribs.slice(0, 5);
+    // 2026-08-31 — was slice(0, 5). decomposeScore already returns only
+    // features with a non-zero weight AND a present value, so the full list
+    // is short. Truncating to 5 made every other feature invisible to CLV
+    // attribution, which is the measurement that decides what to reweight.
+    totalPick._topContributions = totContribs;
     picks.push(totalPick);
   }
 
