@@ -530,11 +530,21 @@ function getGameProgress(game) {
 // src/calibrated-display.mjs, which is what produces these numbers.
 const MIN_STAKE = 0.01;
 
-// Tier buckets map onto the same confidence thresholds the old UI already
-// used for its green/amber/gray dot (n>=8 / n>=6 / else) — see confColor.
+// 2026-08-31 — rescaled for CALIBRATED confidence.
+//
+// These were >=8 / >=6, thresholds set against the model's raw output where
+// 78% of picks scored 10/10. On the calibrated scale, confidence 8 needs about
+// +1.6pp of genuine edge, which almost never happens — so every pick fell into
+// the bottom tier and the collapse rule below hid most of the card.
+//
+// The meaningful cut now is simply the sign of the edge: confidence 1 means the
+// calibrated probability does not beat the price, anything above it does.
+//   tier 10 = clearly positive edge (confidence 4+, roughly +0.7pp and up)
+//   tier 7  = positive but slim (confidence 2-3)
+//   tier 5  = no edge over the price
 function tierOf(pick) {
   const n = parseFloat(pick.confidence) || 0;
-  return n >= 8 ? 10 : n >= 6 ? 7 : 5;
+  return n >= 4 ? 10 : n >= 2 ? 7 : 5;
 }
 function tierHeightClass(tier) { return tier === 10 ? 't10' : tier === 7 ? 't7' : 't5'; }
 
@@ -712,11 +722,15 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
+  // 2026-08-31 — when on, nothing is collapsed or filtered out of the card.
+  // Build mode hides no-edge picks by default to keep the card actionable;
+  // this is the switch for looking at the whole slate regardless.
+  const [showAllOn, setShowAllOn] = useState(false);
   const [expandedGames, setExpandedGames] = useState({});
   const dragRef = useRef(null);
 
   const allPicks = dedup(picks);
-  const pool = minUnitOn ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
+  const pool = (minUnitOn && !showAllOn) ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
 
   // Effective state: an explicit manual tri-state tap always wins ('pass'
   // included — it's how you exclude a pick the threshold rule auto-selected);
@@ -1003,6 +1017,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
               {`Take ${commitCount} · ${commitUnits.toFixed(1)}u`}
             </button>
             <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)} title="Only picks whose calibrated probability beats the price">+EV</button>
+            <button className={`abtn ghost${showAllOn ? ' on' : ''}`} onClick={() => setShowAllOn(v => !v)} title="Show every pick, including those with no edge over the price">Show all</button>
           </div>
         </div>
       ) : (
@@ -1065,8 +1080,12 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
       <div>
         {gameList.map((g, gi) => {
           const rows = [...g.picks].sort((a, b) => tierOf(b) - tierOf(a));
-          const shown = pickMode === 'build' ? rows.filter((p, i) => tierOf(p) > 5 || expandedGames[gi] || rows.every(r => tierOf(r) <= 5)) : rows;
-          const hidden = pickMode === 'build' ? rows.filter(p => !shown.includes(p)) : [];
+          // showAllOn bypasses the build-mode collapse entirely: every pick in
+          // every game, whether or not it clears the tier threshold.
+          const shown = (pickMode === 'build' && !showAllOn)
+            ? rows.filter((p, i) => tierOf(p) > 5 || expandedGames[gi] || rows.every(r => tierOf(r) <= 5))
+            : rows;
+          const hidden = (pickMode === 'build' && !showAllOn) ? rows.filter(p => !shown.includes(p)) : [];
           return (
             <div className="agame" key={gi}>
               <div className="agh">
