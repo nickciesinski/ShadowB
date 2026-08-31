@@ -24,6 +24,7 @@ const BOOKS = require('../config/books.json'); // 2026-08-08 books we can actual
 
 const USABLE_BOOKS = new Set((BOOKS.usable || []).map((b) => String(b).toLowerCase()));
 const { applyApprovalFilters } = require('./approval-engine');
+const { isRuleCEligible } = require('./rule-c'); // 2026-08-31 pre-registered rule, LABEL ONLY
 const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate, sha1 } = require('./norm');
 const paramStore = require('./param-store');
 
@@ -1338,6 +1339,19 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
               ? String(meta.best_book || '').toLowerCase() : 'consensus_median';
             return bk === 'consensus_median' || USABLE_BOOKS.has(bk);
           })(),
+          // 2026-08-31 — pre-registration of the candidate staking rule.
+          // LABEL ONLY: this does not change which picks are staked or at what
+          // size. The rule (plus money AND top-half model-vs-market
+          // disagreement) was found by slicing the same 735 rows it was scored
+          // on, so acting on it now would be fitting noise. Stamping it here
+          // and staking nothing turns every forward pick into an out-of-sample
+          // test of a rule written down in advance. null = not evaluable.
+          rule_c_eligible: isRuleCEligible({
+            odds: parseInt(r[9]),
+            bestOdds: meta.best_odds,
+            predictedProb: meta.predicted_prob,
+            marketProb: meta.market_prob,
+          }),
           // --- v2 CLV lifecycle identity + lock metadata ---
           pick_id: makePickId(gKey, market),
           game_key: gKey,

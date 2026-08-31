@@ -1,0 +1,14 @@
+{
+  "_comment": "Pre-registered candidate staking rule, 2026-08-31. STAMP ONLY - nothing reads this to decide stake. See src/rule-c.js.",
+  "minAmericanOdds": 100,
+  "minDisagreement": 0.0805,
+  "_provenance": {
+    "population": "pick_regime=v2_clv, clv_basis=novig, close_lag_hours<=6, model_version like v2.3%, tradeable<>false, n=735",
+    "minDisagreement_is": "the median of (predicted_prob - market_prob) in that population",
+    "in_sample_net_edge_pp": -0.417,
+    "in_sample_t": -2.98,
+    "baseline_net_edge_pp": -1.483,
+    "baseline_t": -21.61,
+    "warning": "These figures are IN-SAMPLE - the rule was found by slicing the same rows it is scored on. Forward rows are the real test. Do not stake on this until the forward sample confirms it."
+  }
+}
