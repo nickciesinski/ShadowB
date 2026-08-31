@@ -25,6 +25,7 @@ const BOOKS = require('../config/books.json'); // 2026-08-08 books we can actual
 const USABLE_BOOKS = new Set((BOOKS.usable || []).map((b) => String(b).toLowerCase()));
 const { applyApprovalFilters } = require('./approval-engine');
 const { isRuleCEligible } = require('./rule-c'); // 2026-08-31 pre-registered rule, LABEL ONLY
+const { calibrate } = require('./calibration'); // R3.3 2026-08-31, REPORTING-ONLY
 const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate, sha1 } = require('./norm');
 const paramStore = require('./param-store');
 
@@ -1352,6 +1353,13 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
             predictedProb: meta.predicted_prob,
             marketProb: meta.market_prob,
           }),
+          // R3.3 2026-08-31 — the model's output on a real probability scale.
+          // REPORTING-ONLY: nothing reads this to select or size. It is logged
+          // beside the raw value so the two can be watched against outcomes
+          // before anything depends on it. null where no fitted map exists for
+          // the league, or the inputs were out of range - never a silent
+          // fallback to the raw number, which is the fiction being removed.
+          calibrated_prob: calibrate(r[1], meta.predicted_prob, meta.market_prob),
           // --- v2 CLV lifecycle identity + lock metadata ---
           pick_id: makePickId(gKey, market),
           game_key: gKey,

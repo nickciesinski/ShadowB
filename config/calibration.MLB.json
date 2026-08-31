@@ -1,0 +1,19 @@
+{
+  "_comment": "MLB probability calibration, fitted 2026-08-31 on 1209 graded v2_clv picks (weeks 31-35). Maps the model's raw output onto a real probability scale. See src/calibration.js.",
+  "model": "logistic",
+  "form": "logit(p) = a + b*logit(model_prob) + c*logit(market_prob)",
+  "coefficients": { "a": -0.0605, "b": 0.0166, "c": 1.1079 },
+  "fit": {
+    "n": 1209,
+    "weeks": "2026 ISO weeks 31-35",
+    "se": { "a": 0.0782, "b": 0.1015, "c": 0.2282 },
+    "t": { "a": -0.77, "b": 0.16, "c": 4.85 }
+  },
+  "_read_this": {
+    "b_is_not_significant": "t = 0.16. On WIN/LOSS evidence the model's raw output adds nothing to the market price. b is kept rather than zeroed so the coefficient can be re-fitted as data accrues, not because it is established.",
+    "c_is_about_1": "The market price, passed through almost unchanged, IS the calibrated probability.",
+    "walk_forward_logloss": { "raw_model": 0.7266, "market_only": 0.6764, "model_plus_market": 0.6766 },
+    "what_this_buys": "Recalibration is a large win over the raw model (0.7266 -> 0.6766). It does NOT create an edge over the market; it removes a fictitious one. Its value is that sizing stops keying off a claimed +13pp edge that does not exist.",
+    "power_caveat": "A win/loss test on ~1200 binary outcomes cannot see an edge of a few tenths of a point - SE on the win rate is about 1.4pp. The absence of a detectable coefficient here is NOT evidence against the small CLV edge measured separately; CLV is the sample-efficient measurement and remains the primary signal."
+  }
+}
