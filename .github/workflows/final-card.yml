@@ -25,8 +25,10 @@ name: Final Card — Place These Bets Email
 # makes the bet card self-healing rather than dependent on an earlier job having
 # landed, which is the failure mode that started this whole mess.
 on:
-  schedule:
-    - cron: '50 5 * * *'
+  # 2026-08-31 — no `schedule:` here on purpose. GitHub delivered this
+  # workflow anywhere from 39 min to 13.6 h after its cron; Vercel Cron now
+  # dispatches it on time (web/vercel.json -> /api/cron/slate). Re-adding a
+  # schedule would double-send whenever GitHub eventually caught up.
   workflow_dispatch:
 
 jobs:

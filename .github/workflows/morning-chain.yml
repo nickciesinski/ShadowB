@@ -62,8 +62,10 @@ name: Slate Build — Stats → Odds → Predictions
 #
 # The :05 is deliberate — :00 and :30 are GitHub's highest-load cron minutes.
 on:
-  schedule:
-    - cron: '5 3 * * *'
+  # 2026-08-31 — no `schedule:` here on purpose. GitHub delivered this
+  # workflow anywhere from 39 min to 13.6 h after its cron; Vercel Cron now
+  # dispatches it on time (web/vercel.json -> /api/cron/slate). Re-adding a
+  # schedule would double-send whenever GitHub eventually caught up.
   workflow_dispatch:
 
 jobs:

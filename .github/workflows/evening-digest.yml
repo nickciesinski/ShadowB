@@ -1,16 +1,19 @@
 name: Evening Digest — Tomorrow's Picks Email
 
-# Runs 9:00pm PDT (8:00pm during PST — cron is fixed UTC) and emails
-# the full slate of picks for TOMORROW across every league in the shared ledger,
-# so the bets can be reviewed the night before and the earliest lines are captured.
-# 04:00 UTC = 21:00 PDT (UTC-7) / 20:00 PST (UTC-8). This is Nick's 9 PM PT
-# "show me as many lines as possible" checkpoint. It runs 55 min after
-# slate-build (03:05 UTC) so the US rows exist by the time it reads them.
-# Both carry independent GitHub delivery lag, so on a bad night the digest can
-# still win the race and show a short card — cosmetic, not a correctness bug.
+# Emails the full slate of picks for TOMORROW across every league in the shared
+# ledger, so the bets can be reviewed the night before and the earliest lines
+# are captured. This is Nick's 9 PM PT "show me as many lines as possible"
+# checkpoint.
+#
+# Dispatched by Vercel Cron at 04:00 UTC = 21:00 PDT (UTC-7) / 20:00 PST.
+# The slate build is dispatched two hours earlier (02:00 UTC) and lands by
+# 02:59 UTC at the latest, so the US rows always exist by the time this reads
+# them — the race that used to make this show a short card is gone.
 on:
-  schedule:
-    - cron: '0 4 * * *'
+  # 2026-08-31 — no `schedule:` here on purpose. GitHub delivered this
+  # workflow anywhere from 39 min to 13.6 h after its cron; Vercel Cron now
+  # dispatches it on time (web/vercel.json -> /api/cron/slate). Re-adding a
+  # schedule would double-send whenever GitHub eventually caught up.
   workflow_dispatch:
     inputs:
       date:

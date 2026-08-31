@@ -2,8 +2,19 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
+      "_comment": "Slate build. 02:00 UTC = 7 PM PT; Hobby fires within the hour, so it lands by 7:59 PM PT — an hour of headroom before the 9 PM preview.",
       "path": "/api/cron/slate?workflow=morning-chain.yml",
       "schedule": "0 2 * * *"
+    },
+    {
+      "_comment": "Tomorrow's Picks email. 04:00 UTC = 9 PM PT, landing 9:00-9:59 PM PT. The slate is already built by then.",
+      "path": "/api/cron/slate?workflow=evening-digest.yml",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "_comment": "Place These Bets card. 12:00 UTC = 5 AM PT, landing 5:00-5:59 AM PT.",
+      "path": "/api/cron/slate?workflow=final-card.yml",
+      "schedule": "0 12 * * *"
     }
   ]
 }
