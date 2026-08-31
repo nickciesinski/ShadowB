@@ -525,6 +525,11 @@ function getGameProgress(game) {
 }
 
 // ── Tape design: tier + shared game-matching helpers ─────────────────
+// 2026-08-31 — the floor stake. A pick at exactly this stake has no calibrated
+// edge over the price; anything above it does. Mirrors MIN_UNITS in
+// src/calibrated-display.mjs, which is what produces these numbers.
+const MIN_STAKE = 0.01;
+
 // Tier buckets map onto the same confidence thresholds the old UI already
 // used for its green/amber/gray dot (n>=8 / n>=6 / else) — see confColor.
 function tierOf(pick) {
@@ -619,7 +624,10 @@ function TeamLogo({ team, league, size = 20 }) {
 
 // ── Best Bets Section ───────────────────────────────────────────────
 function BestBets({ picks }) {
-  const topPicks = [...picks].filter(p => p.units >= 0.15).sort((a, b) => b.units - a.units).slice(0, 5);
+  // 2026-08-31 — units are now derived from calibrated edge, so the old 0.15u
+  // floor (tuned to the inflated scale) would empty this panel every day.
+  // The meaningful cut on the new scale is simply "has positive edge".
+  const topPicks = [...picks].filter(p => p.units > MIN_STAKE).sort((a, b) => b.units - a.units).slice(0, 5);
   if (!topPicks.length) return null;
 
   return (
@@ -656,7 +664,7 @@ function BestBets({ picks }) {
 
 // ── Morning Summary Card ────────────────────────────────────────────
 function MorningSummary({ picks, isBet, isFade, onLockAll }) {
-  const qualifiedPicks = picks.filter(p => p.units >= 0.2);
+  const qualifiedPicks = picks.filter(p => p.units > MIN_STAKE); // positive calibrated edge
   const totalPlays = picks.length;
   const totalUnits = picks.reduce((s, p) => s + (p.units || 0), 0);
   const lockedCount = picks.filter(p => isBet(p)).length;
@@ -708,7 +716,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   const dragRef = useRef(null);
 
   const allPicks = dedup(picks);
-  const pool = minUnitOn ? allPicks.filter(p => p.units >= 0.3) : allPicks;
+  const pool = minUnitOn ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
 
   // Effective state: an explicit manual tri-state tap always wins ('pass'
   // included — it's how you exclude a pick the threshold rule auto-selected);
@@ -994,7 +1002,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
             <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake}>
               {`Take ${commitCount} · ${commitUnits.toFixed(1)}u`}
             </button>
-            <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)}>0.3u+</button>
+            <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)} title="Only picks whose calibrated probability beats the price">+EV</button>
           </div>
         </div>
       ) : (

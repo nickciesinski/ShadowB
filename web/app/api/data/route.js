@@ -1,6 +1,11 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+// 2026-08-31 — the app shows CALIBRATED confidence/edge/units, not the model's
+// raw output. The raw numbers claimed an average +13pp edge against a measured
+// +0.2pp, with 78% of picks at 10/10; that display is why the results kept
+// looking better than they were. Bundled by web/scripts/copy-params.mjs.
+import { displayFor } from './_shared/calibrated-display.mjs';
 
 // This route serves the MAIN load: today's picks, props, and today's games.
 // Graded history (Results tab) lives in /api/results and is loaded lazily by
@@ -125,7 +130,7 @@ export async function GET() {
     // resolves to null on error so the Sheets fallbacks below still work.
     const sbTodayQ = sb
       ? sb.from('performance_log')
-          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices')
+          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds')
           .gte('date', isoToday).lte('date', isoWeekAhead)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
@@ -161,8 +166,22 @@ export async function GET() {
           date: rowDateStr, isoDate: rowIso, league: r.league || '', market: r.market || '',
           away: gp[0] || '', home: gp[1] || '', startTime: r.start_time || '', betType: r.market || '',
           pick: r.pick || '', line: r.line != null ? String(r.line) : '',
-          odds: r.odds || -110, units: r.final_units || 0,
-          confidence: r.confidence != null ? String(r.confidence) : '', result: r.result || '',
+          odds: r.odds || -110,
+          // Calibrated display. `edge` is expected return per unit staked at the
+          // best price we could take; confidence scales on that real edge rather
+          // than on rank, so most picks sit at 1 and the rare good one stands
+          // out. A league with no fitted map (EPL today) reports calibrated:false
+          // and keeps its raw figures rather than showing them as calibrated.
+          ...(() => {
+            const d = displayFor(r);
+            return d.calibrated
+              ? { units: d.units, confidence: String(d.confidence),
+                  edgePp: Math.round(d.edge * 1000) / 10, calibrated: true }
+              : { units: r.final_units || 0,
+                  confidence: r.confidence != null ? String(r.confidence) : '',
+                  edgePp: null, calibrated: false };
+          })(),
+          result: r.result || '',
           unitReturn: 0,
           // 3-way (soccer) side selection: `selection` is which of home/draw/away the
           // model took, `altPrices` the American price for all three. Null on US-sports

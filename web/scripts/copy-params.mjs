@@ -14,4 +14,16 @@ for (const lg of ['MLB', 'NBA', 'NFL', 'NHL']) {
   const src = path.join(srcDir, `model-params.${lg}.json`);
   if (fs.existsSync(src)) { fs.copyFileSync(src, path.join(outDir, `model-params.${lg}.json`)); n++; }
 }
+// 2026-08-31 — the app now displays CALIBRATED numbers, so it needs both the
+// shared display math and the fitted coefficients bundled alongside it.
+const sharedOut = path.resolve(here, '..', 'app', 'api', 'data', '_shared');
+fs.mkdirSync(sharedOut, { recursive: true });
+fs.copyFileSync(path.resolve(here, '..', '..', 'src', 'calibrated-display.mjs'),
+                path.join(sharedOut, 'calibrated-display.mjs'));
+let c = 0;
+for (const lg of ['MLB', 'NBA', 'NFL', 'NHL']) {
+  const src = path.join(srcDir, `calibration.${lg}.json`);
+  if (fs.existsSync(src)) { fs.copyFileSync(src, path.join(sharedOut, `calibration.${lg}.json`)); c++; }
+}
 console.log(`[copy-params] copied ${n} param file(s) -> ${outDir}`);
+console.log(`[copy-params] copied display module + ${c} calibration map(s) -> ${sharedOut}`);

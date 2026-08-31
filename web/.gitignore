@@ -2,3 +2,4 @@ node_modules/
 .next/
 .env.local
 app/api/params/_data/
+app/api/data/_shared/
