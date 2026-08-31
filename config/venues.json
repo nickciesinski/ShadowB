@@ -1,0 +1,33 @@
+{
+  "_comment": "Venue cost schedules, 2026-08-31. Cost is expressed in PROBABILITY POINTS (fraction, not %) so it drops straight into the vig_paid_pp slot: net_edge = clv_prob_delta - cost. See src/venue-cost.js.",
+  "_why": "vig_paid_pp = placedImplied - placed_novig_prob, i.e. the probability overcharge. On an exchange there is no book hold; the overcharge is the per-contract fee, which is already denominated in dollars per $1 of payout = probability points. Same units, no conversion.",
+  "venues": {
+    "sportsbook": {
+      "label": "Sportsbook (measured, not modelled)",
+      "model": "measured",
+      "note": "Use the ticket's own vig_paid_pp. Books differ per market and per line; a formula would be a worse estimate than the measurement we already take."
+    },
+    "kalshi": {
+      "label": "Kalshi",
+      "model": "quadratic",
+      "taker": { "coefficient": 0.07 },
+      "maker": { "coefficient": 0.0175 },
+      "note": "fee per contract = coefficient * P * (1-P). Peaks at P=0.50. Sources disagree on whether the taker multiplier is 0.06 or 0.07 for sports; 0.07 is the conservative (higher-cost) reading. Maker fees reportedly round to zero on small orders - NOT modelled as zero here, because a rounding artifact is not a fee schedule.",
+      "confidence": "medium"
+    },
+    "novig": {
+      "label": "Novig",
+      "model": "quadratic",
+      "taker": { "coefficient": 0.03, "capPerContract": 0.0075 },
+      "maker": { "coefficient": 0 },
+      "note": "fee per contract = min(0.03 * P * (1-P), 0.0075). Makers pay nothing and may earn a credit of up to half the taker fee; the credit is NOT modelled - unmodelled upside is safe, unmodelled cost is not.",
+      "confidence": "medium"
+    },
+    "dk_predictions": {
+      "label": "DraftKings Predictions",
+      "model": "unknown",
+      "note": "Fee schedule not confirmed. Deliberately left unmodelled so it cannot silently be treated as free.",
+      "confidence": "none"
+    }
+  }
+}
