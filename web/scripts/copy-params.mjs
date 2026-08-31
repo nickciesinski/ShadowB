@@ -22,8 +22,8 @@ fs.copyFileSync(path.resolve(here, '..', '..', 'src', 'calibrated-display.mjs'),
                 path.join(sharedOut, 'calibrated-display.mjs'));
 let c = 0;
 for (const lg of ['MLB', 'NBA', 'NFL', 'NHL']) {
-  const src = path.join(srcDir, `calibration.${lg}.json`);
-  if (fs.existsSync(src)) { fs.copyFileSync(src, path.join(sharedOut, `calibration.${lg}.json`)); c++; }
+  const src = path.join(srcDir, `prob-calibration.${lg}.json`);
+  if (fs.existsSync(src)) { fs.copyFileSync(src, path.join(sharedOut, `prob-calibration.${lg}.json`)); c++; }
 }
 console.log(`[copy-params] copied ${n} param file(s) -> ${outDir}`);
 console.log(`[copy-params] copied display module + ${c} calibration map(s) -> ${sharedOut}`);

@@ -25,7 +25,7 @@ const BOOKS = require('../config/books.json'); // 2026-08-08 books we can actual
 const USABLE_BOOKS = new Set((BOOKS.usable || []).map((b) => String(b).toLowerCase()));
 const { applyApprovalFilters } = require('./approval-engine');
 const { isRuleCEligible } = require('./rule-c'); // 2026-08-31 pre-registered rule, LABEL ONLY
-const { calibrate } = require('./calibration'); // R3.3 2026-08-31, REPORTING-ONLY
+const { calibrate } = require('./prob-calibration'); // R3.3 2026-08-31, REPORTING-ONLY
 const { gameKey: makeGameKey, pickId: makePickId, seasonOf, localGameDate, sha1 } = require('./norm');
 const paramStore = require('./param-store');
 

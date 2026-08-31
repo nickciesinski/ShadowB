@@ -5,7 +5,7 @@
 // reintroduce exactly the fiction this module exists to remove.
 const test = require('node:test');
 const assert = require('node:assert');
-const { calibrate, calibratedEdge, loadCalibration, logit, sigmoid } = require('../src/calibration');
+const { calibrate, calibratedEdge, loadCalibration, logit, sigmoid } = require('../src/prob-calibration');
 
 const K = { a: -0.0605, b: 0.0166, c: 1.1079 };
 const near = (a, b, tol = 1e-6) => Math.abs(a - b) < tol;
