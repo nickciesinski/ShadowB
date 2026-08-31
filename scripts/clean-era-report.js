@@ -132,6 +132,79 @@ function clvTable(seg, title) {
   return md + '\n';
 }
 
+// ── Price class — where the vig actually goes ────────────────────
+// 2026-08-31. The single most informative cut in this data: books hold
+// roughly twice as much on the favourite side, and our CLV changes sign
+// across it. Splitting ROI/CLV by price class is what makes the choice
+// between "our model is bad" and "we are buying at a bad price" visible.
+// Staked (approved) rows only — this is the money question.
+const PRICE_CLASSES = ['plus_money', 'minus_money'];
+const PRICE_LABEL = { plus_money: 'plus money (>= +100)', minus_money: 'minus money (< +100)' };
+
+function priceClassOf(odds) {
+  const o = Number(odds);
+  if (!Number.isFinite(o) || o === 0) return null;
+  return o >= 100 ? 'plus_money' : 'minus_money';
+}
+
+function emptyPrice() {
+  return { n: 0, w: 0, l: 0, p: 0, staked: 0, ret: 0,
+           clvN: 0, clvSum: 0, vigN: 0, vigSum: 0, neN: 0, neSum: 0 };
+}
+
+function priceSegments(rows, cutoff) {
+  const seg = {};
+  for (const lg of LEAGUES) {
+    seg[lg] = {};
+    for (const pc of PRICE_CLASSES) seg[lg][pc] = emptyPrice();
+  }
+  for (const row of rows) {
+    const d = parseDate(row[0]);
+    if (!d || d < cutoff) continue;
+    const lg = String(row[1] || '').toUpperCase();
+    if (!seg[lg]) continue;
+    if (String(row[21] || '').trim().toLowerCase() !== 'approved') continue;
+    const pc = priceClassOf(row[9]);
+    if (!pc) continue;
+    const res = String(row[16] || '').trim().toUpperCase();
+    if (res !== 'W' && res !== 'L' && res !== 'P') continue;
+    const t = seg[lg][pc];
+    if (res === 'W') t.w++; else if (res === 'L') t.l++; else t.p++;
+    t.n++;
+    t.staked += Number(row[10]) || 0;
+    t.ret += Number(row[17]) || 0;
+    if (typeof row[33] === 'number') { t.clvN++; t.clvSum += row[33]; }
+    if (typeof row[34] === 'number') { t.vigN++; t.vigSum += row[34]; }
+    if (typeof row[35] === 'number') { t.neN++; t.neSum += row[35]; }
+  }
+  return seg;
+}
+
+function fmtPp(sum, n) {
+  if (!n) return '\u2014';
+  const v = sum / n;
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}pp`;
+}
+
+function priceTable(seg, title) {
+  let md = `### ${title}\n\n`;
+  md += `| League | Price taken | Decided | Staked | ROI | CLV | Vig | Net edge |\n`;
+  md += `|---|---|---|---|---|---|---|---|\n`;
+  let any = false;
+  for (const lg of LEAGUES) {
+    for (const pc of PRICE_CLASSES) {
+      const t = seg[lg][pc];
+      if (!t.n) continue;
+      any = true;
+      const roi = t.staked > 0 ? `${((t.ret / t.staked) * 100).toFixed(1)}%` : 'n/a';
+      md += `| ${lg} | ${PRICE_LABEL[pc]} | ${t.n} | ${t.staked.toFixed(1)}u | ${roi} `
+          + `| ${fmtPp(t.clvSum, t.clvN)} | ${fmtPp(t.vigSum, t.vigN)} | ${fmtPp(t.neSum, t.neN)} |\n`;
+    }
+  }
+  if (!any) md += `| \u2014 | \u2014 | 0 | \u2014 | \u2014 | \u2014 | \u2014 | \u2014 |\n`;
+  return md + '\n';
+}
+
 async function main() {
   const dataStore = require('../src/data-store');
   const db = require('../src/db');
@@ -185,6 +258,8 @@ async function main() {
   const segClean = buildSegments(rows, CLEAN_ERA_START);
   const clvClean = clvSegments(rows, CLEAN_ERA_START);
   const clv30 = clvSegments(rows, cut30);
+  const priceClean = priceSegments(rows, CLEAN_ERA_START);
+  const price30 = priceSegments(rows, cut30);
 
   const pf = portfolio(segClean);
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -208,6 +283,14 @@ async function main() {
   md += `Rows without a closing snapshot are excluded from CLV counts.\n\n`;
   md += clvTable(clvClean, 'Clean era (since 2026-06-03) — CLV by league × market');
   md += clvTable(clv30, 'Trailing 30 days — CLV');
+
+  md += `## Price class — plus money vs laying juice\n\n`;
+  md += `Staked bets only. **Net edge = CLV \u2212 vig, which is expected ROI per unit staked** \u2014 `;
+  md += `it is measured on every ticket, so it answers "is this segment worth money?" without `;
+  md += `waiting for win/loss variance. Books typically hold about twice as much on the favourite `;
+  md += `side, so this split usually separates the profitable half of the book from the rest.\n\n`;
+  md += priceTable(priceClean, 'Clean era (since 2026-06-03) — by price class');
+  md += priceTable(price30, 'Trailing 30 days — by price class');
   md += `## Still W/L-noisy\n\n`;
   md += `- Treat ROI segments with n<20 as not-yet-significant; lean on CLV beat% there.\n`;
 
@@ -221,4 +304,5 @@ if (require.main === module) {
   main().catch(e => { console.error('[clean-era] FATAL:', e.message); process.exit(1); });
 }
 
-module.exports = { windowTable, portfolio, impliedProb, clvPoints, clvSegments, clvFinalize };
+module.exports = { windowTable, portfolio, impliedProb, clvPoints, clvSegments, clvFinalize,
+  priceClassOf, priceSegments, priceTable };

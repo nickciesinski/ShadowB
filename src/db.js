@@ -288,7 +288,7 @@ async function getRecentPerformanceLog(sinceDateISO, opts = {}) {
   let all = [];
   for (let offset = 0; ; offset += PAGE) {
     let q = sb.from('performance_log')
-      .select('date, league, game, market, pick, line, odds, confidence, final_units, result, unit_return, approval_status, pick_regime, clv_prob_delta, clv_basis, close_lag_hours, clv_opening_prob, clv_closing_prob')
+      .select('date, league, game, market, pick, line, odds, confidence, final_units, result, unit_return, approval_status, pick_regime, clv_prob_delta, clv_basis, close_lag_hours, clv_opening_prob, clv_closing_prob, vig_paid_pp, net_edge_pp')
       .gte('date', sinceDateISO);
     if (opts.pickRegime) q = q.eq('pick_regime', opts.pickRegime);
     const { data, error } = await q

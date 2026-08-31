@@ -34,7 +34,8 @@ const MARKETS = ['moneyline', 'spread', 'total'];
 // only when rows come from Supabase (see supaRowsToArrayRows) to carry a
 // precomputed CLV-points value derived from clv_opening_prob/clv_closing_prob,
 // since Supabase doesn't store raw closing odds.
-const COL = { DATE: 0, LEAGUE: 1, MARKET: 2, ODDS: 9, UNITS: 10, RESULT: 16, RETURN: 17, APPROVAL: 21, CLV_PTS: 33 };
+const COL = { DATE: 0, LEAGUE: 1, MARKET: 2, ODDS: 9, UNITS: 10, RESULT: 16, RETURN: 17, APPROVAL: 21,
+  CLV_PTS: 33, VIG_PP: 34, NET_EDGE_PP: 35 };
 
 // Format a JS Date as 'YYYY-MM-DD' — for the Supabase `date` column filter.
 function toISODate(d) {
@@ -59,7 +60,7 @@ function toISODate(d) {
  */
 function supaRowsToArrayRows(rows) {
   return (rows || []).map(r => {
-    const row = new Array(34).fill('');
+    const row = new Array(36).fill('');
     // date comes back as 'YYYY-MM-DD' from Postgres — convert to M/D/YYYY.
     const m = String(r.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     row[COL.DATE] = m ? `${parseInt(m[2])}/${parseInt(m[3])}/${m[1]}` : '';
@@ -72,6 +73,16 @@ function supaRowsToArrayRows(rows) {
     row[COL.APPROVAL] = r.approval_status || '';
     if (r.clv_basis === 'novig' && r.clv_prob_delta != null) {
       row[COL.CLV_PTS] = parseFloat(r.clv_prob_delta) * 100;
+    }
+    // 2026-08-31 — vig and net edge, in the same points unit as CLV_PTS.
+    // net_edge = CLV - vig, which IS expected ROI per unit staked, so it is the
+    // one column that says whether a segment is worth money BEFORE win/loss
+    // variance resolves. Gated on novig for the same reason CLV_PTS is: an
+    // 'implied' basis carries the full book hold and the two must never pool.
+    // Purely additive — indices 34/35 are new, nothing below reads them.
+    if (r.vig_paid_pp != null) row[COL.VIG_PP] = parseFloat(r.vig_paid_pp) * 100;
+    if (r.clv_basis === 'novig' && r.net_edge_pp != null) {
+      row[COL.NET_EDGE_PP] = parseFloat(r.net_edge_pp) * 100;
     }
     return row;
   });
