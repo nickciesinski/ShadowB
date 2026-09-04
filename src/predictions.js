@@ -913,6 +913,10 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
         // the price we actually recorded IS that best price.
         best_odds: Number.isFinite(p._bestOdds) ? p._bestOdds : null,
         best_book: p._bestBook || null,
+        // 2026-09-04 — carried through so the ledger row can record it; the
+        // measurement layer needs it to exclude picks built on a fraction of
+        // the model (NFL week 1: 21 of 68 features populated).
+        data_completeness: Number.isFinite(p._dataCompleteness) ? p._dataCompleteness : null,
       };
       continue;
     }
@@ -1354,6 +1358,13 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
           // on, so acting on it now would be fitting noise. Stamping it here
           // and staking nothing turns every forward pick into an out-of-sample
           // test of a rule written down in advance. null = not evaluable.
+          // 2026-09-04 — share of the feature vector that carried real values.
+          // Written to prediction_features since forever but never to the
+          // ledger, so the measurement layer had no way to tell a pick built on
+          // the whole model from one built on a third of it. NFL week 1 is the
+          // case that forced it: 21 of 68 features populated, and the three
+          // heaviest weights all exactly zero.
+          data_completeness: meta.data_completeness != null ? meta.data_completeness : null,
           rule_c_eligible: isRuleCEligible({
             odds: parseInt(r[9]),
             bestOdds: meta.best_odds,

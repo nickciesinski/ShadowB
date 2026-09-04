@@ -37,6 +37,17 @@ const LEAGUES = ['MLB', 'NBA', 'NFL', 'NHL'];
 // feature contributed 89% of total score.
 const BASELINE_VERSION_PREFIX = 'v2.3';
 
+// 2026-09-04 — read from the approval thresholds so the bar to be MEASURED and
+// the bar to be STAKED are the same number. Two copies would drift, and the
+// pair that drifted would be measuring one population and betting another.
+const MIN_DATA_COMPLETENESS = (() => {
+  try {
+    // Same shape approval-engine.js reads: thresholds live under `default`.
+    const v = require('../config/approval-thresholds.json').default.minDataCompleteness;
+    return Number.isFinite(v) ? v : 0.3;
+  } catch (err) { return 0.3; }
+})();
+
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 const sd = (a) => {
@@ -259,7 +270,7 @@ async function checkPrice(sb, sinceISO) {
 // after the baseline question is settled.
 async function checkMeasurement(sb) {
   const { data, error } = await sb.from('performance_log')
-    .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book, tradeable')
+    .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book, tradeable, data_completeness')
     .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
     .like('model_version', `${BASELINE_VERSION_PREFIX}%`).limit(5000);
   if (error) return { pass: false, error: error.message };
@@ -273,8 +284,34 @@ async function checkMeasurement(sb) {
   // re-derived here, so the book list can change without silently rewriting
   // history. Older rows were backfilled from placed_book.
   const all = (data || []).filter((r) => num(r.net_edge_pp) !== null);
-  const rows = all.filter((r) => r.tradeable !== false);
-  const excludedUnreachable = all.length - rows.length;
+
+  // 2026-09-04 — exclude picks made on a fraction of the model.
+  //
+  // NFL week 1 is the case: only 21 of 68 features carry values, and the three
+  // heaviest weights (point_differential_diff 2.4, defense_papg_diff 1.7,
+  // net_rating_diff 1.3) are exactly zero because no season has been played.
+  // turnover_impact then lands at 50% of the score by default, which is what
+  // tripped the dominance guard. Measured completeness: NFL 0.05-0.20 against
+  // MLB 0.65-0.90.
+  //
+  // The approval gate already refuses to STAKE these (minDataCompleteness 0.3
+  // in config/approval-thresholds.json). But they were still entering the
+  // measurement baseline as ordinary picks, and a pick built on a third of the
+  // model is not evidence about the model — it is evidence about turnovers.
+  // Same threshold as approval deliberately: one number, not two that drift.
+  //
+  // A NULL completeness is kept. Every row written before this column existed
+  // is null, and dropping them would silently rewrite the baseline the kill
+  // criterion was measured against.
+  const withCompleteness = all.filter((r) => num(r.data_completeness) !== null);
+  const rows = all.filter((r) => {
+    if (r.tradeable === false) return false;
+    const dc = num(r.data_completeness);
+    return dc === null || dc >= MIN_DATA_COMPLETENESS;
+  });
+  const excludedUnreachable = all.filter((r) => r.tradeable === false).length;
+  const excludedIncomplete = withCompleteness.filter(
+    (r) => r.tradeable !== false && num(r.data_completeness) < MIN_DATA_COMPLETENESS).length;
   const summarise = (rs) => {
     const ne = rs.map((r) => num(r.net_edge_pp)).filter((v) => v !== null);
     const clv = rs.map((r) => num(r.clv_prob_delta)).filter((v) => v !== null);
@@ -299,6 +336,8 @@ async function checkMeasurement(sb) {
   return {
     pass: true, // measurement never fails the run; it is the readout
     excluded_unreachable_book: excludedUnreachable,
+    excluded_incomplete_data: excludedIncomplete,
+    min_data_completeness: MIN_DATA_COMPLETENESS,
     overall: summarise(rows),
     by_market: group((r) => r.market),
     by_league_market: group((r) => `${r.league}.${r.market}`),
@@ -405,7 +444,20 @@ async function runDailyValidation() {
   return { ok: true, report };
 }
 
+// Pure: is this row eligible for the measurement baseline? Exported so the
+// rule is testable without a database. NULL completeness passes — pre-column
+// rows must not be silently dropped from the baseline the kill criterion was
+// measured against.
+function isMeasurable(row, minCompleteness = MIN_DATA_COMPLETENESS) {
+  if (!row) return false;
+  if (row.tradeable === false) return false;
+  const dc = num(row.data_completeness);
+  if (dc === null) return true;
+  return dc >= minCompleteness;
+}
+
 module.exports = {
   runDailyValidation, killCriterion, alertIfBroken,
   checkData, checkFeatures, checkModel, checkPrice, checkMeasurement,
+  isMeasurable, MIN_DATA_COMPLETENESS,
 };
