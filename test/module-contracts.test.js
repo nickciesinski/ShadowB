@@ -21,6 +21,7 @@ const CONTRACTS = {
   'calibration.js': ['loadCalibration', 'getCalibrationMultiplier'],
   'prob-calibration.js': ['calibrate', 'calibratedEdge', 'loadCalibration'],
   'rule-c.js': ['isRuleCEligible'],
+  'rule-c-eval.js': ['evaluateRuleC', 'clusterByGame', 'summarizeBucket'],
   'venue-cost.js': ['venueCost', 'netEdgeAtVenue'],
   'feature-clv.js': ['attributeByFeature', 'corr', 'tStat', 'gamesNeeded'],
   'price-lib.js': ['selectGradedPrice'],
@@ -50,6 +51,19 @@ test('calibration.js and prob-calibration.js are genuinely different modules', (
     'prob-calibration.js is the PROBABILITY scale');
   assert.strictEqual(prob.getCalibrationMultiplier, undefined,
     'prob-calibration.js must not masquerade as the sizing loop');
+});
+
+test('rule-c.js labels and rule-c-eval.js scores — neither absorbs the other', () => {
+  // Same shape of mistake as calibration.js: two files, near-identical names.
+  // rule-c.js decides eligibility per pick; rule-c-eval.js only scores rows
+  // after the fact and must never gain a staking decision.
+  const label = require(path.join(SRC, 'rule-c.js'));
+  const score = require(path.join(SRC, 'rule-c-eval.js'));
+  assert.strictEqual(typeof label.isRuleCEligible, 'function');
+  assert.strictEqual(score.isRuleCEligible, undefined,
+    'rule-c-eval.js is a scorer; it must not export a staking label');
+  assert.strictEqual(label.evaluateRuleC, undefined,
+    'rule-c.js is a labeller; scoring lives in rule-c-eval.js');
 });
 
 test('every require of a local src module resolves', () => {

@@ -34,8 +34,11 @@ const MARKETS = ['moneyline', 'spread', 'total'];
 // only when rows come from Supabase (see supaRowsToArrayRows) to carry a
 // precomputed CLV-points value derived from clv_opening_prob/clv_closing_prob,
 // since Supabase doesn't store raw closing odds.
+// 2026-09-06 — GAME and RULE_C join the same Supabase-only tail (37/38).
+// They exist so the weekly report can score the pre-registered rule C
+// out-of-sample and cluster it by game; nothing below reads them.
 const COL = { DATE: 0, LEAGUE: 1, MARKET: 2, ODDS: 9, UNITS: 10, RESULT: 16, RETURN: 17, APPROVAL: 21,
-  CLV_PTS: 33, VIG_PP: 34, NET_EDGE_PP: 35, GAME_DATE: 36 };
+  CLV_PTS: 33, VIG_PP: 34, NET_EDGE_PP: 35, GAME_DATE: 36, GAME: 37, RULE_C: 38 };
 
 // Format a JS Date as 'YYYY-MM-DD' — for the Supabase `date` column filter.
 function toISODate(d) {
@@ -60,7 +63,7 @@ function toISODate(d) {
  */
 function supaRowsToArrayRows(rows) {
   return (rows || []).map(r => {
-    const row = new Array(37).fill('');
+    const row = new Array(39).fill('');
     // date comes back as 'YYYY-MM-DD' from Postgres — convert to M/D/YYYY.
     const m = String(r.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     row[COL.DATE] = m ? `${parseInt(m[2])}/${parseInt(m[3])}/${m[1]}` : '';
@@ -86,6 +89,14 @@ function supaRowsToArrayRows(rows) {
     if (r.vig_paid_pp != null) row[COL.VIG_PP] = parseFloat(r.vig_paid_pp) * 100;
     if (r.clv_basis === 'novig' && r.net_edge_pp != null) {
       row[COL.NET_EDGE_PP] = parseFloat(r.net_edge_pp) * 100;
+    }
+    // 2026-09-06 — the game string (for clustering: a game's ML/spread/total
+    // are one observation, not three) and the pre-registered rule C stamp.
+    // The stamp is kept as a strict boolean; anything else stays '' so the
+    // scorer counts it as unlabelled instead of guessing which side it is on.
+    row[COL.GAME] = r.game || '';
+    if (r.rule_c_eligible === true || r.rule_c_eligible === false) {
+      row[COL.RULE_C] = r.rule_c_eligible;
     }
     return row;
   });

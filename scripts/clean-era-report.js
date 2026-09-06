@@ -205,6 +205,74 @@ function priceTable(seg, title) {
   return md + '\n';
 }
 
+// ── Rule C — the pre-registered staking rule, scored out-of-sample ──
+// 2026-09-06. src/rule-c.js has stamped every pick since 2026-08-31 and
+// nothing ever read the stamp back, so the out-of-sample test the
+// pre-registration was for had never been scored. This section scores it.
+//
+// Rows are split at the pre-registration date and NEVER pooled: the
+// in-sample figure was found by slicing the same rows it was scored on, so
+// it is not evidence. Everything is clustered by game, because a game's
+// moneyline, spread and total pick share one model state and one line move.
+// Report-only — no pick, stake or grade reads any of this.
+const { evaluateRuleC, PRE_REG_ISO } = require('../src/rule-c-eval');
+
+// Positional indices for the Supabase-only tail (see supaRowsToArrayRows).
+const COL_NET_EDGE = 35, COL_GAME = 37, COL_RULE_C = 38;
+
+function ruleCRows(rows, cutoff) {
+  const out = [];
+  for (const row of rows) {
+    const d = parseDate(row[0]);
+    if (!d || d < cutoff) continue;
+    out.push({
+      date: d,
+      gameKey: `${row[1] || ''}|${row[COL_GAME] || ''}|${toISODate(d)}`,
+      netEdgePp: typeof row[COL_NET_EDGE] === 'number' ? row[COL_NET_EDGE] : null,
+      eligible: row[COL_RULE_C] === true ? true : (row[COL_RULE_C] === false ? false : null),
+    });
+  }
+  return out;
+}
+
+const MIN_GAMES = 30; // matches src/rule-c-eval.js's default
+
+// One row of the table. "Still needs" reports the BINDING constraint: a
+// bucket is not resolved until it clears both the minimum sample and the
+// sample its own effect size requires — reporting only the smaller of the
+// two would announce "0 more games" on a bucket that is still unresolved.
+function fmtBucket(label, b) {
+  if (!b || b.games === 0) return [label, '0', '0', '\u2014', '\u2014', '\u2014'];
+  const mean = b.meanNetEdgePp == null ? '\u2014'
+    : `${b.meanNetEdgePp >= 0 ? '+' : ''}${b.meanNetEdgePp.toFixed(3)}pp`;
+  const t = b.t == null ? '\u2014' : `${b.t >= 0 ? '+' : ''}${b.t.toFixed(2)}`;
+  // "resolved" means the bucket produced an ANSWER (|t| >= 1.96), not merely
+  // that it cleared the minimum sample. b.resolvable is the weaker condition
+  // — printing it as "resolved" would announce a verdict on a t of -0.5.
+  let need;
+  if (b.t != null && Math.abs(b.t) >= 1.96) {
+    need = 'resolved';
+  } else {
+    const bySample = Math.max(0, MIN_GAMES - b.games);
+    const byEffect = b.gamesNeeded == null ? null : Math.max(0, b.gamesNeeded - b.games);
+    const more = byEffect == null ? bySample : Math.max(bySample, byEffect);
+    need = more > 0 ? `${more} more games` : 'not resolvable yet';
+  }
+  return [label, String(b.tickets), String(b.games), mean, t, need];
+}
+
+function ruleCTable(ev) {
+  let md = `| Era | Rule C | Tickets | Games | Net edge / game | t | Still needs |\n`;
+  md += `|---|---|---|---|---|---|---|\n`;
+  const eras = [['In-sample (before pre-registration)', ev.inSample],
+                ['**Forward (the real test)**', ev.forward]];
+  for (const [era, buckets] of eras) {
+    md += `| ${era} | ${fmtBucket('eligible', buckets.eligible).join(' | ')} |\n`;
+    md += `| ${era} | ${fmtBucket('not eligible', buckets.ineligible).join(' | ')} |\n`;
+  }
+  return md + '\n';
+}
+
 async function main() {
   const dataStore = require('../src/data-store');
   const db = require('../src/db');
@@ -291,6 +359,28 @@ async function main() {
   md += `side, so this split usually separates the profitable half of the book from the rest.\n\n`;
   md += priceTable(priceClean, 'Clean era (since 2026-06-03) — by price class');
   md += priceTable(price30, 'Trailing 30 days — by price class');
+  // Rule C — out-of-sample scoring of the pre-registered rule (report-only).
+  const ruleC = evaluateRuleC(ruleCRows(rows, CLEAN_ERA_START));
+  md += `## Rule C — the pre-registered rule, scored out-of-sample\n\n`;
+  md += `Rule C (plus money **and** top-half model-vs-market disagreement) was written down on `;
+  md += `**${PRE_REG_ISO}** in \`config/rule-c.json\` and has stamped every pick since. It has `;
+  md += `**never influenced a stake** — it is a label, so the rows written after that date are a `;
+  md += `clean out-of-sample test of it.\n\n`;
+  md += `The two eras are reported separately and are **never pooled**: the in-sample figure was `;
+  md += `found by slicing the same 735 rows it was scored on, so it is not evidence of anything. `;
+  md += `Every figure is **clustered by game** — a game's moneyline, spread and total share one `;
+  md += `model state and one line move, so they are one observation, not three.\n\n`;
+  md += ruleCTable(ruleC);
+  md += `**Separation (does the filter sort tickets?): ${ruleC.separationVerdict}.**\n\n`;
+  md += `**Level (is the filtered bucket worth betting?): ${ruleC.verdict}.**`;
+  md += ruleC.unlabelled ? ` ${ruleC.unlabelled} row(s) carried no usable stamp or net edge and `
+    + `are excluded from both buckets rather than guessed into one.\n\n` : `\n\n`;
+  md += `These are two different questions and both have to pass. A rule can sort tickets `;
+  md += `correctly and still sort them into two losing piles — separation says the signal is `;
+  md += `real, level says whether it clears the vig. **Do not stake on rule C until the level `;
+  md += `line says CONFIRMED.** A positive mean with |t| under 2 is what noise looks like at `;
+  md += `this sample size.\n\n`;
+
   md += `## Still W/L-noisy\n\n`;
   md += `- Treat ROI segments with n<20 as not-yet-significant; lean on CLV beat% there.\n`;
 
@@ -305,4 +395,4 @@ if (require.main === module) {
 }
 
 module.exports = { windowTable, portfolio, impliedProb, clvPoints, clvSegments, clvFinalize,
-  priceClassOf, priceSegments, priceTable };
+  priceClassOf, priceSegments, priceTable, ruleCRows, ruleCTable, fmtBucket };
