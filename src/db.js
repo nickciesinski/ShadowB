@@ -281,6 +281,41 @@ async function getConfidenceCalibration() {
 //   - Tripwires (game-optimizer's zero-data cross-check): must stay UNFILTERED.
 //     It only asks "are we grading anything at all", and filtering it to v2
 //     would make it false-alarm through the regime transition.
+/**
+ * Read EVERY row a query matches, not the first 1000.
+ *
+ * 2026-09-10. PostgREST caps any response at 1000 rows and returns no error,
+ * so `.limit(5000)` is not a larger read — it is a truncated one that looks
+ * complete. This bit the measurement layer silently: the kill-criterion
+ * baseline was 735 rows on 2026-08-31 (under the cap, correct) and 1161 rows
+ * by 2026-09-10 (over it), so the headline net-edge figure quietly became a
+ * statistic about an arbitrary 1000-row subset. Without an ORDER BY, *which*
+ * 1000 is not even stable between runs.
+ *
+ * `build()` must return a FRESH query builder each call — a supabase-js
+ * builder is single-use and cannot be re-awaited with a new range. Always
+ * give the query a deterministic .order(), or paging can skip and repeat rows.
+ *
+ * @param {() => object} build  returns a new query builder
+ * @param {string} label        used in the warning if a page fails
+ * @returns {Promise<Array>} every matching row
+ */
+async function pagedSelect(build, label = 'pagedSelect') {
+  const PAGE = 1000;
+  let all = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await build().range(offset, offset + PAGE - 1);
+    if (error) {
+      console.warn(`[db] ${label}:`, error.message);
+      return all.length ? all : null;
+    }
+    all = all.concat(data || []);
+    if (!data || data.length < PAGE) break; // last page
+    if (offset > 200000) break;             // sanity guard, should never trigger
+  }
+  return all;
+}
+
 async function getRecentPerformanceLog(sinceDateISO, opts = {}) {
   const sb = getClient();
   if (!sb) return null;
@@ -413,6 +448,7 @@ module.exports = {
   getConfidenceCalibration,
   // Raw
   rawSelect,
+  pagedSelect,
   getRecentPerformanceLog,
   // Prediction features
   insertPredictionFeatures,

@@ -269,11 +269,17 @@ async function checkPrice(sb, sinceISO) {
 // a t of 3 by chance; segment-level decisions belong to the staking gate,
 // after the baseline question is settled.
 async function checkMeasurement(sb) {
-  const { data, error } = await sb.from('performance_log')
+  // Paged, not .limit(5000). PostgREST caps a response at 1000 rows without
+  // erroring, so this read silently became a subset the day the baseline
+  // crossed 1000 rows (735 on 2026-08-31, 1161 on 2026-09-10) — and with no
+  // ORDER BY, not even a stable subset. The kill-criterion number is the one
+  // figure in this system that must never be computed on part of the data.
+  const data = await db.pagedSelect(() => sb.from('performance_log')
     .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book, tradeable, data_completeness')
     .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
-    .like('model_version', `${BASELINE_VERSION_PREFIX}%`).limit(5000);
-  if (error) return { pass: false, error: error.message };
+    .like('model_version', `${BASELINE_VERSION_PREFIX}%`)
+    .order('id', { ascending: true }), 'checkMeasurement');
+  if (data === null) return { pass: false, error: 'measurement read failed' };
 
   // Exclude prices from books we cannot bet at. buildGameObjects falls back to
   // the full book set when neither Bovada nor BetOnline quotes a market, so a

@@ -41,13 +41,21 @@ async function main() {
 
   if (!db.isEnabled()) { console.error('[venue-compare] Supabase required.'); process.exit(1); }
   const sb = db.getClient();
-  let q = sb.from('performance_log')
-    .select('league, market, clv_prob_delta, vig_paid_pp, placed_novig_prob, rule_c_eligible, tradeable')
-    .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
-    .like('model_version', 'v2.3%').limit(5000);
-  if (league) q = q.eq('league', league);
-  const { data, error } = await q;
-  if (error) { console.error('[venue-compare]', error.message); process.exit(1); }
+  // Paged, not .limit(5000) — PostgREST caps a response at 1000 rows and does
+  // not say so. This read crossed the cap on 2026-09-10 (1161 matching rows).
+  // A venue decision made on an arbitrary 1000-row slice of the ledger is
+  // exactly the mistake this script exists to avoid.
+  const build = () => {
+    let q = sb.from('performance_log')
+      .select('league, market, clv_prob_delta, vig_paid_pp, placed_novig_prob, rule_c_eligible, tradeable')
+      .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
+      .like('model_version', 'v2.3%').order('id', { ascending: true });
+    if (league) q = q.eq('league', league);
+    return q;
+  };
+  const data = await db.pagedSelect(build, 'venue-compare');
+  if (data === null) { console.error('[venue-compare] read failed'); process.exit(1); }
+  console.log(`[venue-compare] read ${data.length} rows`);
 
   const rows = (data || []).filter(r =>
     r.tradeable !== false &&
