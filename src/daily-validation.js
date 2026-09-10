@@ -278,8 +278,10 @@ async function checkMeasurement(sb) {
     .select('league, market, lock_window, days_to_game, odds, model_prob, result, unit_return, clv_prob_delta, vig_paid_pp, net_edge_pp, model_version, placed_book, tradeable, data_completeness')
     .eq('pick_regime', 'v2_clv').eq('clv_basis', 'novig').lte('close_lag_hours', 6)
     .like('model_version', `${BASELINE_VERSION_PREFIX}%`)
-    .order('id', { ascending: true }), 'checkMeasurement');
-  if (data === null) return { pass: false, error: 'measurement read failed' };
+    .order('id', { ascending: true }), 'checkMeasurement', { strict: true });
+  // strict: a partial read is worse than none here. Half the ledger would still
+  // produce a confident-looking net edge, which is the exact defect being fixed.
+  if (data === null) return { pass: false, error: 'measurement read failed or was partial' };
 
   // Exclude prices from books we cannot bet at. buildGameObjects falls back to
   // the full book set when neither Bovada nor BetOnline quotes a market, so a

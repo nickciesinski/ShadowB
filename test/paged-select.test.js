@@ -78,3 +78,20 @@ test('an error on a later page returns what it has rather than nothing', async (
   const rows = await db.pagedSelect(build, 'test');
   assert.strictEqual(rows.length, 1000, 'a partial read is better than losing the page we got');
 });
+
+test('strict mode refuses a partial read', async () => {
+  let n = 0;
+  const build = () => ({
+    range: (from, to) => {
+      if (n++ === 0) {
+        const rows = [];
+        for (let i = from; i <= to; i++) rows.push({ id: i });
+        return Promise.resolve({ data: rows, error: null });
+      }
+      return Promise.resolve({ data: null, error: { message: 'boom' } });
+    },
+  });
+  // The measurement layer must fail loudly rather than report a confident
+  // net edge computed on half the ledger.
+  assert.strictEqual(await db.pagedSelect(build, 'test', { strict: true }), null);
+});

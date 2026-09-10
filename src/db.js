@@ -296,17 +296,24 @@ async function getConfidenceCalibration() {
  * builder is single-use and cannot be re-awaited with a new range. Always
  * give the query a deterministic .order(), or paging can skip and repeat rows.
  *
+ * On a mid-read failure the default is to return the pages already read, which
+ * suits a best-effort report. Pass `{ strict: true }` for any caller where a
+ * partial answer is worse than no answer — a truncated read is the whole defect
+ * this helper exists to remove, so the measurement layer must not accept one.
+ *
  * @param {() => object} build  returns a new query builder
  * @param {string} label        used in the warning if a page fails
- * @returns {Promise<Array>} every matching row
+ * @param {{strict?: boolean}} opts
+ * @returns {Promise<Array|null>} every matching row, or null on failure
  */
-async function pagedSelect(build, label = 'pagedSelect') {
+async function pagedSelect(build, label = 'pagedSelect', opts = {}) {
   const PAGE = 1000;
   let all = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await build().range(offset, offset + PAGE - 1);
     if (error) {
       console.warn(`[db] ${label}:`, error.message);
+      if (opts.strict) return null;
       return all.length ? all : null;
     }
     all = all.concat(data || []);
