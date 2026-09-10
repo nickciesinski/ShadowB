@@ -50,15 +50,6 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .arule-top .lb{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
     .arule-top .rs{font:500 11px/1 var(--mono);color:var(--dim)}
     .arule-top .rs b{color:var(--take);font-weight:600}
-    .ruler{position:relative;height:30px;display:grid;grid-template-columns:repeat(3,1fr);gap:2px;touch-action:none}
-    .ruler .seg{border:1px solid var(--line2);border-radius:3px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:#0d0f12;cursor:pointer}
-    .ruler .seg em{font:600 12px/1 var(--mono);font-style:normal;color:var(--dim)}
-    .ruler .seg i{font:500 8px/1 var(--mono);letter-spacing:.08em;color:var(--dim2);font-style:normal}
-    .ruler .seg.on{background:rgba(76,154,255,.13);border-color:rgba(76,154,255,.5)}
-    .ruler .seg.on em{color:#a9cfff}
-    .ruler .seg.on i{color:rgba(169,207,255,.6)}
-    .ruler .handle{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--take);box-shadow:0 0 8px rgba(76,154,255,.7);cursor:grab;pointer-events:none}
-    .ruler .handle::after{content:"";position:absolute;top:50%;left:-4px;width:10px;height:10px;margin-top:-5px;border-radius:2px;background:var(--take)}
     .arule-act{display:grid;grid-template-columns:1fr auto;gap:8px}
     .abtn{height:38px;border-radius:4px;border:1px solid rgba(76,154,255,.45);background:rgba(76,154,255,.14);color:#bcd9ff;font:600 12px/1 var(--body);letter-spacing:.09em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:8px}
     .abtn.solid{background:var(--take);border-color:var(--take);color:#03142c}
@@ -718,7 +709,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, displayPick, pickMode, setPickMode, tierThreshold, setTierThreshold, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
+function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
@@ -727,21 +718,26 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   // this is the switch for looking at the whole slate regardless.
   const [showAllOn, setShowAllOn] = useState(false);
   const [expandedGames, setExpandedGames] = useState({});
-  const dragRef = useRef(null);
 
   const allPicks = dedup(picks);
   const pool = (minUnitOn && !showAllOn) ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
 
   // Effective state: an explicit manual tri-state tap always wins ('pass'
-  // included — it's how you exclude a pick the threshold rule auto-selected);
-  // otherwise the rule default (take if tier >= threshold, else pass). This
-  // is both what the tri-state row displays and what "Take" commits.
+  // included — it's how you exclude a pick that defaulted to take); otherwise
+  // every pick in the pool is a take. This is both what the tri-state row
+  // displays and what "Take" commits.
+  //
+  // 2026-09-01 — was `tierOf(p) >= tierThreshold`, driven by a 10/7/5 slider
+  // above the Take button. The slider is gone: +EV is the only filter Nick
+  // uses now, and it works on `pool`, not on this default. Note that means the
+  // tier cut no longer gates commits at all — tierOf() survives only for tick
+  // heights and the build-mode collapse rule.
   const effState = (p) => {
     const manual = entryState(myBets.get(pickKey(p)));
     if (manual === 'pass') return 'pass';
     if (manual === 'fade') return 'fade';
     if (manual === 'bet') return 'take';
-    return tierOf(p) >= tierThreshold ? 'take' : 'pass';
+    return 'take';
   };
 
   const commitList = pool.filter(p => effState(p) === 'take');
@@ -753,10 +749,6 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   for (const p of allPicks) leagueCounts[p.league] = (leagueCounts[p.league] || 0) + 1;
   const leagues = Object.keys(leagueCounts).sort((a, b) => leagueCounts[b] - leagueCounts[a]);
 
-  // Rule bar segment counts (tier 10 / 7 / 5) respect the min-unit rule
-  // (0.3u+) but still ignore the league filter — the rule bar describes the
-  // whole (min-unit-filtered) slate, not the visible slice.
-  const segCount = (t) => pool.filter(p => tierOf(p) === t).length;
 
   const commitTake = () => commitTakeApp(commitList);
 
@@ -986,31 +978,8 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
       {pickMode === 'build' ? (
         <div className="arule">
           <div className="arule-top">
-            <span className="lb">Rule · tier threshold</span>
+            <span className="lb">Rule · {minUnitOn && !showAllOn ? '+EV only' : 'all picks'}</span>
             <span className="rs">commits <b>{commitCount} picks · {commitUnits.toFixed(1)}u</b></span>
-          </div>
-          <div
-            className="ruler"
-            ref={dragRef}
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              const move = (ev) => {
-                const rect = dragRef.current.getBoundingClientRect();
-                const frac = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
-                setTierThreshold(frac < 1 / 3 ? 10 : frac < 2 / 3 ? 7 : 5);
-              };
-              move(e);
-              const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-              window.addEventListener('pointermove', move);
-              window.addEventListener('pointerup', up);
-            }}
-          >
-            {[10, 7, 5].map(t => (
-              <div key={t} className={`seg${t >= tierThreshold ? ' on' : ''}`} onClick={() => setTierThreshold(t)}>
-                <em>{t}</em><i>{segCount(t)} PICKS</i>
-              </div>
-            ))}
-            <div className="handle" style={{ left: `calc(${tierThreshold === 10 ? 33.33 : tierThreshold === 7 ? 66.66 : 100}% - 1px)` }}></div>
           </div>
           <div className="arule-act">
             <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake}>
@@ -2552,7 +2521,6 @@ export default function App() {
       }
     } catch (e) {}
   }, []);
-  const [tierThreshold, setTierThreshold] = useState(7);
   useEffect(() => {
     if (pickModeWriteSkip.current) { pickModeWriteSkip.current = false; return; }
     try {
@@ -2975,7 +2943,7 @@ export default function App() {
           <PicksTab
             picks={picksForTab} liveGames={liveGames} myBets={myBets} setMyBets={setMyBets}
             isBet={isBet} isFade={isFade} toggleBet={toggleBet} setPickState={setPickState} displayPick={displayPick}
-            pickMode={pickMode} setPickMode={setPickMode} tierThreshold={tierThreshold} setTierThreshold={setTierThreshold}
+            pickMode={pickMode} setPickMode={setPickMode}
             picksDateFilter={picksDateFilter} setPicksDateFilter={setPicksDateFilter}
             showDate={picksDateFilter === 'This Week'} lastUpdated={lastUpdated}
             commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
