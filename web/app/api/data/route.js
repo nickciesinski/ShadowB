@@ -1,6 +1,19 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+
+// Novig / prediction-market ceiling, in cents. Mirrors novigMaxCents() in
+// scripts/evening-digest.js — the price is the book's own improved by 10
+// American cents, converted to cents and rounded DOWN. Rounding up would quote
+// a worse price than intended, which hands the sportsbook's cut back.
+function novigMaxCents(americanOdds) {
+  const n = Number(americanOdds);
+  if (!Number.isFinite(n) || Math.abs(n) < 100) return null;
+  const improved = n + 10;
+  const implied = improved > 0 ? 100 / (improved + 100) : -improved / (-improved + 100);
+  const cents = Math.floor(implied * 100);
+  return (cents > 0 && cents < 100) ? cents : null;
+}
 // 2026-08-31 — the app shows CALIBRATED confidence/edge/units, not the model's
 // raw output. The raw numbers claimed an average +13pp edge against a measured
 // +0.2pp, with 78% of picks at 10/10; that display is why the results kept
@@ -130,7 +143,7 @@ export async function GET() {
     // resolves to null on error so the Sheets fallbacks below still work.
     const sbTodayQ = sb
       ? sb.from('performance_log')
-          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds')
+          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds, rule_c_eligible')
           .gte('date', isoToday).lte('date', isoWeekAhead)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
@@ -167,6 +180,14 @@ export async function GET() {
           away: gp[0] || '', home: gp[1] || '', startTime: r.start_time || '', betType: r.market || '',
           pick: r.pick || '', line: r.line != null ? String(r.line) : '',
           odds: r.odds || -110,
+          // Novig ceiling, in cents. Novig is a prediction market: contracts
+          // trade 0-100c and pay $1, so 41c is +140 and American odds are
+          // unusable there. Null on anything but a rule-C pick, which the UI
+          // renders as a dash — the other picks need a ~79% cut in hold to
+          // break even, where rule C needs ~37%, so pricing them would point
+          // at bets that lose even at zero fees. Same helper as the evening
+          // digest so the app and the email can never quote different numbers.
+          novigMaxCents: r.rule_c_eligible === true ? novigMaxCents(r.best_odds ?? r.odds) : null,
           // Calibrated display. `edge` is expected return per unit staked at the
           // best price we could take; confidence scales on that real edge rather
           // than on rank, so most picks sit at 1 and the rare good one stands

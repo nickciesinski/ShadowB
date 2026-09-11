@@ -16,6 +16,10 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .tp *{box-sizing:border-box}
     .tp button{font-family:inherit;-webkit-appearance:none;appearance:none;cursor:pointer}
     .tp .num{font-variant-numeric:tabular-nums}
+    /* Novig ceiling. Deliberately quiet — it sits beside the book price and is
+       only ever shown on the model's own side, never on a fade. */
+    .nv{display:inline-block;margin-left:4px;padding:0 3px;border-radius:3px;font:700 9px/14px var(--mono);
+        font-style:normal;background:rgba(76,154,255,.16);color:#8fc0ff;vertical-align:middle}
     .ah{padding:10px 14px 10px;display:flex;align-items:baseline;justify-content:space-between;position:sticky;top:0;background:var(--bg);z-index:5}
     .ah b{font:600 13px/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--text)}
     .ah span{font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim2)}
@@ -871,7 +875,13 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
         {sizing === 'model'
           ? <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
           : <span className="u num conv">{(p.units || 0).toFixed(2)}</span>}
-        <span className="p num">{fmt(display.odds)}</span>
+        <span className="p num">{fmt(display.odds)}
+          {/* Max price to pay on Novig, in cents (a 41c contract is +140).
+              Shown only on the model's own side: rule C was evaluated on that
+              pick, so the number is meaningless against a fade — and a wrong
+              ceiling silently hands back the fee this is meant to save. */}
+          {!faded && p.novigMaxCents ? <b className="nv">{p.novigMaxCents}¢</b> : null}
+        </span>
         {threeWay ? (
           <div className="tri quad">
             <s className={state === '-' ? 'on' : ''} onClick={() => tap('pass')}>–</s>
