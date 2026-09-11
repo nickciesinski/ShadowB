@@ -58,6 +58,32 @@ function slateDate(now, dayOffset) {
 const esc = (v) => String(v == null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+
+// ── Novig / prediction-market price ─────────────────────────────────────────
+// 2026-09-10. Novig is a prediction market: contracts are priced in cents 0-100
+// and a 41c contract pays $1, which is +140 in American terms. Nick bets there
+// to avoid the sportsbook's cut (~1.7pp), which is the entire reason the same
+// picks lose at a book. So the digest has to quote a price he can actually use.
+//
+// The number shown is a CEILING, not a quote: pay this or less, otherwise skip.
+// It is the book's own price improved by 10 American cents, converted to cents
+// and rounded DOWN (rounding up would quote a worse price than intended).
+//
+// Only rule-C picks get a price. Those are the ones where the gap is plausibly
+// closable: vig 1.14pp against CLV 0.72pp needs a 37% cut in hold, where the
+// book at large needs 79%. Quoting every pick would invite betting the ones
+// that cannot win even at zero fees. See src/rule-c.js.
+function novigMaxCents(americanOdds) {
+  const n = Number(americanOdds);
+  if (!Number.isFinite(n) || Math.abs(n) < 100) return null;
+  const improved = n + 10;                       // better for the bettor either sign
+  const implied = improved > 0
+    ? 100 / (improved + 100)
+    : -improved / (-improved + 100);
+  const cents = Math.floor(implied * 100);
+  return (cents > 0 && cents < 100) ? cents : null;
+}
+
 function fmtOdds(o) {
   if (o == null || o === '') return '';
   const n = Number(o);
@@ -121,6 +147,7 @@ function buildHtml(dateStr, rows) {
         + '<th style="padding:5px 6px;text-align:left;">Market</th>'
         + '<th style="padding:5px 6px;text-align:left;">Pick</th>'
         + '<th style="padding:5px 6px;text-align:right;">Odds</th>'
+        + '<th style="padding:5px 6px;text-align:right;">Novig max</th>'
         + '<th style="padding:5px 6px;text-align:right;">Stake</th>'
         + '<th style="padding:5px 6px;text-align:center;">Conf</th>'
         + '<th style="padding:5px 6px;text-align:center;">Status</th></tr>';
@@ -129,11 +156,14 @@ function buildHtml(dateStr, rows) {
         const statusLabel = approved ? '&#9989; play' : '&#128065; track';
         const rowBg = approved ? 'background:#f0fdf4;' : '';
         const conf = p.confidence == null ? '' : `${esc(p.confidence)}/10`;
+        // Only rule-C picks carry a Novig price; everything else shows a dash.
+        const novigCents = p.rule_c_eligible === true ? novigMaxCents(p.odds) : null;
         const confStyle = Number(p.confidence) >= 8 ? 'color:#27ae60;font-weight:bold;' : '';
         body += `<tr style="${rowBg}">`
           + `<td style="padding:5px 6px;border-bottom:1px solid #eee;">${esc(p.market)}</td>`
           + `<td style="padding:5px 6px;border-bottom:1px solid #eee;"><strong>${esc(p.pick)}</strong></td>`
           + `<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:right;">${fmtOdds(p.odds)}</td>`
+          + `<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:right;${novigCents ? 'font-weight:bold;color:#0f3460;' : 'color:#bbb;'}">${novigCents ? `${novigCents}\u00A2` : '&mdash;'}</td>`
           + `<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:right;">${fmtUnits(p.final_units)}</td>`
           + `<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:center;${confStyle}">${conf}</td>`
           + `<td style="padding:5px 6px;border-bottom:1px solid #eee;text-align:center;">${statusLabel}</td>`
@@ -183,7 +213,7 @@ async function main() {
   console.log(`[digest] Building tomorrow's picks email for date=${dateStr} (${BETTOR_TZ})`);
 
   const { data, error } = await sb.from('performance_log')
-    .select('league, date, game, market, pick, line, odds, final_units, confidence, approval_status, status, start_time')
+    .select('league, date, game, market, pick, line, odds, final_units, confidence, approval_status, status, start_time, rule_c_eligible')
     .eq('date', dateStr)
     .order('league', { ascending: true })
     .order('start_time', { ascending: true });
@@ -232,4 +262,4 @@ if (require.main === module) {
   main().catch((e) => { console.error('[digest] FAILED:', e.message); process.exit(1); });
 }
 
-module.exports = { slateDate, buildHtml, fmtOdds, fmtUnits };
+module.exports = { novigMaxCents, slateDate, buildHtml, fmtOdds, fmtUnits };
