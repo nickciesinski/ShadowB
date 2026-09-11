@@ -49,6 +49,8 @@ const {
   checkDominance,
 } = require('./game-features');
 const { probe } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not logs
+// CANDIDATE feature source (weight 0, stakes nothing). See src/bullpen-fatigue.js.
+const { fetchBullpenLoad } = require('./bullpen-fatigue');
 
 /**
  * Standard normal CDF approximation (Abramowitz & Stegun).
@@ -249,7 +251,7 @@ function modelDisagreement(mainProb, simpleProb, betType) {
  * @param {Object} [scheduleInfo] - Optional: { homeDaysOff, awayDaysOff, homeB2B, awayB2B }
  * @returns {Array} Array of 3 pick objects
  */
-function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData) {
+function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, opts = {}) {
   // Team stats
   const homeStats = teamsMap[game.home] || {};
   const awayStats = teamsMap[game.away] || {};
@@ -271,7 +273,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   const paceAdj = paceAdjustment(homeStats, awayStats, league);
 
   // Extract full feature vector for CSV weight scoring
-  const features = extractFeatures(homeStats, awayStats, scheduleInfo, league);
+  // ctx carries the bullpen-fatigue table (a CANDIDATE feature at weight 0 —
+  // it moves no pick). Team names come from the game rather than the stats
+  // object so the lookup does not depend on how team stats happen to be shaped.
+  const features = extractFeatures(homeStats, awayStats, scheduleInfo, league,
+    { bullpenLoad: opts.bullpenLoad, homeTeam: game.home, awayTeam: game.away });
 
 
   // ── Simple model "second opinion" for disagreement signal ──
@@ -1013,6 +1019,20 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
   await loadCalibration();
   await loadInjuryImpact();
 
+  // CANDIDATE feature data (weight 0 — stakes nothing, moves no pick). One
+  // request covers all 30 teams for the whole slate. MLB only; a failure
+  // returns an empty table and the feature is simply absent for the night,
+  // which is the honest reading and cannot break a slate.
+  let bullpenLoad = null;
+  if (league === 'MLB') {
+    try {
+      bullpenLoad = await fetchBullpenLoad();
+      console.log(`[game-model] bullpen load: ${bullpenLoad.size} teams`);
+    } catch (err) {
+      console.warn('[game-model] bullpen load failed:', err.message);
+    }
+  }
+
   const allPicks = [];
 
   for (const game of games) {
@@ -1029,7 +1049,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Both maps are keyed "Away@Home"; other leagues pass null.
     const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData);
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad });
 
     for (const pick of picks) {
       // Calculate final units using the sizing model

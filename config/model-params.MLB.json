@@ -66,7 +66,8 @@
     "sp_prob_away": 0.03,
     "sp_edge_ml_home": 0.03,
     "sp_edge_ml_away": 0.03,
-    "sp_pred_margin": 0.8
+    "sp_pred_margin": 0.8,
+    "bullpen_fatigue_diff": 0
   },
   "spread": {
     "mlb_run_diff": 0,
@@ -107,7 +108,8 @@
     "total_injury_weight": -0.08,
     "sp_edge_spread_home": 0.03,
     "sp_edge_spread_away": 0.03,
-    "sp_pred_margin": 1.2
+    "sp_pred_margin": 1.2,
+    "bullpen_fatigue_diff": 0
   },
   "total": {
     "mlb_run_diff": 0,
@@ -132,6 +134,7 @@
     "severe_injury_factor": -0.15,
     "injury_weight_diff": 0.05,
     "sp_edge_total": 1.6,
-    "sp_pred_total": 0.55
+    "sp_pred_total": 0.55,
+    "bullpen_fatigue_diff": 0
   }
 }

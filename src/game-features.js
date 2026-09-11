@@ -1,4 +1,6 @@
 'use strict';
+
+const { bullpenFatigueDiff } = require('./bullpen-fatigue');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -23,7 +25,7 @@ const { getTeamInjuryScore } = require('./injury-impact');
  * @param {string} league
  * @returns {Object} - { featureName: normalizedValue, ... }
  */
-function extractFeatures(home, away, scheduleInfo, league) {
+function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   const f = {};
   const h = home || {};
   const a = away || {};
@@ -284,6 +286,16 @@ function extractFeatures(home, away, scheduleInfo, league) {
     // that positive favours home.
     const whipD = diff(a.whip, h.whip);
     f.whip_diff = whipD !== null ? whipD / 0.15 : 0;
+    // CANDIDATE (weight 0, stakes nothing). Recent bullpen workload, from
+    // src/bullpen-fatigue.js. Away-minus-home because more relief work is
+    // worse, the same inversion whip_diff uses. Null when the load table is
+    // absent or a team is missing: 0 would assert "equally rested", which is a
+    // claim, whereas absent is the truth. See decomposeScore's candidate path.
+    const bpDiff = (ctx.bullpenLoad && ctx.homeTeam && ctx.awayTeam)
+      ? bullpenFatigueDiff(ctx.bullpenLoad, ctx.homeTeam, ctx.awayTeam)
+      : null;
+    if (bpDiff !== null) f.bullpen_fatigue_diff = bpDiff;
+
     if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {
       console.log(`[game-features][MLB] implausible mlb_run_diff ${rawRunDiff.toFixed(1)} `
         + `(runs ${hRuns}/${hRA} vs ${aRuns}/${aRA}) — zeroed`);
