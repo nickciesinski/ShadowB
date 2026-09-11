@@ -95,7 +95,8 @@ function buildRows(feats, byPickId) {
     for (const c of (f.top_contributions || [])) {
       if (!c || !c.feature) continue;
       rows.push({ gameKey: led.game_key, feature: c.feature,
-                  contribution: Number(c.contribution), clv: Number(led.clv_prob_delta) });
+                  contribution: Number(c.contribution), clv: Number(led.clv_prob_delta),
+                  candidate: c.candidate === true });
     }
   }
   return { rows, joined };
@@ -174,16 +175,29 @@ async function main() {
   md += `Pooling the two is what made run_differential_diff read t=3.64 on 2026-09-10.\n\n`;
 
   const newBuilt = buildRows(newer, byPickId);
+  // Candidates: declared, computed, weighted 0, staked on nothing. Kept out of
+  // the live table and given their own multiplicity correction — pooling them
+  // would both raise the bar for the live features and let a candidate read as
+  // though it were already earning its keep.
+  const liveRows = newBuilt.rows.filter(r => !r.candidate);
+  const candRows = newBuilt.rows.filter(r => r.candidate);
   const oldBuilt = buildRows(older, byPickId);
 
   md += renderEra(
     `Clean regime — on/after ${CONTRIB_SCHEMA_CHANGE} (all 27 features recorded)`,
     'This is the era to trust. Every feature is present in every game, so absence is recorded rather than inferred.',
-    newBuilt.rows, newBuilt.joined);
+    liveRows, newBuilt.joined);
+
+  if (candRows.length) {
+    md += renderEra(
+      'Candidate features — weighted 0, staked on nothing',
+      'These move no pick. They are logged so a weight can be justified BEFORE it is given, rather than by giving it one and seeing what happens. A candidate clearing the bar is a pre-registration, not a promotion.',
+      candRows, new Set(candRows.map(r => r.gameKey)).size);
+  }
 
   // Collinearity, on the clean era only — the legacy top-5 shape cannot support
   // it (two features are only ever compared on games where BOTH ranked top-5).
-  const col = collinearityClusters(newBuilt.rows, { minGames: 30, threshold: 0.7 });
+  const col = collinearityClusters(liveRows, { minGames: 30, threshold: 0.7 });
   if (col.nFeatures) {
     md += `## How many features are there really?\n\n`;
     md += `${col.nFeatures} testable features collapse into **${col.effectiveFeatures} independent `;

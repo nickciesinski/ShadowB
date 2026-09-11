@@ -516,23 +516,40 @@ function scoreToTotalAdj(score, league) {
  * @param {Object} marketWeights - { featureName: coefficient, ... }
  * @returns {Array<{feature: string, weight: number, value: number, contribution: number}>}
  */
-function decomposeScore(features, marketWeights) {
+function decomposeScore(features, marketWeights, opts = {}) {
   if (!marketWeights || Object.keys(marketWeights).length === 0) return [];
 
   const contributions = [];
+  const candidates = [];
   for (const [key, weight] of Object.entries(marketWeights)) {
     const val = features[key];
-    if (val !== undefined && val !== null && isFinite(weight) && weight !== 0) {
-      contributions.push({
-        feature: key,
-        weight,
-        value: val,
-        contribution: val * weight,
-      });
+    if (val === undefined || val === null || !isFinite(weight)) continue;
+    if (weight !== 0) {
+      contributions.push({ feature: key, weight, value: val, contribution: val * weight });
+    } else if (opts.includeCandidates) {
+      // CANDIDATE: declared, computed, deliberately weighted 0, so it moves no
+      // pick. Logged anyway so it can be measured against CLV before anyone
+      // decides whether it deserves a weight.
+      //
+      // 2026-09-10. Until now `weight !== 0` dropped these entirely, which made
+      // a zero-weight feature impossible to evaluate without first giving it a
+      // weight — i.e. you had to change picks to find out whether changing
+      // picks was a good idea. mlb_run_diff, nba_pace_adj_net, nfl_points_margin
+      // and nhl_goal_diff were all added at weight 0.0 on 2026-05-02 and were
+      // therefore invisible for four months.
+      //
+      // `contribution` carries the raw VALUE, not value*0. A column of zeros is
+      // constant, and a constant correlates with nothing — it would report every
+      // candidate as unmeasurable forever. Weight is kept at 0 so nothing
+      // downstream mistakes a candidate for a live feature.
+      candidates.push({ feature: key, weight: 0, value: val, contribution: val, candidate: true });
     }
   }
   contributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
-  return contributions;
+  candidates.sort((a, b) => a.feature.localeCompare(b.feature));
+  // Candidates last: anything reading [0] for the edge driver must keep getting
+  // a feature that actually moved the pick.
+  return contributions.concat(candidates);
 }
 
 module.exports = {

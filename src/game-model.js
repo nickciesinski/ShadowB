@@ -542,8 +542,10 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   if (mlPick) {
     const mlMainProb = projectWinProb(mlMargin, league);
     mlPick._disagreement = modelDisagreement(mlMainProb, simpleHomeProb, 'moneyline');
-    const mlContribs = decomposeScore(features, mlWeights);
-    mlPick._edgeDriver = mlContribs.length > 0 ? mlContribs[0].feature : 'base_model';
+    const mlContribs = decomposeScore(features, mlWeights, { includeCandidates: true });
+    // Candidates carry weight 0 and moved nothing, so one must never be
+    // reported as the driver of a pick it had no part in.
+    mlPick._edgeDriver = (mlContribs.find(c => !c.candidate) || {}).feature || 'base_model';
     // 2026-08-31 — was slice(0, 5). decomposeScore already returns only
     // features with a non-zero weight AND a present value, so the full list
     // is short. Truncating to 5 made every other feature invisible to CLV
@@ -557,8 +559,10 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   if (spreadPick) {
     const spreadMainProb = projectWinProb(margin, league);
     spreadPick._disagreement = modelDisagreement(spreadMainProb, simpleHomeProb, 'spread');
-    const spContribs = decomposeScore(features, spreadWeights);
-    spreadPick._edgeDriver = spContribs.length > 0 ? spContribs[0].feature : 'base_model';
+    const spContribs = decomposeScore(features, spreadWeights, { includeCandidates: true });
+    // Candidates carry weight 0 and moved nothing, so one must never be
+    // reported as the driver of a pick it had no part in.
+    spreadPick._edgeDriver = (spContribs.find(c => !c.candidate) || {}).feature || 'base_model';
     // 2026-08-31 — was slice(0, 5). decomposeScore already returns only
     // features with a non-zero weight AND a present value, so the full list
     // is short. Truncating to 5 made every other feature invisible to CLV
@@ -595,8 +599,10 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   const totalPick = generateTotalPick(game, homeStr, awayStr, league, totalsMarket, uncertainty, paceAdj, combinedTotalAdj);
   if (totalPick) {
     totalPick._disagreement = 0; // Simple model has no total projection
-    const totContribs = decomposeScore(features, totalWeights);
-    totalPick._edgeDriver = totContribs.length > 0 ? totContribs[0].feature : 'base_model';
+    const totContribs = decomposeScore(features, totalWeights, { includeCandidates: true });
+    // Candidates carry weight 0 and moved nothing, so one must never be
+    // reported as the driver of a pick it had no part in.
+    totalPick._edgeDriver = (totContribs.find(c => !c.candidate) || {}).feature || 'base_model';
     // 2026-08-31 — was slice(0, 5). decomposeScore already returns only
     // features with a non-zero weight AND a present value, so the full list
     // is short. Truncating to 5 made every other feature invisible to CLV
