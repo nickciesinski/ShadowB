@@ -47,7 +47,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { attributeByFeature } = require('../src/feature-clv');
+const { attributeByFeature, collinearityClusters } = require('../src/feature-clv');
 const db = require('../src/db');
 
 const OUT_DIR = path.join(__dirname, '..', 'feature-clv-reports');
@@ -180,6 +180,26 @@ async function main() {
     `Clean regime — on/after ${CONTRIB_SCHEMA_CHANGE} (all 27 features recorded)`,
     'This is the era to trust. Every feature is present in every game, so absence is recorded rather than inferred.',
     newBuilt.rows, newBuilt.joined);
+
+  // Collinearity, on the clean era only — the legacy top-5 shape cannot support
+  // it (two features are only ever compared on games where BOTH ranked top-5).
+  const col = collinearityClusters(newBuilt.rows, { minGames: 30, threshold: 0.7 });
+  if (col.nFeatures) {
+    md += `## How many features are there really?\n\n`;
+    md += `${col.nFeatures} testable features collapse into **${col.effectiveFeatures} independent `;
+    md += `group(s)** at |r| ≥ ${col.threshold}. Weights inside one group cannot be tuned against `;
+    md += `each other — raising one and lowering another is a no-op. Treat a group as one dial.\n\n`;
+    for (const c of col.clusters) {
+      md += c.length > 1 ? `- **${c.length} together:** ${c.join(', ')}\n` : `- _alone:_ ${c[0]}\n`;
+    }
+    if (col.pairs.length) {
+      md += `\nTightest pairings:\n\n| A | B | r |\n|---|---|---|\n`;
+      for (const pr of col.pairs.slice(0, 8)) {
+        md += `| ${pr.a} | ${pr.b} | ${fmt(pr.r, 3, true)} |\n`;
+      }
+    }
+    md += `\n`;
+  }
 
   if (oldBuilt.rows.length) {
     md += renderEra(

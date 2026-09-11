@@ -71,6 +71,16 @@ const { fetchProbablePitchers, remapStarterMapToGames } = require('./pitcher-dat
 const { fetchStartingGoalies } = require('./goalie-data');
 const { recordSignalHealth } = require('./signal-health');
 
+
+// Map a pick's betType onto the market name the ledger uses as its join key.
+// 'over'/'under' are two directions of one market ('total'); for moneyline and
+// spread, betType and market are already the same word. Module scope + exported
+// so test/totals-feature-join.test.js can pin it: this mapping being wrong
+// produced no error at runtime, it just silently wrote a null join key.
+const featureMarketKey = (betType) => {
+  const b = String(betType || '').toLowerCase();
+  return (b === 'over' || b === 'under') ? 'total' : b;
+};
 // ── Helpers ─────────────────────────────────────────────────────
 
 function getTargetSheet(baseSheet) {
@@ -1452,7 +1462,21 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
             // is honest: an unjoinable feature row should be visibly unjoinable
             // rather than carry a guessed id that silently attributes CLV to the
             // wrong pick.
-            pick_id: pickIdByFeatureKey[`${p.betType || ''}|${p._awayTeam || ''}@${p._homeTeam || ''}`] || null,
+            // 2026-09-10 — normalise the market before keying.
+            //
+            // generateTotalPick sets betType to the DIRECTION ('over'/'under',
+            // game-model.js:956), but the ledger keys this map on the market
+            // ('total'). So every total pick looked up "over|away@home" against
+            // a map that only ever holds "total|away@home", missed, and was
+            // written with a null pick_id. Moneyline and spread matched by
+            // luck: for those two, betType and market are the same word.
+            //
+            // Net effect: 127 of 127 MLB total picks since 2026-08-31 were
+            // unjoinable, so feature->CLV attribution was structurally blind to
+            // a third of the slate — and to the market the 8/31 analysis called
+            // the worst. The `market` column keeps the direction, which is
+            // information worth having; only the join key is normalised.
+            pick_id: pickIdByFeatureKey[`${featureMarketKey(p.betType)}|${p._awayTeam || ''}@${p._homeTeam || ''}`] || null,
           }));
         if (featureRows.length > 0) {
           await db.insertPredictionFeatures(featureRows);
@@ -1899,6 +1923,7 @@ module.exports = {
   gradePerformanceLog,
   writeApprovedToDailyCombos,
   // exported for tests / offline tools
+  featureMarketKey,
   buildClosingOddsMap,
   lookupClosingOdds,
   gradeClvNumeric,

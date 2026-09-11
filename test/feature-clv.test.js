@@ -116,3 +116,56 @@ test('junk rows are skipped without poisoning the aggregate', () => {
   const f = features.find(x => x.feature === 'f');
   assert.ok(!f || f.nGames === 0 || f.nGames < 3, 'junk must not become observations');
 });
+
+// ── collinearity, added 2026-09-10 ──────────────────────────────────────────
+// Tuning 27 weights implies 27 things to tune. On the real post-8/31 sample
+// run_differential_diff and whip_diff correlate at r=0.888, so two of those
+// weights point at one quantity and cannot be tuned against each other. This
+// exists so the report says how many dials there actually are.
+const { collinearityClusters } = require('../src/feature-clv');
+
+/** rows for features whose per-game contributions are given as arrays. */
+const rowsFrom = (spec) => {
+  const out = [];
+  for (const [feature, vals] of Object.entries(spec)) {
+    vals.forEach((c, i) => out.push({ gameKey: `g${i}`, feature, contribution: c, clv: 0 }));
+  }
+  return out;
+};
+
+test('two duplicate features collapse into one dial', () => {
+  const n = 40;
+  const a = Array.from({ length: n }, (_, i) => Math.sin(i));
+  const rows = rowsFrom({ alpha: a, beta: a.map(v => v * 2 + 0.001), gamma: a.map((_, i) => Math.cos(i * 3)) });
+  const { clusters, effectiveFeatures, nFeatures } = collinearityClusters(rows, { minGames: 30, threshold: 0.7 });
+  assert.strictEqual(nFeatures, 3);
+  assert.strictEqual(effectiveFeatures, 2, 'alpha and beta are one dial, gamma is another');
+  const pair = clusters.find(c => c.length === 2);
+  assert.deepStrictEqual(pair.sort(), ['alpha', 'beta']);
+});
+
+test('independent features stay separate', () => {
+  const n = 40;
+  const rows = rowsFrom({
+    a: Array.from({ length: n }, (_, i) => Math.sin(i)),
+    b: Array.from({ length: n }, (_, i) => Math.cos(i * 7.3)),
+  });
+  const { effectiveFeatures } = collinearityClusters(rows, { minGames: 30, threshold: 0.9 });
+  assert.strictEqual(effectiveFeatures, 2);
+});
+
+test('a negatively correlated pair is still one dial', () => {
+  // -1 and +1 are equally "the same quantity" for tuning purposes.
+  const n = 40;
+  const a = Array.from({ length: n }, (_, i) => Math.sin(i));
+  const rows = rowsFrom({ up: a, down: a.map(v => -v) });
+  const { effectiveFeatures } = collinearityClusters(rows, { minGames: 30, threshold: 0.7 });
+  assert.strictEqual(effectiveFeatures, 1);
+});
+
+test('features below the game minimum are excluded, not silently paired', () => {
+  const rows = rowsFrom({ thin: [1, 2, 3], alsoThin: [1, 2, 3] });
+  const { nFeatures, clusters } = collinearityClusters(rows, { minGames: 30 });
+  assert.strictEqual(nFeatures, 0);
+  assert.deepStrictEqual(clusters, []);
+});

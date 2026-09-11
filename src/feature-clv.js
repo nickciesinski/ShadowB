@@ -134,4 +134,90 @@ function attributeByFeature(rows, opts = {}) {
   return { features: eligible, nFeatures, tThreshold };
 }
 
-module.exports = { corr, tStat, gamesNeeded, attributeByFeature };
+/**
+ * Group features that move together, so reweighting has something real to act on.
+ *
+ * 2026-09-10. Tuning 27 weights implies 27 things to tune. They are not: on the
+ * post-2026-08-31 sample run_differential_diff and whip_diff correlate at
+ * r=0.888. Two weights pointing at one underlying quantity cannot be tuned
+ * independently — raising one and lowering the other is a no-op the search will
+ * happily wander around forever, and a Bonferroni correction over 27 "tests"
+ * that are really 2-3 is both too harsh on count and too lenient on structure.
+ *
+ * Single-link clustering at |r| >= threshold. Single-link (join a feature to a
+ * cluster if it is close to ANY member) is deliberate: for "can these two
+ * weights be tuned separately?", one tight pairing anywhere in the group is
+ * enough to make the answer no.
+ *
+ * @param {Array} rows      { gameKey, feature, contribution } - clv unused
+ * @param {object} opts     { minGames = 30, threshold = 0.7 }
+ * @returns {{clusters: Array, nFeatures: number, threshold: number}}
+ *          clusters are arrays of feature names, largest first; a feature with
+ *          no partner appears as a cluster of one.
+ */
+function collinearityClusters(rows, opts = {}) {
+  const minGames = opts.minGames ?? 30;
+  const threshold = opts.threshold ?? 0.7;
+
+  // One value per (feature, game), same clustering step as attributeByFeature.
+  const byFeature = new Map();
+  for (const r of rows) {
+    if (!r || !r.feature || r.gameKey == null) continue;
+    const c = Number(r.contribution);
+    if (!Number.isFinite(c)) continue;
+    if (!byFeature.has(r.feature)) byFeature.set(r.feature, new Map());
+    const games = byFeature.get(r.feature);
+    const g = games.get(r.gameKey) || { c: 0, n: 0 };
+    g.c += c; g.n += 1;
+    games.set(r.gameKey, g);
+  }
+
+  const names = [...byFeature.keys()].filter(f => byFeature.get(f).size >= minGames);
+
+  // Correlate only over games BOTH features appear in, otherwise the pairing is
+  // measured on two different populations.
+  const pairR = (a, b) => {
+    const ga = byFeature.get(a), gb = byFeature.get(b);
+    const xs = [], ys = [];
+    for (const [k, v] of ga) {
+      const w = gb.get(k);
+      if (!w) continue;
+      xs.push(v.c / v.n); ys.push(w.c / w.n);
+    }
+    return xs.length >= minGames ? corr(xs, ys) : null;
+  };
+
+  // Union-find over pairs above the threshold.
+  const parent = new Map(names.map(n => [n, n]));
+  const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+
+  const pairs = [];
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      const r = pairR(names[i], names[j]);
+      if (r === null) continue;
+      if (Math.abs(r) >= threshold) { union(names[i], names[j]); pairs.push({ a: names[i], b: names[j], r }); }
+    }
+  }
+
+  const groups = new Map();
+  for (const n of names) {
+    const root = find(n);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(n);
+  }
+  const clusters = [...groups.values()].sort((a, b) => b.length - a.length);
+  pairs.sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
+
+  return {
+    clusters,
+    pairs,
+    nFeatures: names.length,
+    // What the feature count is really worth once duplicates collapse.
+    effectiveFeatures: clusters.length,
+    threshold,
+  };
+}
+
+module.exports = { corr, tStat, gamesNeeded, attributeByFeature, collinearityClusters };
