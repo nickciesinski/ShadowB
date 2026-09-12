@@ -19,6 +19,7 @@ const { replayBacktest, sensitivityAnalysis, validateCurrentWeights, counterfact
 const { snapshotTeamStats, snapshotOdds, snapshotInjuries } = require('./snapshots');
 const { updateAllPlayerRankings } = require('./player-rankings');
 
+const { settleStaleNovigOrders } = require('./novig-settle');
 /** Small delay to spread Sheets writes across the quota window. */
 const pause = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -211,6 +212,11 @@ const TRIGGERS = {
     await gradePerformanceLog();
     await gradePropPicks();   // grade prop W/L against ESPN box scores
     await gradePropEdges();   // compare opening vs closing prop lines for CLV grading
+    // Close out Novig orders never marked. Novig sends no fill notification,
+    // so manual marking under-records MISSES specifically — and the misses are
+    // the half of the venue test that makes a fill rate mean anything. Nick
+    // marks fills only; this settles the rest. See src/novig-settle.js.
+    await settleStaleNovigOrders();
   }),
 
   // Trigger 13: Sunday 8:00 PM ET → Weekly performance summary
