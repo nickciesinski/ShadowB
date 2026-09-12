@@ -28,7 +28,15 @@
     "nfl_rest_days_diff": 0,
     "nfl_short_week_diff": 0,
     "nfl_off_bye_diff": 0,
-    "nfl_travel_miles_diff": 0
+    "nfl_travel_miles_diff": 0,
+    "nfl_injury_weighted_diff": 0,
+    "nfl_qb_out_diff": 0,
+    "nfl_out_count_diff": 0,
+    "nfl_questionable_diff": 0,
+    "nfl_skill_out_diff": 0,
+    "nfl_oline_out_diff": 0,
+    "nfl_secondary_out_diff": 0,
+    "nfl_frontseven_out_diff": 0
   },
   "moneyline": {
     "nfl_points_margin": 0,
@@ -72,7 +80,15 @@
     "nfl_rest_days_diff": 0,
     "nfl_short_week_diff": 0,
     "nfl_off_bye_diff": 0,
-    "nfl_travel_miles_diff": 0
+    "nfl_travel_miles_diff": 0,
+    "nfl_injury_weighted_diff": 0,
+    "nfl_qb_out_diff": 0,
+    "nfl_out_count_diff": 0,
+    "nfl_questionable_diff": 0,
+    "nfl_skill_out_diff": 0,
+    "nfl_oline_out_diff": 0,
+    "nfl_secondary_out_diff": 0,
+    "nfl_frontseven_out_diff": 0
   },
   "spread": {
     "nfl_points_margin": 0,
@@ -114,7 +130,15 @@
     "nfl_rest_days_diff": 0,
     "nfl_short_week_diff": 0,
     "nfl_off_bye_diff": 0,
-    "nfl_travel_miles_diff": 0
+    "nfl_travel_miles_diff": 0,
+    "nfl_injury_weighted_diff": 0,
+    "nfl_qb_out_diff": 0,
+    "nfl_out_count_diff": 0,
+    "nfl_questionable_diff": 0,
+    "nfl_skill_out_diff": 0,
+    "nfl_oline_out_diff": 0,
+    "nfl_secondary_out_diff": 0,
+    "nfl_frontseven_out_diff": 0
   },
   "total": {
     "nfl_points_margin": 0,
@@ -142,6 +166,14 @@
     "nfl_rest_days_diff": 0,
     "nfl_short_week_diff": 0,
     "nfl_off_bye_diff": 0,
-    "nfl_travel_miles_diff": 0
+    "nfl_travel_miles_diff": 0,
+    "nfl_injury_weighted_diff": 0,
+    "nfl_qb_out_diff": 0,
+    "nfl_out_count_diff": 0,
+    "nfl_questionable_diff": 0,
+    "nfl_skill_out_diff": 0,
+    "nfl_oline_out_diff": 0,
+    "nfl_secondary_out_diff": 0,
+    "nfl_frontseven_out_diff": 0
   }
 }

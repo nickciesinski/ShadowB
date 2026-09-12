@@ -5,6 +5,7 @@ const { buildFormFeatures } = require('./form-windows');
 const { buildMatchupFeatures } = require('./mlb-matchup');
 const { buildTravelFeatures } = require('./travel-context');
 const { buildNflFeatures } = require('./nfl-context');
+const { buildInjuryFeatures } = require('./nfl-injuries');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -454,6 +455,14 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   if (league === 'NFL' && ctx.nflCtx && ctx.homeTeam && ctx.awayTeam) {
     Object.assign(f, buildNflFeatures(
       ctx.nflCtx, ctx.homeTeam, ctx.awayTeam, ctx.commenceTime));
+  }
+
+  // CANDIDATES (weight 0), NFL injury report split by position group and
+  // designation. Distinct from the tier-summed injury features above, which
+  // treat a quarterback and a safety as the same kind of quantity.
+  // See src/nfl-injuries.js.
+  if (league === 'NFL' && ctx.nflInjuries && ctx.homeTeam && ctx.awayTeam) {
+    Object.assign(f, buildInjuryFeatures(ctx.nflInjuries, ctx.homeTeam, ctx.awayTeam));
   }
 
   return f;
