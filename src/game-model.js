@@ -51,6 +51,7 @@ const {
 const { probe } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not logs
 // CANDIDATE feature source (weight 0, stakes nothing). See src/bullpen-fatigue.js.
 const { fetchBullpenLoad } = require('./bullpen-fatigue');
+const { fetchFormWindows } = require('./form-windows');
 
 /**
  * Standard normal CDF approximation (Abramowitz & Stegun).
@@ -277,7 +278,8 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // it moves no pick). Team names come from the game rather than the stats
   // object so the lookup does not depend on how team stats happen to be shaped.
   const features = extractFeatures(homeStats, awayStats, scheduleInfo, league,
-    { bullpenLoad: opts.bullpenLoad, homeTeam: game.home, awayTeam: game.away });
+    { bullpenLoad: opts.bullpenLoad, formWindows: opts.formWindows,
+      homeTeam: game.home, awayTeam: game.away });
 
 
   // ── Simple model "second opinion" for disagreement signal ──
@@ -1024,12 +1026,23 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
   // returns an empty table and the feature is simply absent for the night,
   // which is the honest reading and cannot break a slate.
   let bullpenLoad = null;
+  let formWindows = null;
   if (league === 'MLB') {
+    // Anchored to the slate's game date, not the clock, so a rebuild at 5 AM
+    // sees exactly what the 9 PM build saw. See src/form-windows.js.
+    const gameDate = (games[0] && (games[0].gameDate || games[0].date)) || undefined;
     try {
       bullpenLoad = await fetchBullpenLoad();
       console.log(`[game-model] bullpen load: ${bullpenLoad.size} teams`);
     } catch (err) {
       console.warn('[game-model] bullpen load failed:', err.message);
+    }
+    try {
+      formWindows = await fetchFormWindows({ gameDate });
+      const w = formWindows.l7;
+      console.log(`[game-model] form windows: ${w.startDate}..${w.endDate}, ${w.hitting.size} teams`);
+    } catch (err) {
+      console.warn('[game-model] form windows failed:', err.message);
     }
   }
 
@@ -1049,7 +1062,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Both maps are keyed "Away@Home"; other leagues pass null.
     const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad });
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad, formWindows });
 
     for (const pick of picks) {
       // Calculate final units using the sizing model

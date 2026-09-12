@@ -1,6 +1,7 @@
 'use strict';
 
 const { bullpenFatigueDiff } = require('./bullpen-fatigue');
+const { buildFormFeatures } = require('./form-windows');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -295,6 +296,14 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
       ? bullpenFatigueDiff(ctx.bullpenLoad, ctx.homeTeam, ctx.awayTeam)
       : null;
     if (bpDiff !== null) f.bullpen_fatigue_diff = bpDiff;
+
+    // CANDIDATES (weight 0): short-window team form. Season aggregates are
+    // already in the closing line; the same stat over 7 and 14 days is not,
+    // which is the only way a feature can earn a weight. Omitted entirely when
+    // a team is missing rather than zeroed. See src/form-windows.js.
+    if (ctx.formWindows && ctx.homeTeam && ctx.awayTeam) {
+      Object.assign(f, buildFormFeatures(ctx.formWindows, ctx.homeTeam, ctx.awayTeam));
+    }
 
     if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {
       console.log(`[game-features][MLB] implausible mlb_run_diff ${rawRunDiff.toFixed(1)} `

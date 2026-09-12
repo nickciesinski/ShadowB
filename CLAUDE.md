@@ -19,6 +19,34 @@ make changes.
 - Every game must produce ML + spread + total picks. Low confidence = a tiny
   stake, never a dropped pick.
 
+## Nick's betting windows — READ THIS BEFORE CHANGING ANY SCHEDULE OR FEATURE
+
+Nick places bets by hand in one of two windows, both Pacific:
+
+- **~9:00–9:30 PM PT** the night before, or
+- **~5:30–6:00 AM PT** the morning of.
+
+A pick that only exists outside those windows cannot be bet. Day-ahead picks are
+fine but never required — lead time is not the goal.
+
+**THE HARD RULE: a pick must never contradict itself.** Saying Team A on Monday
+and Team B for the same game on Tuesday is a failure regardless of which was
+right. Nick would rather have one stable pick than a sharper one that flips.
+
+This is enforced in the DB, not by convention: `insertPerformanceRows()` upserts
+with `onConflict: 'pick_id', ignoreDuplicates: true` — DO NOTHING, never DO
+UPDATE. Once a side is locked for a game+market, later runs top up new games and
+leave existing ones alone. **Do not change that to DO UPDATE**, and do not add a
+re-pick path that rewrites a published side.
+
+**Consequences for new features:** every feature must be collectable and
+verifiable BEFORE the 9 PM PT window. A signal that only lands at noon on game
+day is useless here, however predictive. A signal only published AFTER the game
+is a leak — MLB umpire assignment was proposed and dropped for exactly that
+(StatsAPI publishes officials only post-game; verified 2026-09-10, 0/15 before
+vs 15/15 after). Declare new features at weight 0 so they are measured before
+they are trusted; see `src/bullpen-fatigue.js` for the pattern.
+
 ## Data & environment notes
 - Live pick data is in Supabase (project "ShadowPicks").
 - Model weights/params live in `config/model-params.*.json` (owned by the
