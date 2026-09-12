@@ -6,6 +6,7 @@ const { buildMatchupFeatures } = require('./mlb-matchup');
 const { buildTravelFeatures } = require('./travel-context');
 const { buildNflFeatures } = require('./nfl-context');
 const { buildInjuryFeatures } = require('./nfl-injuries');
+const { buildArenaFeatures } = require('./arena-context');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -463,6 +464,13 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   // See src/nfl-injuries.js.
   if (league === 'NFL' && ctx.nflInjuries && ctx.homeTeam && ctx.awayTeam) {
     Object.assign(f, buildInjuryFeatures(ctx.nflInjuries, ctx.homeTeam, ctx.awayTeam));
+  }
+
+  // CANDIDATES (weight 0), NBA/NHL: schedule density, travel and body clock.
+  // Dormant until each season opens — see src/season-gate.js.
+  if ((league === 'NBA' || league === 'NHL') && ctx.arenaCtx && ctx.homeTeam && ctx.awayTeam) {
+    Object.assign(f, buildArenaFeatures(
+      ctx.arenaCtx, ctx.homeTeam, ctx.awayTeam, ctx.commenceTime));
   }
 
   return f;

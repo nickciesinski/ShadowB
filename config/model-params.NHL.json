@@ -52,7 +52,12 @@
     "sp_prob_away": 0.1,
     "sp_edge_ml_home": 0.1,
     "sp_edge_ml_away": 0.1,
-    "sp_pred_margin": 0.8
+    "sp_pred_margin": 0.8,
+    "nhl_tz_shift_diff": 0,
+    "nhl_rest_days_diff": 0,
+    "nhl_b2b_diff": 0,
+    "nhl_density_diff": 0,
+    "nhl_travel_miles_diff": 0
   },
   "spread": {
     "nhl_goal_diff": 0,
@@ -83,7 +88,12 @@
     "total_injury_weight": -0.15,
     "sp_edge_spread_home": 0.1,
     "sp_edge_spread_away": 0.1,
-    "sp_pred_margin": 1.2
+    "sp_pred_margin": 1.2,
+    "nhl_tz_shift_diff": 0,
+    "nhl_rest_days_diff": 0,
+    "nhl_b2b_diff": 0,
+    "nhl_density_diff": 0,
+    "nhl_travel_miles_diff": 0
   },
   "total": {
     "nhl_goal_diff": 0,
@@ -104,6 +114,11 @@
     "severe_injury_factor": -0.25,
     "injury_weight_diff": 0.05,
     "sp_edge_total": 1.6,
-    "sp_pred_total": 0.55
+    "sp_pred_total": 0.55,
+    "nhl_tz_shift_diff": 0,
+    "nhl_rest_days_diff": 0,
+    "nhl_b2b_diff": 0,
+    "nhl_density_diff": 0,
+    "nhl_travel_miles_diff": 0
   }
 }

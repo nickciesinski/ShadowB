@@ -56,6 +56,11 @@ const { fetchMatchupContext } = require('./mlb-matchup');
 const { fetchTravelContext } = require('./travel-context');
 const { fetchNflContext } = require('./nfl-context');
 const { fetchNflInjuries } = require('./nfl-injuries');
+// Season gating reuses the EXISTING src/season-windows.js rather than a second
+// implementation — it already reads config/season-windows.json, which also
+// carries EPL for the soccer system.
+const { isInSeason: leagueInSeason } = require('./season-windows');
+const { fetchArenaContext } = require('./arena-context');
 
 /**
  * Standard normal CDF approximation (Abramowitz & Stegun).
@@ -283,7 +288,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // object so the lookup does not depend on how team stats happen to be shaped.
   const features = extractFeatures(homeStats, awayStats, scheduleInfo, league,
     { bullpenLoad: opts.bullpenLoad, formWindows: opts.formWindows,
-      matchupCtx: opts.matchupCtx, travelCtx: opts.travelCtx, nflCtx: opts.nflCtx, nflInjuries: opts.nflInjuries,
+      matchupCtx: opts.matchupCtx, travelCtx: opts.travelCtx, nflCtx: opts.nflCtx, nflInjuries: opts.nflInjuries, arenaCtx: opts.arenaCtx,
       commenceTime: game.commenceTime || game.start_time || game.startTime,
       homeTeam: game.home, awayTeam: game.away });
 
@@ -1031,16 +1036,28 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
   // request covers all 30 teams for the whole slate. MLB only; a failure
   // returns an empty table and the feature is simply absent for the night,
   // which is the honest reading and cannot break a slate.
+  // One slate date for every candidate fetch, and the value the season gate
+  // reads. Candidates are gated so an offseason run makes no calls at all —
+  // see src/season-gate.js for why stale is worse than absent.
+  const gameDateForCandidates =
+    (games[0] && (games[0].gameDate || games[0].date)) || new Date().toISOString().slice(0, 10);
+  const candidateDate = new Date(`${gameDateForCandidates}T12:00:00Z`);
+  if (!leagueInSeason(league, candidateDate)) {
+    console.log(`[game-model] ${league} is out of season on ${gameDateForCandidates} — `
+      + 'skipping candidate-feature fetches');
+  }
+
   let bullpenLoad = null;
   let formWindows = null;
   let matchupCtx = null;
   let travelCtx = null;
   let nflCtx = null;
   let nflInjuries = null;
-  if (league === 'MLB') {
+  let arenaCtx = null;
+  if (league === 'MLB' && leagueInSeason('MLB', candidateDate)) {
     // Anchored to the slate's game date, not the clock, so a rebuild at 5 AM
     // sees exactly what the 9 PM build saw. See src/form-windows.js.
-    const gameDate = (games[0] && (games[0].gameDate || games[0].date)) || undefined;
+    const gameDate = gameDateForCandidates;
     try {
       bullpenLoad = await fetchBullpenLoad();
       console.log(`[game-model] bullpen load: ${bullpenLoad.size} teams`);
@@ -1074,8 +1091,8 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     }
   }
 
-  if (league === 'NFL') {
-    const gd = (games[0] && (games[0].gameDate || games[0].date)) || undefined;
+  if (league === 'NFL' && leagueInSeason('NFL', candidateDate)) {
+    const gd = gameDateForCandidates;
     if (gd) {
       try {
         nflCtx = await fetchNflContext(gd);
@@ -1089,6 +1106,15 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
       } catch (err) {
         console.warn('[game-model] NFL injuries failed:', err.message);
       }
+    }
+  }
+
+  if ((league === 'NBA' || league === 'NHL') && leagueInSeason(league, candidateDate)) {
+    try {
+      arenaCtx = await fetchArenaContext(league, gameDateForCandidates);
+      console.log(`[game-model] ${league} arena context: ${arenaCtx.recent.size} teams with recent games`);
+    } catch (err) {
+      console.warn(`[game-model] ${league} arena context failed:`, err.message);
     }
   }
 
@@ -1108,7 +1134,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Both maps are keyed "Away@Home"; other leagues pass null.
     const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad, formWindows, matchupCtx, travelCtx, nflCtx, nflInjuries });
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad, formWindows, matchupCtx, travelCtx, nflCtx, nflInjuries, arenaCtx });
 
     for (const pick of picks) {
       // Calculate final units using the sizing model
