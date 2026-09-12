@@ -135,6 +135,15 @@ export async function GET() {
     // see ShadowB-Soccer's lookaheadDays), and those rows already sit in the
     // shared table today. Widen the window so the app's Today/Tomorrow/This Week
     // picker on the Picks tab has something to show, not just isoToday.
+    // 2026-09-12: reach BACK two days as well. A Novig maker order placed at
+    // 9 PM is still unsettled the next morning, and once the date flipped those
+    // picks left the payload entirely — so an order that never filled could
+    // never be marked "no fill". The unfilled orders are half the venue
+    // measurement (the 2026-09-11 pilot's 44% CLV-capture figure is only
+    // computable because the misses were recorded), so losing them silently
+    // would have quietly broken the test rather than the app.
+    const twoDaysAgo = new Date(today); twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const isoTwoDaysAgo = `${twoDaysAgo.getFullYear()}-${String(twoDaysAgo.getMonth() + 1).padStart(2, '0')}-${String(twoDaysAgo.getDate()).padStart(2, '0')}`;
     const weekAhead = new Date(today); weekAhead.setDate(weekAhead.getDate() + 7);
     const isoWeekAhead = `${weekAhead.getFullYear()}-${String(weekAhead.getMonth() + 1).padStart(2, '0')}-${String(weekAhead.getDate()).padStart(2, '0')}`;
 
@@ -144,7 +153,7 @@ export async function GET() {
     const sbTodayQ = sb
       ? sb.from('performance_log')
           .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds, rule_c_eligible, pick_id')
-          .gte('date', isoToday).lte('date', isoWeekAhead)
+          .gte('date', isoTwoDaysAgo).lte('date', isoWeekAhead)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
 

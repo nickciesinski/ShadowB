@@ -721,7 +721,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
+function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
@@ -734,38 +734,6 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   // this is the switch for looking at the whole slate regardless.
   const [showAllOn, setShowAllOn] = useState(false);
   const [expandedGames, setExpandedGames] = useState({});
-  // Novig order log, keyed by pick_id. Loaded once per slate date; every change
-  // is written straight through to /api/novig so a mark survives a refresh and
-  // reaches the other device.
-  const [novigOrders, setNovigOrders] = useState({});
-  useEffect(() => {
-    let cancelled = false;
-    fetch('/api/novig', { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : { orders: {} })
-      .then(j => { if (!cancelled) setNovigOrders(j.orders || {}); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
-  // none -> ordered -> filled -> unfilled -> none. Tapping the state it is
-  // already in clears it, which is the undo for a mis-tap.
-  const markNovig = (p, next) => {
-    if (!p.pickId) return;
-    const cur = novigOrders[p.pickId]?.state || null;
-    const state = cur === next ? null : next;
-    setNovigOrders(prev => {
-      const copy = { ...prev };
-      if (state === null) delete copy[p.pickId];
-      else copy[p.pickId] = { ...(copy[p.pickId] || {}), pick_id: p.pickId, state, posted_cents: p.novigMaxCents };
-      return copy;
-    });
-    fetch('/api/novig', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pickId: p.pickId, gameDate: p.isoDate, postedCents: p.novigMaxCents, state,
-      }),
-    }).catch(() => {});
-  };
 
   const allPicks = dedup(picks);
   const evPool = (minUnitOn && !showAllOn) ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
@@ -2679,6 +2647,44 @@ export default function App() {
 
   const [propDateFilter, setPropDateFilter] = useState('Today');
   const [picksDateFilter, setPicksDateFilter] = useState('Today');
+  // Novig order log, keyed by pick_id. Lifted to the app component because the
+  // Picks-tab date filter needs to know which orders are still open — a posted
+  // order has to stay visible after its date rolls over or it can never be
+  // marked "no fill".
+  const [novigOrders, setNovigOrders] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/novig', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : { orders: {} }))
+      .then(j => { if (!cancelled) setNovigOrders(j.orders || {}); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // Open = posted but not yet settled. These are the rows the date filter must
+  // keep showing regardless of how old they are.
+  const novigOpenPickIds = new Set(
+    Object.values(novigOrders).filter(o => o.state === 'ordered').map(o => o.pick_id));
+
+  // none -> ordered -> filled -> unfilled. Tapping the state it is already in
+  // clears it, which is the undo for a mis-tap.
+  const markNovig = (p, next) => {
+    if (!p.pickId) return;
+    const cur = novigOrders[p.pickId]?.state || null;
+    const state = cur === next ? null : next;
+    setNovigOrders(prev => {
+      const copy = { ...prev };
+      if (state === null) delete copy[p.pickId];
+      else copy[p.pickId] = { ...(copy[p.pickId] || {}), pick_id: p.pickId, state, posted_cents: p.novigMaxCents };
+      return copy;
+    });
+    fetch('/api/novig', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pickId: p.pickId, gameDate: p.isoDate, postedCents: p.novigMaxCents, state,
+      }),
+    }).catch(() => {});
+  };
   const [resultType, setResultType] = useState('Games');
   const [data, setData] = useState(null);
   const [resultsData, setResultsData] = useState(null); // graded history, loaded lazily after main data
@@ -2907,6 +2913,12 @@ export default function App() {
   const weekAheadDateISO = weekAheadDateObj.toLocaleDateString('en-CA');
   const picksForTab = (data?.todayPicks || []).filter(p => {
     if (!p.isoDate) return picksDateFilter === 'Today'; // no date = assume today
+    // An unsettled Novig order outlives its date. Orders are posted the night
+    // before and settle overnight, so the Novig list has to behave as a WORK
+    // QUEUE — a posted order stays visible until it is marked filled or not —
+    // rather than as a view of one calendar day. Without this, yesterday's
+    // unfilled orders become unmarkable the moment the date rolls over.
+    if (novigOpenPickIds.has(p.pickId)) return true;
     if (picksDateFilter === 'Today') return p.isoDate === todayDateISO;
     if (picksDateFilter === 'Tomorrow') return p.isoDate === tomorrowDateISO;
     // This Week: today through 7 days out, inclusive (includes tomorrow).
@@ -3016,6 +3028,7 @@ export default function App() {
             picks={picksForTab} liveGames={liveGames} myBets={myBets} setMyBets={setMyBets}
             isBet={isBet} isFade={isFade} toggleBet={toggleBet} setPickState={setPickState} displayPick={displayPick}
             pickMode={pickMode} setPickMode={setPickMode}
+            novigOrders={novigOrders} markNovig={markNovig}
             picksDateFilter={picksDateFilter} setPicksDateFilter={setPicksDateFilter}
             showDate={picksDateFilter === 'This Week'} lastUpdated={lastUpdated}
             commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
