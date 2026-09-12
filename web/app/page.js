@@ -18,6 +18,14 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .tp .num{font-variant-numeric:tabular-nums}
     /* Novig ceiling. Deliberately quiet — it sits beside the book price and is
        only ever shown on the model's own side, never on a fade. */
+    /* Novig order log: posted -> filled / no fill. Sits on the pick row so the
+       order can be marked at the moment it is placed, not reconstructed later. */
+    .nvo{display:inline-flex;gap:2px;margin-left:4px;vertical-align:middle}
+    .nvo b{font:700 8px/14px var(--mono);padding:0 3px;border-radius:2px;cursor:pointer;
+           background:#14171c;color:var(--dim2);border:1px solid var(--line2);font-style:normal}
+    .nvo b.on{background:rgba(76,154,255,.2);color:#a9cfff;border-color:rgba(76,154,255,.55)}
+    .nvo b.fill.on{background:rgba(52,211,153,.2);color:#6ee7b7;border-color:rgba(52,211,153,.55)}
+    .nvo b.miss.on{background:rgba(255,107,107,.18);color:#ff9b9b;border-color:rgba(255,107,107,.5)}
     .nv{display:inline-block;margin-left:4px;padding:0 3px;border-radius:3px;font:700 9px/14px var(--mono);
         font-style:normal;background:rgba(76,154,255,.16);color:#8fc0ff;vertical-align:middle}
     .ah{padding:10px 14px 10px;display:flex;align-items:baseline;justify-content:space-between;position:sticky;top:0;background:var(--bg);z-index:5}
@@ -717,14 +725,53 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
+  // Novig-only view. Nick posts these as maker orders in one sitting, so the
+  // filter exists to make that a single pass down one short list rather than
+  // hunting the badge across the whole slate.
+  const [novigOnly, setNovigOnly] = useState(false);
   // 2026-08-31 — when on, nothing is collapsed or filtered out of the card.
   // Build mode hides no-edge picks by default to keep the card actionable;
   // this is the switch for looking at the whole slate regardless.
   const [showAllOn, setShowAllOn] = useState(false);
   const [expandedGames, setExpandedGames] = useState({});
+  // Novig order log, keyed by pick_id. Loaded once per slate date; every change
+  // is written straight through to /api/novig so a mark survives a refresh and
+  // reaches the other device.
+  const [novigOrders, setNovigOrders] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/novig', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { orders: {} })
+      .then(j => { if (!cancelled) setNovigOrders(j.orders || {}); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // none -> ordered -> filled -> unfilled -> none. Tapping the state it is
+  // already in clears it, which is the undo for a mis-tap.
+  const markNovig = (p, next) => {
+    if (!p.pickId) return;
+    const cur = novigOrders[p.pickId]?.state || null;
+    const state = cur === next ? null : next;
+    setNovigOrders(prev => {
+      const copy = { ...prev };
+      if (state === null) delete copy[p.pickId];
+      else copy[p.pickId] = { ...(copy[p.pickId] || {}), pick_id: p.pickId, state, posted_cents: p.novigMaxCents };
+      return copy;
+    });
+    fetch('/api/novig', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pickId: p.pickId, gameDate: p.isoDate, postedCents: p.novigMaxCents, state,
+      }),
+    }).catch(() => {});
+  };
 
   const allPicks = dedup(picks);
-  const pool = (minUnitOn && !showAllOn) ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
+  const evPool = (minUnitOn && !showAllOn) ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
+  // Novig-only narrows to picks that carry a posting price. It is applied AFTER
+  // the +EV filter so the two compose rather than fight.
+  const pool = novigOnly ? evPool.filter(p => p.novigMaxCents) : evPool;
 
   // Effective state: an explicit manual tri-state tap always wins ('pass'
   // included — it's how you exclude a pick that defaulted to take); otherwise
@@ -881,6 +928,20 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
               pick, so the number is meaningless against a fade — and a wrong
               ceiling silently hands back the fee this is meant to save. */}
           {!faded && p.novigMaxCents ? <b className="nv">{p.novigMaxCents}¢</b> : null}
+          {/* Order log. Marked when the order is PLACED, then settled to
+              filled / no fill. The "no fill" state is not bookkeeping tidiness:
+              on 2026-09-11 the four fills captured 44% of the CLV on offer, and
+              that is only computable because the four misses were recorded. */}
+          {!faded && p.novigMaxCents && p.pickId ? (
+            <span className="nvo" onClick={(e) => e.stopPropagation()}>
+              <b className={novigOrders[p.pickId]?.state === 'ordered' ? 'on' : ''}
+                 title="Order posted on Novig" onClick={() => markNovig(p, 'ordered')}>O</b>
+              <b className={`fill${novigOrders[p.pickId]?.state === 'filled' ? ' on' : ''}`}
+                 title="Filled at my price" onClick={() => markNovig(p, 'filled')}>F</b>
+              <b className={`miss${novigOrders[p.pickId]?.state === 'unfilled' ? ' on' : ''}`}
+                 title="Never filled — cancelled before start" onClick={() => markNovig(p, 'unfilled')}>N</b>
+            </span>
+          ) : null}
         </span>
         {threeWay ? (
           <div className="tri quad">
@@ -988,7 +1049,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
       {pickMode === 'build' ? (
         <div className="arule">
           <div className="arule-top">
-            <span className="lb">Rule · {minUnitOn && !showAllOn ? '+EV only' : 'all picks'}</span>
+            <span className="lb">Rule · {novigOnly ? 'Novig only' : (minUnitOn && !showAllOn ? '+EV only' : 'all picks')}</span>
             <span className="rs">commits <b>{commitCount} picks · {commitUnits.toFixed(1)}u</b></span>
           </div>
           <div className="arule-act">
@@ -997,6 +1058,7 @@ function PicksTab({ picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBe
             </button>
             <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)} title="Only picks whose calibrated probability beats the price">+EV</button>
             <button className={`abtn ghost${showAllOn ? ' on' : ''}`} onClick={() => setShowAllOn(v => !v)} title="Show every pick, including those with no edge over the price">Show all</button>
+            <button className={`abtn ghost${novigOnly ? ' on' : ''}`} onClick={() => setNovigOnly(v => !v)} title="Only picks with a Novig posting price — the list to work down when placing maker orders">Novig</button>
           </div>
         </div>
       ) : (

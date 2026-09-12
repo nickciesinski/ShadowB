@@ -143,7 +143,7 @@ export async function GET() {
     // resolves to null on error so the Sheets fallbacks below still work.
     const sbTodayQ = sb
       ? sb.from('performance_log')
-          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds, rule_c_eligible')
+          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds, rule_c_eligible, pick_id')
           .gte('date', isoToday).lte('date', isoWeekAhead)
           .then(r => (r.error ? null : r.data)).catch(() => null)
       : Promise.resolve(null);
@@ -188,6 +188,11 @@ export async function GET() {
           // at bets that lose even at zero fees. Same helper as the evening
           // digest so the app and the email can never quote different numbers.
           novigMaxCents: r.rule_c_eligible === true ? novigMaxCents(r.best_odds ?? r.odds) : null,
+          // Join key for the Novig order log (/api/novig). Without it the app
+          // can display a price but cannot record whether the order filled,
+          // and the unfilled orders are the half of the measurement that makes
+          // the fill rate mean anything.
+          pickId: r.pick_id || null,
           // Calibrated display. `edge` is expected return per unit staked at the
           // best price we could take; confidence scales on that real edge rather
           // than on rank, so most picks sit at 1 and the rare good one stands

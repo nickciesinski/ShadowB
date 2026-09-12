@@ -1,0 +1,41 @@
+{
+  "_comment": "Pre-registered venue test, 2026-09-12. LABEL AND MEASUREMENT ONLY - nothing reads this to select, size or place a bet. Same discipline as config/rule-c.json.",
+  "_question": "Does posting maker orders on Novig, at a price 10 American cents better than the best book, produce a POSITIVE net edge after adverse selection?",
+  "_why_this_is_the_decisive_test": "Every model lever measured so far moves CLV by 0.1-0.3pp against a book vig of ~1.7pp. Asking 10 cents better is worth ~2.2pp of price, which is the first mechanism in this project of the right ORDER OF MAGNITUDE to clear that wall. The 2026-08-31 kill-criterion analysis concluded the remaining gap was venue, not model, and could not test it. This tests it.",
+
+  "posting_rule": {
+    "universe": "rule_c_eligible = true",
+    "price": "best book American odds + 10 cents, converted to cents and rounded DOWN",
+    "stake": "flat and identical on every order",
+    "cancel": "at ~60 minutes before start, recorded as unfilled",
+    "note": "One rule, fixed in advance. Varying it mid-test makes the sample uninterpretable."
+  },
+
+  "decision_rule": {
+    "primary": "mean(clv_prob_delta - vig_at_novig_price) over FILLED orders only",
+    "bar": "> 0 with |t| >= 2, clustered by game_key",
+    "minimum_sample": 40,
+    "measured_from": "2026-09-12",
+    "note": "Clustered by game because a game's ML/spread/total share one line move - the pseudo-replication that turned t=1.58 into t=4.04 on the first pass through the feature data."
+  },
+
+  "what_would_kill_it": [
+    "fill-conditional net edge <= 0 after 40+ fills",
+    "fill-conditional CLV collapsing well below the rule-C baseline of 0.72pp, which would mean the market is selecting against us rather than merely skimming the windfalls",
+    "fills concentrated so heavily in one market that the result is about run lines rather than about the venue"
+  ],
+
+  "pilot_2026_09_11": {
+    "_warning": "8 orders on ONE DAY. Recorded so the forward sample can be compared against what prompted it, NOT as evidence. n=4 fills, and that day ran +1.63pp CLV against rule C's historical +0.72pp - roughly double, so regression is near-certain. The t of 4.5 this sample produces is an artifact of four similar observations and must not be quoted.",
+    "orders": 8,
+    "filled": 4,
+    "fill_rate": 0.5,
+    "filled_mean_clv_pp": 0.72,
+    "missed_mean_clv_pp": 2.54,
+    "clv_capture_ratio": 0.44,
+    "filled_mean_price_gain_pp": 1.96,
+    "filled_net_edge_at_book_pp": -0.26,
+    "filled_net_edge_at_novig_pp": 1.7,
+    "observation": "Adverse selection is real - fills captured 44% of the CLV on offer. But the fills landed AT the rule-C baseline of 0.72pp rather than below it, i.e. the misses were the windfalls, not the fills being the market's rejects. The price improvement is locked in at fill time, so the bar is not 'beat 1.2pp of vig' but 'keep fill-conditional CLV above about -1.0pp'."
+  }
+}
