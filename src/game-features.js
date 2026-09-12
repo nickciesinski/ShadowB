@@ -3,6 +3,7 @@
 const { bullpenFatigueDiff } = require('./bullpen-fatigue');
 const { buildFormFeatures } = require('./form-windows');
 const { buildMatchupFeatures } = require('./mlb-matchup');
+const { buildTravelFeatures } = require('./travel-context');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -310,6 +311,13 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
     // matchup. See src/mlb-matchup.js.
     if (ctx.matchupCtx && ctx.homeTeam && ctx.awayTeam) {
       Object.assign(f, buildMatchupFeatures(ctx.matchupCtx, ctx.homeTeam, ctx.awayTeam));
+    }
+
+    // CANDIDATES (weight 0): travel, body clock and true rest.
+    // See src/travel-context.js.
+    if (ctx.travelCtx && ctx.homeTeam && ctx.awayTeam) {
+      Object.assign(f, buildTravelFeatures(
+        ctx.travelCtx, ctx.homeTeam, ctx.awayTeam, ctx.commenceTime));
     }
 
     if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {

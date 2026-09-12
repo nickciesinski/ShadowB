@@ -101,7 +101,10 @@
     "starter_k9_l3_diff": 0,
     "starter_bb9_l3_diff": 0,
     "starter_ip_l3_diff": 0,
-    "platoon_ops_diff": 0
+    "platoon_ops_diff": 0,
+    "away_tz_shift_diff": 0,
+    "travel_miles_diff": 0,
+    "rest_hours_diff": 0
   },
   "spread": {
     "mlb_run_diff": 0,
@@ -177,7 +180,10 @@
     "starter_k9_l3_diff": 0,
     "starter_bb9_l3_diff": 0,
     "starter_ip_l3_diff": 0,
-    "platoon_ops_diff": 0
+    "platoon_ops_diff": 0,
+    "away_tz_shift_diff": 0,
+    "travel_miles_diff": 0,
+    "rest_hours_diff": 0
   },
   "total": {
     "mlb_run_diff": 0,
@@ -237,6 +243,9 @@
     "starter_k9_l3_diff": 0,
     "starter_bb9_l3_diff": 0,
     "starter_ip_l3_diff": 0,
-    "platoon_ops_diff": 0
+    "platoon_ops_diff": 0,
+    "away_tz_shift_diff": 0,
+    "travel_miles_diff": 0,
+    "rest_hours_diff": 0
   }
 }

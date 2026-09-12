@@ -53,6 +53,7 @@ const { probe } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not
 const { fetchBullpenLoad } = require('./bullpen-fatigue');
 const { fetchFormWindows } = require('./form-windows');
 const { fetchMatchupContext } = require('./mlb-matchup');
+const { fetchTravelContext } = require('./travel-context');
 
 /**
  * Standard normal CDF approximation (Abramowitz & Stegun).
@@ -280,7 +281,8 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // object so the lookup does not depend on how team stats happen to be shaped.
   const features = extractFeatures(homeStats, awayStats, scheduleInfo, league,
     { bullpenLoad: opts.bullpenLoad, formWindows: opts.formWindows,
-      matchupCtx: opts.matchupCtx,
+      matchupCtx: opts.matchupCtx, travelCtx: opts.travelCtx,
+      commenceTime: game.commenceTime || game.start_time || game.startTime,
       homeTeam: game.home, awayTeam: game.away });
 
 
@@ -1030,6 +1032,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
   let bullpenLoad = null;
   let formWindows = null;
   let matchupCtx = null;
+  let travelCtx = null;
   if (league === 'MLB') {
     // Anchored to the slate's game date, not the clock, so a rebuild at 5 AM
     // sees exactly what the 9 PM build saw. See src/form-windows.js.
@@ -1048,6 +1051,15 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
       }
     } catch (err) {
       console.warn('[game-model] matchup context failed:', err.message);
+    }
+    try {
+      if (gameDate) {
+        travelCtx = await fetchTravelContext(gameDate);
+        console.log(`[game-model] travel ctx: ${travelCtx.homes.size} venues, `
+          + `${travelCtx.previous.size} teams with a previous game`);
+      }
+    } catch (err) {
+      console.warn('[game-model] travel context failed:', err.message);
     }
     try {
       formWindows = await fetchFormWindows({ gameDate });
@@ -1074,7 +1086,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Both maps are keyed "Away@Home"; other leagues pass null.
     const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad, formWindows, matchupCtx });
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad, formWindows, matchupCtx, travelCtx });
 
     for (const pick of picks) {
       // Calculate final units using the sizing model
