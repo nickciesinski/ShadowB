@@ -2,6 +2,7 @@
 
 const { bullpenFatigueDiff } = require('./bullpen-fatigue');
 const { buildFormFeatures } = require('./form-windows');
+const { buildMatchupFeatures } = require('./mlb-matchup');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -303,6 +304,12 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
     // a team is missing rather than zeroed. See src/form-windows.js.
     if (ctx.formWindows && ctx.homeTeam && ctx.awayTeam) {
       Object.assign(f, buildFormFeatures(ctx.formWindows, ctx.homeTeam, ctx.awayTeam));
+    }
+
+    // CANDIDATES (weight 0): starting-pitcher rest/workload and the platoon
+    // matchup. See src/mlb-matchup.js.
+    if (ctx.matchupCtx && ctx.homeTeam && ctx.awayTeam) {
+      Object.assign(f, buildMatchupFeatures(ctx.matchupCtx, ctx.homeTeam, ctx.awayTeam));
     }
 
     if (Number.isFinite(rawRunDiff) && Math.abs(rawRunDiff) > 3) {

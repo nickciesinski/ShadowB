@@ -95,7 +95,13 @@
     "whip_l14_diff": 0,
     "k9_l14_diff": 0,
     "bb9_l14_diff": 0,
-    "hr9_l14_diff": 0
+    "hr9_l14_diff": 0,
+    "starter_rest_diff": 0,
+    "starter_last_pitches_diff": 0,
+    "starter_k9_l3_diff": 0,
+    "starter_bb9_l3_diff": 0,
+    "starter_ip_l3_diff": 0,
+    "platoon_ops_diff": 0
   },
   "spread": {
     "mlb_run_diff": 0,
@@ -165,7 +171,13 @@
     "whip_l14_diff": 0,
     "k9_l14_diff": 0,
     "bb9_l14_diff": 0,
-    "hr9_l14_diff": 0
+    "hr9_l14_diff": 0,
+    "starter_rest_diff": 0,
+    "starter_last_pitches_diff": 0,
+    "starter_k9_l3_diff": 0,
+    "starter_bb9_l3_diff": 0,
+    "starter_ip_l3_diff": 0,
+    "platoon_ops_diff": 0
   },
   "total": {
     "mlb_run_diff": 0,
@@ -219,6 +231,12 @@
     "whip_l14_diff": 0,
     "k9_l14_diff": 0,
     "bb9_l14_diff": 0,
-    "hr9_l14_diff": 0
+    "hr9_l14_diff": 0,
+    "starter_rest_diff": 0,
+    "starter_last_pitches_diff": 0,
+    "starter_k9_l3_diff": 0,
+    "starter_bb9_l3_diff": 0,
+    "starter_ip_l3_diff": 0,
+    "platoon_ops_diff": 0
   }
 }
