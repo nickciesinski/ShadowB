@@ -4,6 +4,7 @@ const { bullpenFatigueDiff } = require('./bullpen-fatigue');
 const { buildFormFeatures } = require('./form-windows');
 const { buildMatchupFeatures } = require('./mlb-matchup');
 const { buildTravelFeatures } = require('./travel-context');
+const { buildNflFeatures } = require('./nfl-context');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -446,6 +447,14 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   f.sp_pred_margin = 0;
   f.sp_edge_total = 0;
   f.sp_pred_total = 0;
+
+  // CANDIDATES (weight 0), NFL: rest, travel and body clock. Kept out of the
+  // MLB branch above because they key off a different feed and a different
+  // schedule shape. See src/nfl-context.js.
+  if (league === 'NFL' && ctx.nflCtx && ctx.homeTeam && ctx.awayTeam) {
+    Object.assign(f, buildNflFeatures(
+      ctx.nflCtx, ctx.homeTeam, ctx.awayTeam, ctx.commenceTime));
+  }
 
   return f;
 }
