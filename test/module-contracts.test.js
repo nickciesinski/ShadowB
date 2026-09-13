@@ -25,6 +25,8 @@ const CONTRACTS = {
   'feature-clv.js': ['attributeByFeature', 'corr', 'tStat', 'gamesNeeded'],
   'price-lib.js': ['selectGradedPrice'],
   'market-pricing.js': ['americanToImpliedProb', 'isValidAmericanOdds'],
+  'novig-settle.js': ['settleStaleNovigOrders'],
+  'novig-eval.js': ['evaluateFillTest', 'clusterByGame', 'verdictOf'],
 };
 
 for (const [file, exports] of Object.entries(CONTRACTS)) {
@@ -67,4 +69,35 @@ test('every require of a local src module resolves', () => {
     }
   }
   assert.deepStrictEqual(missing, [], `unresolvable local requires:\n${missing.join('\n')}`);
+});
+
+test('novig-settle.js and novig-eval.js are genuinely different modules', () => {
+  // The calibration.js lesson applied to the venue test: one module WRITES to
+  // novig_orders (settling stale rows), the other only READS it back and does
+  // arithmetic. If either ever absorbs the other, the scorer gains the ability
+  // to mutate the data it is scoring — which is how a pre-registered test
+  // stops being one.
+  const settle = require(path.join(SRC, 'novig-settle.js'));
+  const evaluate = require(path.join(SRC, 'novig-eval.js'));
+  assert.strictEqual(typeof settle.settleStaleNovigOrders, 'function',
+    'novig-settle.js is the WRITER');
+  assert.strictEqual(typeof evaluate.evaluateFillTest, 'function',
+    'novig-eval.js is the SCORER');
+  assert.strictEqual(evaluate.settleStaleNovigOrders, undefined,
+    'the scorer must not be able to settle orders');
+  assert.strictEqual(settle.evaluateFillTest, undefined,
+    'the writer must not double as the scorer');
+});
+
+test('the scorer never reaches the pick, approval or grade path', () => {
+  // novig-eval.js is report-only by construction. Nothing that decides or
+  // sizes a bet may import it — same discipline as rule-c.js's stamp.
+  const forbidden = ['game-model.js', 'approval-engine.js', 'predictions.js', 'clv.js'];
+  for (const f of forbidden) {
+    const p = path.join(SRC, f);
+    if (!fs.existsSync(p)) continue;
+    const text = fs.readFileSync(p, 'utf8');
+    assert.ok(!/require\(['"]\.\/novig-eval['"]\)/.test(text),
+      `src/${f} must not require novig-eval — it is a read-only scorer`);
+  }
 });

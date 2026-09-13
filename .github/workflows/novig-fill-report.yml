@@ -1,0 +1,54 @@
+name: Novig Maker-Fill Test
+
+# Scores the pre-registered venue test (config/novig-fill-test.json, 2026-09-12).
+# Runs after the feature-CLV job so all three Sunday reports land in the same
+# commit window. Report-only: nothing here selects, sizes or places a bet.
+on:
+  schedule:
+    - cron: '55 12 * * 0'
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Measure from (YYYY-MM-DD). Defaults to the pre-registration date.'
+        required: false
+        default: '2026-09-12'
+
+permissions:
+  contents: write
+
+jobs:
+  score:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Score the fill test
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          node scripts/novig-fill-report.js \
+            --since "${{ github.event.inputs.since || '2026-09-12' }}" --write
+      - name: Commit report
+        run: |
+          git config user.name "shadow-bets-bot"
+          git config user.email "shadow-bets-bot@users.noreply.github.com"
+          git add novig-fill-reports/
+          git diff --cached --quiet && echo "No report change" && exit 0
+          git commit -m "Novig maker-fill test — $(date +%Y-%m-%d) [skip ci]"
+          git pull --rebase origin main
+          git push
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: novig-fill-report
+          path: novig-fill-reports/*.md
+          if-no-files-found: ignore
