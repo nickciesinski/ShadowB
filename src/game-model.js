@@ -51,7 +51,7 @@ const {
 const { probe } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not logs
 // CANDIDATE feature source (weight 0, stakes nothing). See src/bullpen-fatigue.js.
 const { fetchBullpenLoad } = require('./bullpen-fatigue');
-const { fetchFormWindows } = require('./form-windows');
+const { fetchFormWindows, windowFor } = require('./form-windows');
 const { fetchMatchupContext } = require('./mlb-matchup');
 const { fetchTravelContext } = require('./travel-context');
 const { fetchNflContext } = require('./nfl-context');
@@ -289,7 +289,12 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   const features = extractFeatures(homeStats, awayStats, scheduleInfo, league,
     { bullpenLoad: opts.bullpenLoad, formWindows: opts.formWindows,
       matchupCtx: opts.matchupCtx, travelCtx: opts.travelCtx, nflCtx: opts.nflCtx, nflInjuries: opts.nflInjuries, arenaCtx: opts.arenaCtx,
-      commenceTime: game.commenceTime || game.start_time || game.startTime,
+      // buildGameObjects names this `commence`. The first version guessed at
+      // commenceTime / start_time / startTime — none exist — so every rest
+      // feature needing a start time was silently absent across all four
+      // sports: MLB rest_hours, NFL rest/short-week/off-bye, and NBA/NHL
+      // back-to-back and density would have been dead on opening day.
+      commenceTime: game.commence,
       homeTeam: game.home, awayTeam: game.away });
 
 
@@ -1036,87 +1041,81 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
   // request covers all 30 teams for the whole slate. MLB only; a failure
   // returns an empty table and the feature is simply absent for the night,
   // which is the honest reading and cannot break a slate.
-  // One slate date for every candidate fetch, and the value the season gate
-  // reads. Candidates are gated so an offseason run makes no calls at all —
-  // see src/season-gate.js for why stale is worse than absent.
-  const gameDateForCandidates =
-    (games[0] && (games[0].gameDate || games[0].date)) || new Date().toISOString().slice(0, 10);
-  const candidateDate = new Date(`${gameDateForCandidates}T12:00:00Z`);
-  if (!leagueInSeason(league, candidateDate)) {
-    console.log(`[game-model] ${league} is out of season on ${gameDateForCandidates} — `
-      + 'skipping candidate-feature fetches');
-  }
+  // ── Candidate-feature context, fetched once PER GAME DATE ──────────────────
+  //
+  // 2026-09-13. The first version computed ONE date for the whole slate from
+  // `games[0].gameDate || games[0].date`. Neither field exists — buildGameObjects
+  // produces { home, away, commence, marketsRaw } — so it silently fell back to
+  // UTC "today" and gave every game in the slate the same anchor, including
+  // lookahead games a day or two out. The game-date anchoring that exists so
+  // Nick's 9 PM and 5:30 AM builds agree never actually engaged.
+  //
+  // Each game's date now comes from its own `commence` time, converted to a
+  // Pacific calendar date, and context is fetched once per distinct date in the
+  // slate (MLB lookahead is ~2 days, so this is 2-3 fetches, not one per game).
+  // Season gating is per date too, so a slate that straddles an opener is right.
+  const ptDateOf = (commence) => {
+    if (!commence) return null;
+    const d = new Date(commence);
+    return Number.isFinite(d.getTime())
+      ? d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+      : null;
+  };
 
-  let bullpenLoad = null;
-  let formWindows = null;
-  let matchupCtx = null;
-  let travelCtx = null;
-  let nflCtx = null;
+  // The NFL injury report is not date-anchored: the live report IS this week's
+  // report. Fetched at most once per slate.
   let nflInjuries = null;
-  let arenaCtx = null;
-  if (league === 'MLB' && leagueInSeason('MLB', candidateDate)) {
-    // Anchored to the slate's game date, not the clock, so a rebuild at 5 AM
-    // sees exactly what the 9 PM build saw. See src/form-windows.js.
-    const gameDate = gameDateForCandidates;
-    try {
-      bullpenLoad = await fetchBullpenLoad();
-      console.log(`[game-model] bullpen load: ${bullpenLoad.size} teams`);
-    } catch (err) {
-      console.warn('[game-model] bullpen load failed:', err.message);
-    }
-    try {
-      if (gameDate) {
-        matchupCtx = await fetchMatchupContext(gameDate);
-        console.log(`[game-model] matchup ctx: ${Object.keys(matchupCtx.probables).length} games, `
-          + `${matchupCtx.starters.size} starters`);
-      }
-    } catch (err) {
-      console.warn('[game-model] matchup context failed:', err.message);
-    }
-    try {
-      if (gameDate) {
-        travelCtx = await fetchTravelContext(gameDate);
-        console.log(`[game-model] travel ctx: ${travelCtx.homes.size} venues, `
-          + `${travelCtx.previous.size} teams with a previous game`);
-      }
-    } catch (err) {
-      console.warn('[game-model] travel context failed:', err.message);
-    }
-    try {
-      formWindows = await fetchFormWindows({ gameDate });
-      const w = formWindows.l7;
-      console.log(`[game-model] form windows: ${w.startDate}..${w.endDate}, ${w.hitting.size} teams`);
-    } catch (err) {
-      console.warn('[game-model] form windows failed:', err.message);
-    }
-  }
+  let nflInjuriesTried = false;
 
-  if (league === 'NFL' && leagueInSeason('NFL', candidateDate)) {
-    const gd = gameDateForCandidates;
-    if (gd) {
-      try {
-        nflCtx = await fetchNflContext(gd);
-        console.log(`[game-model] NFL context: ${nflCtx.previous.size} teams with a previous game`);
-      } catch (err) {
-        console.warn('[game-model] NFL context failed:', err.message);
-      }
-      try {
-        nflInjuries = await fetchNflInjuries();
-        console.log(`[game-model] NFL injuries: ${nflInjuries.size} teams`);
-      } catch (err) {
-        console.warn('[game-model] NFL injuries failed:', err.message);
-      }
+  const ctxByDate = new Map();
+  const contextFor = async (gameDate) => {
+    if (!gameDate) return {};
+    if (ctxByDate.has(gameDate)) return ctxByDate.get(gameDate);
+    const ctx = {};
+    ctxByDate.set(gameDate, ctx); // set first so a failure is not retried per game
+    const asDate = new Date(`${gameDate}T12:00:00Z`);
+    if (!leagueInSeason(league, asDate)) {
+      console.log(`[game-model] ${league} out of season on ${gameDate} — no candidate fetches`);
+      return ctx;
     }
-  }
 
-  if ((league === 'NBA' || league === 'NHL') && leagueInSeason(league, candidateDate)) {
-    try {
-      arenaCtx = await fetchArenaContext(league, gameDateForCandidates);
-      console.log(`[game-model] ${league} arena context: ${arenaCtx.recent.size} teams with recent games`);
-    } catch (err) {
-      console.warn(`[game-model] ${league} arena context failed:`, err.message);
+    if (league === 'MLB') {
+      try {
+        // Anchored to the game date, not the clock — fetchBullpenLoad's own
+        // default is clock-relative, the same defect fixed in form-windows.
+        const w = windowFor(gameDate, 3);
+        ctx.bullpenLoad = await fetchBullpenLoad({ startDate: w.startDate, endDate: w.endDate });
+      } catch (err) { console.warn(`[game-model] ${gameDate} bullpen load failed:`, err.message); }
+      try { ctx.matchupCtx = await fetchMatchupContext(gameDate); }
+      catch (err) { console.warn(`[game-model] ${gameDate} matchup context failed:`, err.message); }
+      try { ctx.travelCtx = await fetchTravelContext(gameDate); }
+      catch (err) { console.warn(`[game-model] ${gameDate} travel context failed:`, err.message); }
+      try { ctx.formWindows = await fetchFormWindows({ gameDate }); }
+      catch (err) { console.warn(`[game-model] ${gameDate} form windows failed:`, err.message); }
+      console.log(`[game-model] MLB ${gameDate} ctx: bullpen ${ctx.bullpenLoad?.size ?? 0}, `
+        + `probables ${ctx.matchupCtx ? Object.keys(ctx.matchupCtx.probables).length : 0}, `
+        + `form ${ctx.formWindows?.l7?.hitting?.size ?? 0}`);
     }
-  }
+
+    if (league === 'NFL') {
+      try { ctx.nflCtx = await fetchNflContext(gameDate); }
+      catch (err) { console.warn(`[game-model] ${gameDate} NFL context failed:`, err.message); }
+      if (!nflInjuriesTried) {
+        nflInjuriesTried = true;
+        try {
+          nflInjuries = await fetchNflInjuries();
+          console.log(`[game-model] NFL injuries: ${nflInjuries.size} teams`);
+        } catch (err) { console.warn('[game-model] NFL injuries failed:', err.message); }
+      }
+    }
+
+    if (league === 'NBA' || league === 'NHL') {
+      try { ctx.arenaCtx = await fetchArenaContext(league, gameDate); }
+      catch (err) { console.warn(`[game-model] ${gameDate} ${league} arena context failed:`, err.message); }
+    }
+
+    return ctx;
+  };
 
   const allPicks = [];
 
@@ -1134,7 +1133,10 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     // Both maps are keyed "Away@Home"; other leagues pass null.
     const pitcherData = pitcherMap ? pitcherMap.get(`${game.away}@${game.home}`) : null;
 
-    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, { bullpenLoad, formWindows, matchupCtx, travelCtx, nflCtx, nflInjuries, arenaCtx });
+    // Candidate context for THIS game's own date. See contextFor above.
+    const candCtx = await contextFor(ptDateOf(game.commence));
+    const picks = generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData,
+      { ...candCtx, nflInjuries });
 
     for (const pick of picks) {
       // Calculate final units using the sizing model

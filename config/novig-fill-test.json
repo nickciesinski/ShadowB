@@ -2,7 +2,15 @@
   "_comment": "Pre-registered venue test, 2026-09-12. LABEL AND MEASUREMENT ONLY - nothing reads this to select, size or place a bet. Same discipline as config/rule-c.json.",
   "_question": "Does posting maker orders on Novig, at a price 10 American cents better than the best book, produce a POSITIVE net edge after adverse selection?",
   "_why_this_is_the_decisive_test": "Every model lever measured so far moves CLV by 0.1-0.3pp against a book vig of ~1.7pp. Asking 10 cents better is worth ~2.2pp of price, which is the first mechanism in this project of the right ORDER OF MAGNITUDE to clear that wall. The 2026-08-31 kill-criterion analysis concluded the remaining gap was venue, not model, and could not test it. This tests it.",
-
+  "status": {
+    "state": "PAUSED",
+    "paused_on": "2026-09-13",
+    "fills_collected": 4,
+    "reason": "Nick's call: marking orders daily is not sustainable, especially once more sports are live. Not a result - the test did not fail, it stopped collecting.",
+    "do_not_read_as": "A failed or inconclusive venue test. 4 fills on one day cannot fail or pass anything. The pilot is still the most promising number this project has produced, and still well inside noise.",
+    "to_resume": "Post rule-C picks on Novig at the posted price, tap O / F in the app (N settles itself via src/novig-settle.js). Decision rule and minimum sample above are unchanged and still binding when it resumes.",
+    "still_running": "The Novig max price still appears in the evening digest and the app, so Nick can place orders ad hoc. Any he marks are still recorded."
+  },
   "posting_rule": {
     "universe": "rule_c_eligible = true",
     "price": "best book American odds + 10 cents, converted to cents and rounded DOWN",
@@ -10,7 +18,6 @@
     "cancel": "at ~60 minutes before start, recorded as unfilled",
     "note": "One rule, fixed in advance. Varying it mid-test makes the sample uninterpretable."
   },
-
   "decision_rule": {
     "primary": "mean(clv_prob_delta - vig_at_novig_price) over FILLED orders only",
     "bar": "> 0 with |t| >= 2, clustered by game_key",
@@ -18,13 +25,11 @@
     "measured_from": "2026-09-12",
     "note": "Clustered by game because a game's ML/spread/total share one line move - the pseudo-replication that turned t=1.58 into t=4.04 on the first pass through the feature data."
   },
-
   "what_would_kill_it": [
     "fill-conditional net edge <= 0 after 40+ fills",
     "fill-conditional CLV collapsing well below the rule-C baseline of 0.72pp, which would mean the market is selecting against us rather than merely skimming the windfalls",
     "fills concentrated so heavily in one market that the result is about run lines rather than about the venue"
   ],
-
   "pilot_2026_09_11": {
     "_warning": "8 orders on ONE DAY. Recorded so the forward sample can be compared against what prompted it, NOT as evidence. n=4 fills, and that day ran +1.63pp CLV against rule C's historical +0.72pp - roughly double, so regression is near-certain. The t of 4.5 this sample produces is an artifact of four similar observations and must not be quoted.",
     "orders": 8,

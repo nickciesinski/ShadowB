@@ -64,3 +64,14 @@ test('nothing in this config stakes anything', () => {
   const flat = JSON.stringify(cfg).toLowerCase();
   assert.ok(/label and measurement only/.test(flat));
 });
+
+test('a paused test is labelled paused, not failed', () => {
+  // Stopping collection is not a verdict. A future reader finding 4 fills and
+  // no activity must not conclude the venue did not work.
+  const s = cfg.status;
+  assert.ok(s, 'status block must exist once the test is paused');
+  assert.strictEqual(s.state, 'PAUSED');
+  assert.match(s.reason, /Not a result/);
+  assert.match(s.do_not_read_as, /failed/i);
+  assert.ok(s.to_resume, 'resuming must not require rediscovering the procedure');
+});
