@@ -1,0 +1,51 @@
+name: Report Freshness Check
+
+# Is the weekly scoreboard silent because it's fine, paused, or broken?
+#
+# Runs AFTER every weekly report's grace window has closed (the latest is
+# 13:00 UTC + 8h = 21:00), so a red run here means a report genuinely did not
+# land — not that GitHub's scheduler was slow, which it routinely is (observed
+# clean-era lag against its 12:30 cron: 38 minutes to 4h24m).
+#
+# Report-only: no secrets, no commits, no writes to config/ or any data path.
+# The exit code IS the alert — a red X in the Actions list.
+
+on:
+  schedule:
+    # Sunday 21:30 UTC — 30 minutes after the last grace window closes.
+    - cron: '30 21 * * 0'
+  workflow_dispatch:
+    inputs:
+      now:
+        description: 'Override the clock (ISO timestamp) — for testing the check itself'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check report freshness
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.now }}" ]; then
+            ARGS="--now=${{ github.event.inputs.now }}"
+          fi
+          node scripts/report-freshness-check.js $ARGS
+      - name: Machine-readable result
+        if: always()
+        run: node scripts/report-freshness-check.js --json > report-freshness.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-freshness
+          path: report-freshness.json
+          if-no-files-found: ignore
