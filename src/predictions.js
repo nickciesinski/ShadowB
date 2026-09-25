@@ -42,7 +42,14 @@ const paramStore = require('./param-store');
 // and contributed 15.97 against a next-highest of 0.70: effectively a
 // one-feature model. They are retagged v2.2-corrupt-offense in the DB and
 // must not be pooled with v2.3 when the baseline is measured.
-const MODEL_VERSION = 'v2.3-rate-gate-2026-08-09';
+// 2026-09-25 — v2.3.1: NFL picks keep their own matchup (no phantom games),
+// NFL records + points allowed from ESPN standings, ESPN per-day queries.
+// A SMALL bump on purpose: daily-validation's baseline and venue-compare match
+// the prefix 'v2.3', so v2.3.x keeps MLB in the running measurement (MLB picks
+// did not change). A BIG bump (v2.4) starts a fresh baseline — use it only
+// when before/after picks should not be pooled. Log every bump in
+// MODEL-VERSIONS.md and tag the commit (git tag v2.3.1).
+const MODEL_VERSION = 'v2.3.1-2026-09-25';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
