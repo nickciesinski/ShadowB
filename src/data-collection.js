@@ -677,9 +677,62 @@ async function enrichNHL(espn, teamMap) {
 }
 
 /**
+ * NFL standings → { ABBR: { wins, losses, ties, pointsFor, pointsAgainst } }
+ * (season totals). Empty object on any failure — callers keep their defaults.
+ */
+async function fetchNflStandings(fetchFn = fetch) {
+  const out = {};
+  try {
+    const res = await fetchFn('https://site.api.espn.com/apis/v2/sports/football/nfl/standings',
+      { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return out;
+    const data = await res.json();
+    const walk = (node) => {
+      for (const e of (node?.standings?.entries || [])) {
+        const abbr = e?.team?.abbreviation;
+        if (!abbr) continue;
+        const stat = (name) => {
+          const s = (e.stats || []).find((x) => x.name === name);
+          const v = s ? Number(s.value) : NaN;
+          return Number.isFinite(v) ? v : 0;
+        };
+        out[abbr] = {
+          wins: stat('wins'), losses: stat('losses'), ties: stat('ties'),
+          pointsFor: stat('pointsFor'), pointsAgainst: stat('pointsAgainst'),
+        };
+      }
+      for (const c of (node?.children || [])) walk(c);
+    };
+    walk(data);
+  } catch (err) {
+    console.warn('[data-collection] NFL standings fetch failed:', err.message);
+  }
+  return out;
+}
+
+/**
  * NFL: Pull points for / points against.
  */
 async function enrichNFL(espn, teamMap) {
+  // 2026-09-25 — ESPN's /teams list carries no record for NFL, so every team
+  // was 0-0 (pct 0.5 → point_differential_diff 0), and /teams/{abbr}/statistics
+  // has no points-allowed stat at all (defense_papg_diff, net/defensive rating,
+  // opp_points_diff, nfl_points_margin all 0). Through week 3 that left NFL
+  // picks on ~5% data completeness. The standings endpoint has both.
+  const standings = await fetchNflStandings();
+  for (const [abbr, s] of Object.entries(standings)) {
+    const t = teamMap[abbr];
+    if (!t) continue;
+    const gp = s.wins + s.losses + s.ties;
+    if (gp <= 0) continue;
+    t.wins = s.wins;
+    t.losses = s.losses;
+    t.pct = ((s.wins + 0.5 * s.ties) / gp).toFixed(3);
+    const pa = s.pointsAgainst / gp;
+    if (pa >= 5 && pa <= 45) t.pointsAgainst = pa.toFixed(2);
+  }
+  console.log(`[data-collection] NFL standings: ${Object.keys(standings).length} teams`);
+
   for (const abbr of Object.keys(teamMap)) {
     try {
       const url = `https://site.api.espn.com/apis/site/v2/sports/${espn.sport}/${espn.league}/teams/${abbr}/statistics`;
@@ -692,9 +745,13 @@ async function enrichNFL(espn, teamMap) {
       teamMap[abbr].pointsFor = perGameStat(stats,
         ['totalPointsPerGame', 'avgPoints'], { totalKeys: ['points', 'totalPoints'],
         range: [5, 45], label: 'NFL points/game', quiet: true });
-      teamMap[abbr].pointsAgainst = perGameStat(stats,
-        ['avgPointsAgainst', 'pointsAgainstPerGame'],
-        { totalKeys: ['pointsAgainst'], range: [5, 45], label: 'NFL points allowed/game', quiet: true });
+      // Standings (above) is the real source; this only fills a gap if ESPN
+      // ever adds the stat here.
+      if (!teamMap[abbr].pointsAgainst) {
+        teamMap[abbr].pointsAgainst = perGameStat(stats,
+          ['avgPointsAgainst', 'pointsAgainstPerGame'],
+          { totalKeys: ['pointsAgainst'], range: [5, 45], label: 'NFL points allowed/game', quiet: true });
+      }
 
       // NFL carried the largest remaining dead weight of any league:
       // turnover_impact 1.8, yards_diff 0.45, red_zone_diff 0.35,
@@ -1253,4 +1310,5 @@ module.exports = {
   fetchOddsAndGrade,
   fetchYesterdayResults,
   fetchInjuryReports,
+  fetchNflStandings,
 };
