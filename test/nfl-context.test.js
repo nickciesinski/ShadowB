@@ -101,3 +101,30 @@ test('every feature is declared at weight 0 in the shipped NFL config', () => {
     for (const n of nc.featureNames()) assert.strictEqual(w[n], 0, `${market}.${n}`);
   }
 });
+
+// 2026-09-25 — ESPN stopped serving `?dates=START-END` ranges ("Failed to get
+// events endpoint") and the range call read that as "no previous games", so
+// rest/bye/travel logged nothing from 9/16. This fake ESPN answers ONLY
+// single-day queries, exactly like the live one now does.
+test('previous games are found with single-day ESPN queries only', async () => {
+  const byDay = {
+    20260920: [{ date: '2026-09-20T17:00Z', competitions: [{ competitors: [
+      { homeAway: 'home', team: { displayName: 'New York Jets' } },
+      { homeAway: 'away', team: { displayName: 'Green Bay Packers' } }] }] }],
+    20260925: [{ date: '2026-09-25T00:15Z', competitions: [{ competitors: [
+      { homeAway: 'home', team: { displayName: 'Green Bay Packers' } },
+      { homeAway: 'away', team: { displayName: 'Atlanta Falcons' } }] }] }],
+  };
+  const calls = [];
+  const fakeFetch = async (url) => {
+    calls.push(url);
+    const q = url.split('dates=')[1];
+    if (q.includes('-')) return { ok: false, json: async () => ({ code: 400, message: 'Failed to get events endpoint.' }) };
+    return { ok: true, json: async () => ({ events: byDay[q] || [] }) };
+  };
+  const prev = await nc.fetchPreviousGames('2026-09-27', { fetch: fakeFetch });
+  assert.ok(calls.every((u) => !u.split('dates=')[1].includes('-')), 'no date-range queries');
+  assert.strictEqual(calls.length, 21, 'one call per lookback day, slate day excluded');
+  assert.strictEqual(prev.get(normTeam('Green Bay Packers')).when, '2026-09-25T00:15Z', 'most recent game wins');
+  assert.strictEqual(prev.get(normTeam('New York Jets')).venueTeam, 'New York Jets');
+});

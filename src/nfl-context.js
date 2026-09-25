@@ -88,12 +88,13 @@ function venueFor(team) {
 }
 
 const { haversineMiles, tzOffsetHours } = require('./travel-context');
+const { fetchEspnDays } = require('./arena-context');
 
 /**
  * Previous game per team from the ESPN scoreboard, over a week window.
  *
- * ESPN's NFL scoreboard is queried by date range; `?dates=YYYYMMDD-YYYYMMDD`
- * returns every event in it. Only events STRICTLY BEFORE the game date count —
+ * ESPN's NFL scoreboard is queried one day at a time (see fetchEspnDays in
+ * arena-context.js for why not a date range). Only events STRICTLY BEFORE the game date count —
  * an event on the slate date is the one being predicted, and using it as its
  * own previous game would be circular.
  */
@@ -102,16 +103,10 @@ async function fetchPreviousGames(gameDate, opts = {}) {
   const lookbackDays = opts.lookbackDays ?? 21; // covers a bye week plus slack
   const end = new Date(`${gameDate}T12:00:00Z`);
   const start = new Date(end.getTime() - lookbackDays * 86400000);
-  const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const url = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard'
-    + `?dates=${fmt(start)}-${fmt(new Date(end.getTime() - 86400000))}&limit=400`;
-
   const out = new Map(); // normTeam -> { when, venueTeam }
   try {
-    const res = await fetchFn(url);
-    if (!res || !res.ok) return out;
-    const json = await res.json();
-    for (const ev of (json?.events || [])) {
+    const events = await fetchEspnDays('football/nfl', start, end, fetchFn);
+    for (const ev of events) {
       const when = ev?.date;
       if (!when || String(when).slice(0, 10) >= gameDate) continue;
       const comp = ev?.competitions?.[0];

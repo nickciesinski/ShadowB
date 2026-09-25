@@ -864,8 +864,16 @@ async function logPicksToPerformanceLog(picks, sport, oddsRows, weights) {
       const isMoneyline = rawBetType === 'moneyline';
       const betType = isTotal ? 'total' : isMoneyline ? 'moneyline' : rawBetType;
 
-      // Find game info for this pick
-      let game = gameLookup[team] || {};
+      // Find game info for this pick.
+      // 2026-09-25: use the matchup the pick was built from. gameLookup is keyed
+      // by team name and keeps that team's FIRST game in the odds feed — the NFL
+      // feed spans several weeks, so a pick was sometimes stamped with a
+      // different week's opponent ("Giants @ Rams" for Titans @ Giants). The
+      // real game then looked uncovered, the coverage backfill added a second
+      // pick on it, and the two could take opposite sides.
+      let game = (p._awayTeam && p._homeTeam)
+        ? { away: p._awayTeam, home: p._homeTeam, commence: p._commence || '' }
+        : (gameLookup[team] || {});
       if (!game.away && isTotal) {
         // Total picks have team name like "Over 8.5", so gameLookup[team] never
         // hits. Every pick from game-model.js already carries the real matchup

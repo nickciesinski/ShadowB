@@ -134,6 +134,30 @@ function venueFor(league, team) {
 }
 
 /**
+ * ESPN scoreboard events for every day from `start` up to (not including) `end`.
+ *
+ * 2026-09-25: this used to be ONE request with `?dates=START-END`. ESPN stopped
+ * serving date ranges (every range returns "Failed to get events endpoint",
+ * for all four sports) while single days still work. The old code read that
+ * as "no games", so NFL rest/bye/travel candidates silently logged nothing
+ * from 2026-09-16 on. One request per day is free and immune to it.
+ */
+async function fetchEspnDays(path, start, end, fetchFn) {
+  const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const days = [];
+  for (let t = start.getTime(); t < end.getTime() - 43200000; t += 86400000) days.push(fmt(new Date(t)));
+  const lists = await Promise.all(days.map(async (ds) => {
+    try {
+      const res = await fetchFn(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${ds}`);
+      if (!res || !res.ok) return [];
+      const json = await res.json();
+      return json?.events || [];
+    } catch (err) { return []; }
+  }));
+  return lists.flat();
+}
+
+/**
  * Every team's games in the window before `gameDate`, most recent first.
  *
  * Games ON the slate date are excluded: one of them is the game being
@@ -146,16 +170,10 @@ async function fetchRecentGames(league, gameDate, opts = {}) {
   const lookbackDays = opts.lookbackDays ?? 7;
   const end = new Date(`${gameDate}T12:00:00Z`);
   const start = new Date(end.getTime() - lookbackDays * 86400000);
-  const fmt = (d) => d.toISOString().slice(0, 10).replace(/-/g, '');
-  const url = `https://site.api.espn.com/apis/site/v2/sports/${cfg.path}/scoreboard`
-    + `?dates=${fmt(start)}-${fmt(new Date(end.getTime() - 86400000))}&limit=500`;
-
   const out = new Map(); // normTeam -> [{ when, venueTeam }] newest first
   try {
-    const res = await fetchFn(url);
-    if (!res || !res.ok) return out;
-    const json = await res.json();
-    for (const ev of (json?.events || [])) {
+    const events = await fetchEspnDays(cfg.path, start, end, fetchFn);
+    for (const ev of events) {
       const when = ev?.date;
       if (!when || String(when).slice(0, 10) >= gameDate) continue;
       const comp = ev?.competitions?.[0];
@@ -257,6 +275,7 @@ function featureNames(league) {
 module.exports = {
   fetchArenaContext,
   fetchRecentGames,
+  fetchEspnDays,
   buildArenaFeatures,
   venueFor,
   featureNames,
