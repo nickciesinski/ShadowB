@@ -37,20 +37,21 @@ const MIN_SAMPLE = 25;  // 2026-06-01: dropped 50→25. Old threshold meant modi
 //   ROI between -3% and 3%  → hold (keep current)
 //   ROI < -3% AND win% < 50% → cut to max(current * 0.85, MIN)
 //   ROI < -8%               → hard cut to max(current * 0.70, MIN)
+//
+// 2026-09-28 — STATELESS. This used to multiply the CURRENT modifier by the band
+// factor every night. The 30-day window is ~29/30 the same rows night to night,
+// so one verdict compounded to the rails: MLB spread/ML sat at 0.20 and MLB
+// total at 1.50, sizing up the market with the worst CLV. The same window now
+// always gives the same modifier. `currentMod` is kept in the signature for
+// callers and ignored.
 function computeModifier(currentMod, winRate, roi, sampleSize) {
-  if (sampleSize < MIN_SAMPLE) return currentMod; // not enough data
+  if (!(sampleSize >= MIN_SAMPLE)) return 1.0; // not enough data → neutral
 
-  let newMod = currentMod;
-  if (roi > 8 && winRate > 52) {
-    newMod = currentMod * 1.15;
-  } else if (roi > 3 && winRate > 50) {
-    newMod = currentMod * 1.05;
-  } else if (roi < -8) {
-    newMod = currentMod * 0.70;
-  } else if (roi < -3 && winRate < 50) {
-    newMod = currentMod * 0.85;
-  }
-  // else: hold
+  let newMod = 1.0;
+  if (roi > 8 && winRate > 52) newMod = 1.15;
+  else if (roi > 3 && winRate > 50) newMod = 1.05;
+  else if (roi < -8) newMod = 0.70;
+  else if (roi < -3 && winRate < 50) newMod = 0.85;
 
   return Math.round(Math.min(MAX_MOD, Math.max(MIN_MOD, newMod)) * 100) / 100;
 }

@@ -49,7 +49,8 @@ const paramStore = require('./param-store');
 // did not change). A BIG bump (v2.4) starts a fresh baseline — use it only
 // when before/after picks should not be pooled. Log every bump in
 // MODEL-VERSIONS.md and tag the commit (git tag v2.3.1).
-const MODEL_VERSION = 'v2.3.1-2026-09-25';
+// 2026-09-28 — v2.3.2: stake modifiers stateless (sizes only, no side changes).
+const MODEL_VERSION = 'v2.3.2-2026-09-28';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
