@@ -61,6 +61,7 @@ const { fetchNflInjuries } = require('./nfl-injuries');
 // carries EPL for the soccer system.
 const { isInSeason: leagueInSeason } = require('./season-windows');
 const { fetchArenaContext } = require('./arena-context');
+const { norm: normName } = require('./norm');
 
 /**
  * Standard normal CDF approximation (Abramowitz & Stegun).
@@ -249,6 +250,23 @@ function modelDisagreement(mainProb, simpleProb, betType) {
 
 // ââ Pick Generation ââââââââââââââââââââââââââââââââââââââââââ
 
+// 2026-09-29 — the odds feed says "Montréal Canadiens", ESPN's stats say
+// "Montreal Canadiens". An exact-name miss returned {} and every stat became
+// 0, so Montréal looked like it allowed 0 goals/game (defense_ga_diff -1.8,
+// 52% of the score) on NHL opening night. Fall back to an accent/punctuation-
+// insensitive match; a true miss still returns {}.
+const _normIndex = new WeakMap();
+function lookupTeam(teamsMap, name) {
+  if (!teamsMap || !name) return {};
+  if (teamsMap[name]) return teamsMap[name];
+  let idx = _normIndex.get(teamsMap);
+  if (!idx) {
+    idx = new Map(Object.keys(teamsMap).map((k) => [normName(k), teamsMap[k]]));
+    _normIndex.set(teamsMap, idx);
+  }
+  return idx.get(normName(name)) || {};
+}
+
 /**
  * Generate all 3 picks (ML, spread, total) for a single game.
  *
@@ -263,8 +281,8 @@ function modelDisagreement(mainProb, simpleProb, betType) {
  */
 function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWeather, pitcherData, opts = {}) {
   // Team stats
-  const homeStats = teamsMap[game.home] || {};
-  const awayStats = teamsMap[game.away] || {};
+  const homeStats = lookupTeam(teamsMap, game.home);
+  const awayStats = lookupTeam(teamsMap, game.away);
 
   // ââ Sprint 2: Use stat-features for all computations ââ
 
@@ -1181,6 +1199,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
 module.exports = {
   generateAllPicks,
   generateGamePicks,    // Exported for testing / calibration
+  lookupTeam,
   projectMargin,
   projectTotal,
   projectWinProb,
