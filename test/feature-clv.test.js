@@ -169,3 +169,81 @@ test('features below the game minimum are excluded, not silently paired', () => 
   assert.strictEqual(nFeatures, 0);
   assert.deepStrictEqual(clusters, []);
 });
+
+// 2026-10-01 — check-in #1 helpers.
+{
+  const { pickSign, marketGroup, lockTimeVectors, bundleTest, frozenComposite } = require('../src/feature-clv');
+
+  test('pickSign reads the side from the pick text (selection is NULL in the ledger)', () => {
+    const t = { home_team: 'Boston Red Sox', away_team: 'New York Yankees' };
+    assert.strictEqual(pickSign({ ...t, market: 'moneyline', pick: 'Boston Red Sox' }), 1);
+    assert.strictEqual(pickSign({ ...t, market: 'spread', pick: 'New York Yankees -1.5' }), -1);
+    assert.strictEqual(pickSign({ market: 'total', pick: 'Over 9' }), 1);
+    assert.strictEqual(pickSign({ market: 'total', pick: 'Under 9' }), -1);
+    assert.strictEqual(pickSign({ ...t, market: 'moneyline', pick: '' }), null);
+    assert.strictEqual(pickSign({ ...t, market: 'props', pick: 'Boston Red Sox' }), null);
+    assert.strictEqual(marketGroup('over'), 'totals');
+  });
+
+  test('lockTimeVectors keeps the latest vector at lock and drops post-lock-only picks', () => {
+    const byPickId = new Map([
+      ['a', { locked_at: '2026-09-20T04:00:00Z' }],
+      ['b', { locked_at: '2026-09-20T04:00:00Z' }],
+    ]);
+    const { vectors, dropped } = lockTimeVectors([
+      { pick_id: 'a', created_at: '2026-09-19T04:00:00Z', tag: 'old' },
+      { pick_id: 'a', created_at: '2026-09-20T04:10:00Z', tag: 'at-lock' },
+      { pick_id: 'a', created_at: '2026-09-21T20:00:00Z', tag: 'friday-injury-report' },
+      { pick_id: 'b', created_at: '2026-09-21T20:00:00Z', tag: 'after' },
+      { pick_id: 'zzz', created_at: '2026-09-19T00:00:00Z', tag: 'not in ledger' },
+    ], byPickId);
+    assert.deepStrictEqual(vectors.map(v => v.tag), ['at-lock']);
+    assert.strictEqual(dropped, 1, 'b had only a post-lock vector; it is dropped, not back-filled');
+  });
+
+  // Synthetic games: feature `sig` drives CLV, `noise` does not.
+  function games(n, effect, seed = 1) {
+    let s = seed;
+    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647 - 0.5; };
+    const rows = [];
+    for (let g = 0; g < n; g++) {
+      const sig = rnd(), noise = rnd();
+      const clv = effect * sig + 0.3 * rnd();
+      rows.push({ gameKey: `g${g}`, pickId: `p${g}`, feature: 'sig', contribution: sig, clv });
+      rows.push({ gameKey: `g${g}`, pickId: `p${g}`, feature: 'noise', contribution: noise, clv });
+    }
+    return rows;
+  }
+
+  test('bundleTest finds a planted effect and passes pure noise', () => {
+    const hit = bundleTest(games(200, 0.5), { perms: 500 });
+    assert.ok(hit.resolvable);
+    assert.ok(hit.pSumR2 < 0.01, `planted effect should be found, got p=${hit.pSumR2}`);
+    const miss = bundleTest(games(200, 0), { perms: 500 });
+    assert.ok(miss.pSumR2 > 0.05, `noise should not be found, got p=${miss.pSumR2}`);
+  });
+
+  test('bundleTest is reproducible and refuses thin samples', () => {
+    const a = bundleTest(games(100, 0.2), { perms: 200 });
+    const b = bundleTest(games(100, 0.2), { perms: 200 });
+    assert.strictEqual(a.pSumR2, b.pSumR2);
+    assert.strictEqual(bundleTest(games(10, 0.5)).resolvable, false);
+  });
+
+  test('a pick counts once per game no matter how many features it carries', () => {
+    // One pick, three features: CLV must be 0.02, not 0.02 weighted three times
+    // against another pick with one feature.
+    const rows = [
+      { gameKey: 'g', pickId: 'ml', feature: 'a', contribution: 1, clv: 0.02 },
+      { gameKey: 'g', pickId: 'ml', feature: 'b', contribution: 1, clv: 0.02 },
+      { gameKey: 'g', pickId: 'ml', feature: 'c', contribution: 1, clv: 0.02 },
+      { gameKey: 'g', pickId: 'sp', feature: 'a', contribution: 1, clv: 0.00 },
+    ];
+    // Build 3 such games with different CLV so r is defined.
+    const all = [0, 1, 2].flatMap(k => rows.map(r => ({ ...r, gameKey: `g${k}`,
+      contribution: r.contribution * (k + 1), clv: r.clv * (k + 1) })));
+    const s = frozenComposite(all, { a: 1 });
+    assert.strictEqual(s.nGames, 3);
+    assert.ok(Math.abs(s.r - 1) < 1e-9, 'game CLV is the mean over picks, so the composite tracks it exactly');
+  });
+}

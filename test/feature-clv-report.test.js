@@ -8,7 +8,7 @@
 // green while fetchAll stops at 1000, the report is quietly lying again.
 const test = require('node:test');
 const assert = require('node:assert');
-const { fetchAll, buildRows, CONTRIB_SCHEMA_CHANGE } = require('../scripts/feature-clv-report');
+const { fetchAll, buildRows, renderPreregistrations, CONTRIB_SCHEMA_CHANGE } = require('../scripts/feature-clv-report');
 
 /** A fake query builder that serves `total` rows in pages, like PostgREST. */
 function fakeTable(total, capPerPage = 1000) {
@@ -55,9 +55,10 @@ test('fetchAll surfaces an error instead of returning a short read', async () =>
 });
 
 test('buildRows joins on pick_id and drops unmatched vectors', () => {
+  const side = { market: 'moneyline', pick: 'Home Team', home_team: 'Home Team', away_team: 'Away Team' };
   const byPickId = new Map([
-    ['p1', { game_key: 'g1', clv_prob_delta: 0.01 }],
-    ['p2', { game_key: 'g1', clv_prob_delta: 0.02 }],
+    ['p1', { game_key: 'g1', clv_prob_delta: 0.01, ...side }],
+    ['p2', { game_key: 'g1', clv_prob_delta: 0.02, ...side }],
   ]);
   const feats = [
     { pick_id: 'p1', top_contributions: [{ feature: 'a', contribution: 1 }, { feature: 'b', contribution: 2 }] },
@@ -72,7 +73,8 @@ test('buildRows joins on pick_id and drops unmatched vectors', () => {
 });
 
 test('buildRows tolerates a missing or malformed contributions array', () => {
-  const byPickId = new Map([['p1', { game_key: 'g1', clv_prob_delta: 0.01 }]]);
+  const byPickId = new Map([['p1', { game_key: 'g1', clv_prob_delta: 0.01,
+    market: 'total', pick: 'Over 8.5' }]]);
   const { rows, joined } = buildRows([
     { pick_id: 'p1', top_contributions: null },
     { pick_id: 'p1', top_contributions: [null, { contribution: 5 }] },
@@ -85,4 +87,46 @@ test('the schema-change boundary is the date the contributions shape changed', (
   // Hard-coded on purpose. Moving it re-pools two incomparable eras, which is
   // exactly the bug this split exists to prevent.
   assert.strictEqual(CONTRIB_SCHEMA_CHANGE, '2026-08-31');
+});
+
+// 2026-10-01 — check-in #1. The report correlated home-favouring values with
+// picked-side CLV, so an away pick's effect cancelled a home pick's.
+
+test('buildRows turns every value to the side we picked', () => {
+  const base = { game_key: 'g1', clv_prob_delta: 0.01, home_team: 'Cubs', away_team: 'Mets' };
+  const byPickId = new Map([
+    ['home', { ...base, market: 'moneyline', pick: 'Cubs' }],
+    ['away', { ...base, market: 'spread', pick: 'Mets +1.5' }],
+    ['over', { ...base, market: 'total', pick: 'Over 8.5' }],
+    ['under', { ...base, market: 'total', pick: 'Under 8.5' }],
+    ['huh', { ...base, market: 'moneyline', pick: 'Somebody Else' }],
+  ]);
+  const vec = (id) => ({ pick_id: id, top_contributions: [{ feature: 'a', contribution: 2 }] });
+  const { rows, joined, unsided } = buildRows(['home', 'away', 'over', 'under', 'huh'].map(vec), byPickId);
+  const by = Object.fromEntries(rows.map(r => [r.pickId, r]));
+  assert.strictEqual(by.home.contribution, 2);
+  assert.strictEqual(by.away.contribution, -2, 'a home-favouring value works AGAINST an away pick');
+  assert.strictEqual(by.over.contribution, 2);
+  assert.strictEqual(by.under.contribution, -2);
+  assert.strictEqual(by.home.group, 'sides');
+  assert.strictEqual(by.over.group, 'totals');
+  assert.strictEqual(joined, 4);
+  assert.strictEqual(unsided, 1, 'an unreadable side is dropped and counted, never guessed');
+});
+
+test('renderPreregistrations never shows a number before the target sample', () => {
+  const reg = require('../config/prereg-mlb-candidate-bundle.json');
+  // 2026 rows are before the window; they must not count toward it.
+  const rows = [];
+  for (let g = 0; g < 50; g++) {
+    for (const f of Object.keys(reg.weights)) {
+      rows.push({ gameKey: `g${g}`, pickId: `p${g}`, gameDate: '2026-09-20', feature: f,
+                  contribution: Math.sin(g + f.length), clv: Math.cos(g) / 100, candidate: true });
+    }
+  }
+  const md = renderPreregistrations('MLB', rows);
+  assert.match(md, /Forward games since 2027-04-15: \*\*0 \/ 400\*\*/);
+  assert.match(md, /Not scored yet/);
+  assert.doesNotMatch(md, /r=/, 'no running figure may leak before the target is reached');
+  assert.strictEqual(renderPreregistrations('NFL', rows), '', 'only the registered league is scored');
 });

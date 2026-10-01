@@ -1,0 +1,45 @@
+{
+  "_comment": "Pre-registered forward test, 2026-10-01 (check-in #1). STAMP ONLY - nothing reads this to pick or stake. Scored automatically by scripts/feature-clv-report.js on forward games only. Every feature stays at weight 0 throughout.",
+  "name": "MLB candidate bundle (sides)",
+  "registered": "2026-10-01",
+  "league": "MLB",
+  "marketGroup": "sides",
+  "hypothesis": "When the zero-weight MLB candidates, turned to the side we picked, favour our pick, our locked price beats the close.",
+  "window": {
+    "start": "2027-04-15",
+    "end": "2027-09-30",
+    "why": "Mid-April so 7/14-day form windows hold this season's games, not last season's. Regular season only; the 2026 postseason is too few games and a different regime."
+  },
+  "test": {
+    "statistic": "Pearson r between the frozen composite and game-level CLV (moneyline + spread picks averaged per game), lock-time vectors only",
+    "composite": "sum over features of weight x z-score, z-scored within the forward sample",
+    "targetGames": 400,
+    "tThreshold": 1.645,
+    "sided": "one-sided, alpha 0.05",
+    "power_note": "In-sample r was ~0.23 (max) and the split-half out-of-sample r 0.16-0.20. Expect shrinkage. At r=0.10, 400 games gives t~2.0; at r=0.15, t~3.0.",
+    "scored_once": "Scored once, at targetGames. Not read early, not extended if it misses."
+  },
+  "if_passed": "Earns a second, staked-at-zero design step: choose ONE weight for the composite and pre-register THAT. Still no weight change from this result alone.",
+  "if_failed": "Drop the bundle. Do not re-slice it for a subset that would have passed.",
+  "weights": {
+    "mlb_run_diff": 0.032, "bullpen_fatigue_diff": 0.053,
+    "ops_l7_diff": 0.150, "avg_l7_diff": 0.120, "obp_l7_diff": 0.161, "slg_l7_diff": 0.137,
+    "babip_l7_diff": 0.053, "runs_pg_l7_diff": 0.141, "hr_pg_l7_diff": 0.048, "k_rate_l7_diff": 0.138,
+    "bb_rate_l7_diff": 0.082, "era_l7_diff": 0.059, "whip_l7_diff": 0.127, "k9_l7_diff": 0.120,
+    "bb9_l7_diff": 0.110, "hr9_l7_diff": 0.016,
+    "ops_l14_diff": 0.055, "avg_l14_diff": 0.061, "obp_l14_diff": 0.084, "slg_l14_diff": 0.033,
+    "babip_l14_diff": 0.063, "runs_pg_l14_diff": 0.004, "hr_pg_l14_diff": -0.062, "k_rate_l14_diff": 0.053,
+    "bb_rate_l14_diff": -0.003, "era_l14_diff": 0.099, "whip_l14_diff": 0.127, "k9_l14_diff": 0.062,
+    "bb9_l14_diff": 0.080, "hr9_l14_diff": 0.125,
+    "starter_rest_diff": -0.161, "starter_last_pitches_diff": -0.154, "starter_k9_l3_diff": 0.161,
+    "starter_bb9_l3_diff": 0.176, "starter_ip_l3_diff": 0.234, "platoon_ops_diff": -0.087,
+    "away_tz_shift_diff": -0.003, "travel_miles_diff": 0.148, "rest_hours_diff": 0.186
+  },
+  "_provenance": {
+    "sample": "MLB v2_clv, clv_basis=novig, game_date 2026-09-11..2026-09-30, moneyline+spread, lock-time vectors, 207 games",
+    "weights_are": "each feature's in-sample game-level r with CLV, rounded to 3 dp",
+    "in_sample_bundle": "permutation p=0.008 (sum r^2), p=0.025 (max |r|)",
+    "robustness": "unchanged after controlling for the picked side's market price (p=0.009); split-half out-of-sample composite r=0.195 (t=1.94) and 0.159 (t=1.67); partial r vs live-model edge ~0.20 / 0.12; totals placebo p=0.94",
+    "main_threat": "All 207 games are from the last three weeks of the regular season (clinched teams resting starters, expanded rosters). The effect may be September-only. Only the 2027 window can say."
+  }
+}
