@@ -72,9 +72,38 @@ function normalizeGaa(raw) {
   return n;
 }
 
-/** Lowercase alphanumeric team-name key so "St. Louis Blues" == "St Louis Blues". */
+/**
+ * Lowercase alphanumeric team-name key so "St. Louis Blues" == "St Louis Blues".
+ * 2026-10-01: accents are stripped first — "Montréal" used to key as "montral".
+ */
 function normTeam(name) {
-  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * normTeam(abbreviation) → normTeam(full name) for every NHL team, from ESPN.
+ * 2026-10-01: the rankings sheet stores the team as ESPN's ABBREVIATION
+ * ("NYR"), while games are looked up by full name ("New York Rangers"), so the
+ * presumed-starter tier never matched and goalie coverage was 1/11 games on
+ * opening week. Empty map on failure.
+ */
+async function fetchNhlAbbrToName(fetchFn = fetch) {
+  const out = new Map();
+  try {
+    const res = await fetchFn('https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/teams',
+      { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return out;
+    const data = await res.json();
+    for (const { team } of (data.sports?.[0]?.leagues?.[0]?.teams || [])) {
+      if (team?.abbreviation && team?.displayName) {
+        out.set(normTeam(team.abbreviation), normTeam(team.displayName));
+      }
+    }
+  } catch (err) {
+    console.warn('[goalie-data] ESPN NHL teams fetch failed:', err.message);
+  }
+  return out;
 }
 
 /**
@@ -184,16 +213,18 @@ function pickPresumedStarter(goalies) {
  *   [Player Name, Team, Position, Score, W, L, SO, GP, Saves, SV%, GAA]
  *    col 0        1     2         3      4  5  6   7   8      9    10
  */
-async function buildPresumedStarterMap() {
-  const map = new Map(); // normTeam → goalie
-  if (!RANKINGS_SPREADSHEET_ID) {
+async function buildPresumedStarterMap(opts = {}) {
+  const map = new Map(); // normTeam(full name) → goalie
+  const getRows = opts.getRows || ((id, sheet) => getValues(id, sheet));
+  const sheetId = opts.sheetId ?? RANKINGS_SPREADSHEET_ID;
+  if (!sheetId) {
     console.warn('[goalie-data] RANKINGS_SPREADSHEET_ID not set — presumed-starter fallback unavailable');
     return map;
   }
 
   let rows;
   try {
-    rows = await getValues(RANKINGS_SPREADSHEET_ID, GOALIE_RANKINGS_SHEET);
+    rows = await getRows(sheetId, GOALIE_RANKINGS_SHEET);
   } catch (err) {
     console.warn('[goalie-data] Could not read goalie rankings sheet:', err.message);
     return map;
@@ -220,9 +251,14 @@ async function buildPresumedStarterMap() {
     byTeam.get(key).push(g);
   }
 
+  // Sheet teams are abbreviations; games are full names. Key by full name
+  // (and keep the raw key too, in case the sheet ever holds full names).
+  const abbrToName = await (opts.abbrToName ? Promise.resolve(opts.abbrToName) : fetchNhlAbbrToName());
   for (const [key, goalies] of byTeam.entries()) {
     const starter = pickPresumedStarter(goalies);
-    if (starter) map.set(key, starter);
+    if (!starter) continue;
+    map.set(key, starter);
+    if (abbrToName.has(key)) map.set(abbrToName.get(key), starter);
   }
 
   console.log(`[goalie-data] Presumed starters built for ${map.size} teams from rankings sheet`);
@@ -318,6 +354,7 @@ module.exports = {
   normalizeSvPct,
   normalizeGaa,
   normTeam,
+  fetchNhlAbbrToName,
   buildPresumedStarterMap,
   // exported for tests / single-source sync
   NHL_AVG_SVPCT, NHL_AVG_GAA, NHL_SHOTS_PER_GAME,

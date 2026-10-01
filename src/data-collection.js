@@ -630,9 +630,25 @@ async function enrichMLB(espn, teamMap) {
 const NHL_RATE_MIN = 1.5;
 const NHL_RATE_MAX = 5.5;
 
+// 2026-10-01 — EARLY SEASON. Once a team plays its first game ESPN switches
+// from last season (82 GP) to this season (1 GP). A one-game rate is noise —
+// NYR 0 GF / 3 GA read as -3 goals/game against TB's full prior season, 55% of
+// the score — and values like 0 or 8 also fall outside the sanity range and
+// were dropped to 0. Under 10 GP, blend toward the league average, weighted
+// by games played: 1 GP ≈ 10% the team's own rate, 10 GP = 50%.
+const NHL_LEAGUE_AVG_GOALS = 3.0;
+const NHL_SHRINK_GAMES = 10;
+
 function nhlPerGame(stats, avgKeys, totalKeys) {
   const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
-  if (Number.isFinite(gp) && gp >= 10) {
+  if (Number.isFinite(gp) && gp >= 1 && gp < NHL_SHRINK_GAMES) {
+    for (const k of totalKeys) {
+      const v = parseFloat(stats[k]);
+      if (!Number.isFinite(v) || v < 0) continue;
+      return (v + NHL_SHRINK_GAMES * NHL_LEAGUE_AVG_GOALS) / (gp + NHL_SHRINK_GAMES);
+    }
+  }
+  if (Number.isFinite(gp) && gp >= NHL_SHRINK_GAMES) {
     for (const k of totalKeys) {
       const v = parseFloat(stats[k]);
       if (!Number.isFinite(v)) continue;
@@ -1311,4 +1327,5 @@ module.exports = {
   fetchYesterdayResults,
   fetchInjuryReports,
   fetchNflStandings,
+  nhlPerGame,
 };

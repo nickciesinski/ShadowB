@@ -6,6 +6,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+const gd = require('../src/goalie-data');
 
 const {
   computeGoalieAdj,
@@ -50,8 +51,8 @@ test('normalizeGaa gates to a sane range', () => {
 
 test('normTeam makes punctuation-variant names match (Odds API vs ESPN)', () => {
   assert.strictEqual(normTeam('St. Louis Blues'), normTeam('St Louis Blues'));
-  assert.strictEqual(normTeam('Montréal Canadiens') === normTeam('Montreal Canadiens'), false,
-    'accented chars differ — documents the known limitation, fuzzier matching not needed for NHL Odds API names');
+  // 2026-10-01: the Odds API DOES say "Montréal Canadiens" — accents now stripped.
+  assert.strictEqual(normTeam('Montréal Canadiens'), normTeam('Montreal Canadiens'));
   assert.strictEqual(normTeam('Toronto Maple Leafs'), 'torontomapleleafs');
 });
 
@@ -171,4 +172,19 @@ test('end-to-end synthetic matchup: adj lands in a bettable, sane band', () => {
   // At the config-seeded 0.5 scale in game-model this contributes ≤ 0.375
   // goals to the margin — meaningful but conservative vs NHL HA (~0.2-0.3 goals).
   assert.ok(adj * 0.5 <= 0.38);
+});
+
+// 2026-10-01 — the rankings sheet stores "NYR"; games look up "New York
+// Rangers". The presumed-starter tier never matched (coverage 1/11 games).
+test('presumed starters resolve from sheet abbreviations to full names', async () => {
+  const rows = [
+    ['Name', 'Team', 'Pos', 'Score', 'W', 'L', 'SO', 'GP', 'Saves', 'SV%', 'GAA'],
+    ['Igor Shesterkin', 'NYR', 'G', '90', '30', '20', '3', '58', '1500', '.912', '2.5'],
+    ['Backup Guy', 'NYR', 'G', '60', '8', '10', '0', '24', '600', '.895', '3.1'],
+    ['Sam Montembeault', 'MTL', 'G', '70', '25', '25', '2', '55', '1400', '.902', '2.9'],
+  ];
+  const abbrToName = new Map([['nyr', 'newyorkrangers'], ['mtl', 'montrealcanadiens']]);
+  const m = await gd.buildPresumedStarterMap({ sheetId: 'x', getRows: async () => rows, abbrToName });
+  assert.strictEqual(m.get(gd.normTeam('New York Rangers')).name, 'Igor Shesterkin', 'most games played wins');
+  assert.strictEqual(m.get(gd.normTeam('Montréal Canadiens')).name, 'Sam Montembeault', 'accented odds-feed name matches');
 });

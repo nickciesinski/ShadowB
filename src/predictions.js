@@ -51,7 +51,8 @@ const paramStore = require('./param-store');
 // MODEL-VERSIONS.md and tag the commit (git tag v2.3.1).
 // 2026-09-28 — v2.3.2: stake modifiers stateless (sizes only, no side changes).
 // 2026-09-29 — v2.3.3: accent-insensitive team stats lookup (Montréal).
-const MODEL_VERSION = 'v2.3.3-2026-09-29';
+// 2026-10-01 — v2.3.4: NHL early-season blending + goalie presumed starters.
+const MODEL_VERSION = 'v2.3.4-2026-10-01';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
