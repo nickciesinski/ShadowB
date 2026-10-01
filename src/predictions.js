@@ -52,7 +52,8 @@ const paramStore = require('./param-store');
 // 2026-09-28 — v2.3.2: stake modifiers stateless (sizes only, no side changes).
 // 2026-09-29 — v2.3.3: accent-insensitive team stats lookup (Montréal).
 // 2026-10-01 — v2.3.4: NHL early-season blending + goalie presumed starters.
-const MODEL_VERSION = 'v2.3.4-2026-10-01';
+// 2026-10-01 — v2.3.5: NBA standings (records, points allowed, early-season blend), Clippers alias, schedule lookup by normalized name.
+const MODEL_VERSION = 'v2.3.5-2026-10-01';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {

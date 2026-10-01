@@ -471,11 +471,93 @@ async function enrichNBA(espn, teamMap) {
       teamMap[abbr].pace = stats['pace'] || stats['paceFactor'] || stats['possessions'] || stats['avgPossessions'] || '';
       teamMap[abbr].pointsFor = pointsFor;
       teamMap[abbr].pointsAgainst = pointsAgainst;
+      teamMap[abbr]._explicitRatings = !!(stats['offensiveRating'] || stats['offRtg']);
     } catch (err) {
       // Skip individual team failures silently
     }
   }
+
+  // 2026-10-01 — verified live against ESPN before the 10/20 opener: /teams
+  // has no record (every team .500, like NFL) and team statistics have no
+  // points-allowed stat (defense features 0). Standings have both. Before a
+  // team plays, use LAST season; after, blend this season toward last season
+  // by games played, so one game is not read as a season.
+  const [cur, last] = await Promise.all([fetchNbaStandings(), fetchNbaStandings(nbaSeasonYear() - 1)]);
+  let filled = 0;
+  for (const [abbr, t] of Object.entries(teamMap)) {
+    const b = blendNbaTeam(cur[abbr], last[abbr]);
+    if (!b) continue;
+    t.wins = b.wins; t.losses = b.losses; t.pct = b.pct.toFixed(3);
+    t.pointsFor = b.pointsFor.toFixed(2);
+    t.pointsAgainst = b.pointsAgainst.toFixed(2);
+    if (!t._explicitRatings) { t.offRating = t.pointsFor; t.defRating = t.pointsAgainst; }
+    filled++;
+  }
+  console.log(`[data-collection] NBA standings: ${filled}/${Object.keys(teamMap).length} teams `
+    + `(current ${Object.keys(cur).length}, last season ${Object.keys(last).length})`);
   console.log('[data-collection] NBA enrichment complete');
+}
+
+/** NBA season label ESPN uses: the year the season ENDS (Oct 2026 → 2027). */
+function nbaSeasonYear(d = new Date()) {
+  return d.getUTCMonth() >= 7 ? d.getUTCFullYear() + 1 : d.getUTCFullYear();
+}
+
+/**
+ * NBA standings → { ABBR: { wins, losses, avgPointsFor, avgPointsAgainst } }.
+ * No season = current. Empty object on any failure.
+ */
+async function fetchNbaStandings(season, fetchFn = fetch) {
+  const out = {};
+  try {
+    const url = 'https://site.api.espn.com/apis/v2/sports/basketball/nba/standings'
+      + (season ? `?season=${season}` : '');
+    const res = await fetchFn(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return out;
+    const data = await res.json();
+    const walk = (node) => {
+      for (const e of (node?.standings?.entries || [])) {
+        const abbr = e?.team?.abbreviation;
+        if (!abbr) continue;
+        const stat = (name) => {
+          const s = (e.stats || []).find((x) => x.name === name);
+          const v = s ? Number(s.value) : NaN;
+          return Number.isFinite(v) ? v : 0;
+        };
+        out[abbr] = { wins: stat('wins'), losses: stat('losses'),
+          avgPointsFor: stat('avgPointsFor'), avgPointsAgainst: stat('avgPointsAgainst') };
+      }
+      for (const c of (node?.children || [])) walk(c);
+    };
+    walk(data);
+  } catch (err) {
+    console.warn('[data-collection] NBA standings fetch failed:', err.message);
+  }
+  return out;
+}
+
+const NBA_SHRINK_GAMES_PCT = 10;   // win% after 10 games = half this season, half last
+const NBA_SHRINK_GAMES_PTS = 8;    // points/game settle faster than win%
+const NBA_LEAGUE_AVG_PTS = 114;
+
+/** Blend this season toward last season by games played. Null if no data at all. */
+function blendNbaTeam(cur, last) {
+  const gp = cur ? cur.wins + cur.losses : 0;
+  const lastGp = last ? last.wins + last.losses : 0;
+  if (!gp && !lastGp) return null;
+  const priorPct = lastGp ? last.wins / lastGp : 0.5;
+  const priorPF = lastGp && last.avgPointsFor ? last.avgPointsFor : NBA_LEAGUE_AVG_PTS;
+  const priorPA = lastGp && last.avgPointsAgainst ? last.avgPointsAgainst : NBA_LEAGUE_AVG_PTS;
+  const curPF = gp && cur.avgPointsFor ? cur.avgPointsFor : priorPF;
+  const curPA = gp && cur.avgPointsAgainst ? cur.avgPointsAgainst : priorPA;
+  const kp = NBA_SHRINK_GAMES_PCT, kr = NBA_SHRINK_GAMES_PTS;
+  return {
+    wins: cur ? cur.wins : 0,
+    losses: cur ? cur.losses : 0,
+    pct: ((cur ? cur.wins : 0) + kp * priorPct) / (gp + kp),
+    pointsFor: (gp * curPF + kr * priorPF) / (gp + kr),
+    pointsAgainst: (gp * curPA + kr * priorPA) / (gp + kr),
+  };
 }
 
 /**
@@ -1328,4 +1410,7 @@ module.exports = {
   fetchInjuryReports,
   fetchNflStandings,
   nhlPerGame,
+  fetchNbaStandings,
+  blendNbaTeam,
+  nbaSeasonYear,
 };

@@ -255,16 +255,20 @@ function modelDisagreement(mainProb, simpleProb, betType) {
 // 0, so Montréal looked like it allowed 0 goals/game (defense_ga_diff -1.8,
 // 52% of the score) on NHL opening night. Fall back to an accent/punctuation-
 // insensitive match; a true miss still returns {}.
+// 2026-10-01: ESPN says "LA Clippers"; the Odds API says "Los Angeles Clippers".
+// Aliases map onto ESPN's spelling, compared after normName().
+const TEAM_ALIASES = { 'los angeles clippers': 'la clippers' };
 const _normIndex = new WeakMap();
-function lookupTeam(teamsMap, name) {
-  if (!teamsMap || !name) return {};
+function lookupTeam(teamsMap, name, fallback = {}) {
+  if (!teamsMap || !name) return fallback;
   if (teamsMap[name]) return teamsMap[name];
   let idx = _normIndex.get(teamsMap);
   if (!idx) {
     idx = new Map(Object.keys(teamsMap).map((k) => [normName(k), teamsMap[k]]));
     _normIndex.set(teamsMap, idx);
   }
-  return idx.get(normName(name)) || {};
+  const k = normName(name);
+  return idx.get(k) || idx.get(TEAM_ALIASES[k]) || fallback;
 }
 
 /**
@@ -1140,7 +1144,7 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
   for (const game of games) {
     // Look up schedule info for this game's teams
     const scheduleInfo = scheduleMap
-      ? (scheduleMap[game.home] || scheduleMap[game.away] || null)
+      ? (lookupTeam(scheduleMap, game.home, null) || lookupTeam(scheduleMap, game.away, null))
       : null;
 
     // Look up weather for this game

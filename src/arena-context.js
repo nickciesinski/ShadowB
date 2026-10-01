@@ -60,6 +60,7 @@ const NBA_VENUES = {
   'Houston Rockets':         [29.7508, -95.3621,  'America/Chicago'],
   'Indiana Pacers':          [39.7640, -86.1555,  'America/Indiana/Indianapolis'],
   'LA Clippers':             [33.9450, -118.3417, 'America/Los_Angeles'],
+  'Los Angeles Clippers':    [33.9450, -118.3417, 'America/Los_Angeles'], // Odds API spelling
   'Los Angeles Lakers':      [34.0430, -118.2673, 'America/Los_Angeles'],
   'Memphis Grizzlies':       [35.1382, -90.0506,  'America/Chicago'],
   'Miami Heat':              [25.7814, -80.1870,  'America/New_York'],
