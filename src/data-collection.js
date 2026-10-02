@@ -723,7 +723,10 @@ const NHL_SHRINK_GAMES = 10;
 
 function nhlPerGame(stats, avgKeys, totalKeys) {
   const gp = parseFloat(stats['gamesPlayed'] ?? stats['GP'] ?? stats['games']);
-  if (Number.isFinite(gp) && gp >= 1 && gp < NHL_SHRINK_GAMES) {
+  // 2026-10-02: gp 0 included — on opening week ESPN can flip a team to the
+  // new season before it has played (all zeros); that is "no information",
+  // i.e. league average, not 0 goals allowed.
+  if (Number.isFinite(gp) && gp >= 0 && gp < NHL_SHRINK_GAMES) {
     for (const k of totalKeys) {
       const v = parseFloat(stats[k]);
       if (!Number.isFinite(v) || v < 0) continue;

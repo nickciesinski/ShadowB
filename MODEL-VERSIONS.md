@@ -20,6 +20,7 @@ split by what produced them. Each version below also has a matching git tag.
 | v2.3.3-2026-09-29 | 2026-09-29 | Team stats found even when names differ by accents ("Montréal" vs "Montreal"). Before this, Montréal games used all-zero stats | NHL (Montréal games) |
 | v2.3.4-2026-10-01 | 2026-10-01 | NHL: teams with under 10 games are blended toward league average (one game was being read as a full season, or dropped to 0). Goalie signal now finds presumed starters (sheet used abbreviations, lookup used full names; coverage was 1/11) | NHL |
 | v2.3.5-2026-10-01 | 2026-10-01 | NBA ready for 10/20: records and points allowed from ESPN standings (last season until a team plays, then blended by games played); "Los Angeles Clippers" matches ESPN's "LA Clippers"; rest/back-to-back lookup tolerant of name spelling (also fixes Montréal in NHL) | NBA, NHL (Montréal) |
+| v2.3.6-2026-10-02 | 2026-10-02 | If either team's offense/defense stat is missing, the comparison is 0 instead of a real-vs-zero gap (caused three NHL alerts in a week). NHL teams flipped to the new season with 0 games read as league average | NHL, NFL, NBA |
 
 ## How to see results by version
 In Supabase → SQL Editor:

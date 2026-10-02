@@ -107,8 +107,12 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   const hDef = rate(h.defRating || h.runsAllowedPerGame || h.goalsAgainst || h.pointsAgainst, 'home defense');
   const aDef = rate(a.defRating || a.runsAllowedPerGame || a.goalsAgainst || a.pointsAgainst, 'away defense');
 
-  f.offense_ppg_diff = (hOff - aOff) / norm.ppg;
-  f.defense_papg_diff = (aDef - hDef) / norm.ppg; // lower defense = better, so invert
+  // 2026-10-02 — a missing/rejected rate comes back as 0. Differencing a real
+  // rate against that 0 manufactured a huge edge three times in one week
+  // (Montréal 0 GA, NYR one-game, BUF 0-GP): defense_ga_diff ±1.6-1.8 was half
+  // the score. If either side is unknown, there is no evidence of a gap — 0.
+  f.offense_ppg_diff = hOff && aOff ? (hOff - aOff) / norm.ppg : 0;
+  f.defense_papg_diff = hDef && aDef ? (aDef - hDef) / norm.ppg : 0; // lower defense = better, so invert
 
   // 2026-08-08 BUGFIX — vocabulary mismatch between weights and features.
   // config/model-params.MLB.json weights run_differential_diff (1.7 ML /
@@ -345,7 +349,9 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
     const hPA = parseFloat(h.pointsAgainst) || 0;
     const aPF = parseFloat(a.pointsFor) || 0;
     const aPA = parseFloat(a.pointsAgainst) || 0;
-    f.nfl_points_margin = ((hPF - hPA) - (aPF - aPA)) / norm.ppg;
+    // 2026-10-02: all four rates must be known, or a blank reads as 0 points.
+    f.nfl_points_margin = hPF && hPA && aPF && aPA
+      ? ((hPF - hPA) - (aPF - aPA)) / norm.ppg : 0;
     // 2026-08-08 — opp_points_diff is an alias of the (already inverted)
     // defensive differential. The rest of NFL's dead weight (turnover_impact
     // 1.8, efficiency_diff, yards_diff, red_zone_diff, third_down_diff) is
@@ -410,7 +416,9 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
     const hGA = parseFloat(h.goalsAgainst) || 0;
     const aGF = parseFloat(a.goalsFor) || 0;
     const aGA = parseFloat(a.goalsAgainst) || 0;
-    f.nhl_goal_diff = ((hGF - hGA) - (aGF - aGA)) / norm.ppg;
+    // 2026-10-02: all four rates must be known, or a blank reads as 0 goals.
+    f.nhl_goal_diff = hGF && hGA && aGF && aGA
+      ? ((hGF - hGA) - (aGF - aGA)) / norm.ppg : 0;
     // 2026-08-08 — same vocabulary mismatch as MLB, and worse. NHL weights
     // goal_differential_diff at 1.8 (moneyline) and 3.0 (spread) -- the single
     // largest weight in any param file -- plus defense_ga_diff 1.4 and

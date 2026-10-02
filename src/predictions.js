@@ -53,7 +53,8 @@ const paramStore = require('./param-store');
 // 2026-09-29 — v2.3.3: accent-insensitive team stats lookup (Montréal).
 // 2026-10-01 — v2.3.4: NHL early-season blending + goalie presumed starters.
 // 2026-10-01 — v2.3.5: NBA standings (records, points allowed, early-season blend), Clippers alias, schedule lookup by normalized name.
-const MODEL_VERSION = 'v2.3.5-2026-10-01';
+// 2026-10-02 — v2.3.6: a missing stat on either side means no gap (not a 0-vs-real gap); NHL 0-GP = league average.
+const MODEL_VERSION = 'v2.3.6-2026-10-02';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
