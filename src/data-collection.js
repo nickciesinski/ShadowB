@@ -640,7 +640,13 @@ function mlbPerGame(stats, avgKeys, totalKeys) {
 async function enrichMLB(espn, teamMap) {
   for (const abbr of Object.keys(teamMap)) {
     try {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/${espn.sport}/${espn.league}/teams/${abbr}/statistics`;
+      // 2026-10-03 — seasontype=2 pins REGULAR-SEASON stats. Without it, once
+      // a team plays a postseason game ESPN silently switches that team to its
+      // playoff split: NYY came back with 2 games, OPS 1.009 (season .720),
+      // while TB (not yet played) stayed on 162 games. Yankees@Rays got
+      // ops_diff -2.82 and tripped the dominance guard. Mixing a 2-game sample
+      // with a 162-game one is noise, not signal.
+      const url = `https://site.api.espn.com/apis/site/v2/sports/${espn.sport}/${espn.league}/teams/${abbr}/statistics?seasontype=2`;
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (!res.ok) continue;
       const data = await res.json();
