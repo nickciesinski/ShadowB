@@ -113,6 +113,10 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .tm img{width:100%;height:100%;object-fit:contain}
     .tm.ou{font:700 9px/1 var(--body);color:var(--dim)}
     .side{font:500 13px/1.1 var(--body);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .side{display:flex;min-width:0;gap:4px}
+    .side .sn{min-width:0;overflow:hidden;text-overflow:ellipsis}
+    .side .sln{flex:none}
+    .side i{min-width:0;overflow:hidden;text-overflow:ellipsis}
     .side i{font-style:normal;color:var(--dim);font-weight:400}
     .u{font:600 17px/1 var(--mono);letter-spacing:-.02em;color:var(--text);text-align:right}
     .u em{font-style:normal;font-size:9px;color:var(--dim2);margin-left:1px}
@@ -892,7 +896,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
               name column is ~64px on a phone, so "Draw · fading Chelsea" just
               ellipses into noise — and the control right there already marks the
               model's side with a dot, which is the same information, legibly. */}
-          <span className="side">{pickText(display, { short: true })}{faded && !threeWay && <i> · fading {pickText(p, { short: true })}</i>}</span>
+          <span className="side"><PickLabel p={display} />{faded && !threeWay && <i> · fading {pickText(p, { short: true })}</i>}</span>
         </div>
         {sizing === 'model'
           ? <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
@@ -964,7 +968,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
         <div className="rm">
           <span className="mkt">{code}</span>
           {sideChip(display, p, isTotal, isOver)}
-          <span className="side">{pickText(display, { short: true })}{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
+          <span className="side"><PickLabel p={display} />{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
         </div>
         <span className="p num">{fmt(display.odds)}</span>
         {isPre
@@ -1271,19 +1275,28 @@ function shortTeam(name, league) {
 // to a `pick` that sometimes already contained it ("Over 6.5 6.5"), and spreads
 // lost their sign ("Capitals 1.5"). Totals read "Over 6.5", spreads "Team +1.5",
 // moneylines "Team". `short` swaps in the nickname for narrow phone rows.
-function pickText(p, opts = {}) {
+function pickParts(p, opts = {}) {
   const pick = (p.pick || '').trim();
   const lineStr = p.line == null ? '' : String(p.line).trim();
   const lnum = parseFloat(lineStr);
   const bt = (p.betType || p.market || '').toLowerCase();
   // No usable line: the pick text is all we have, show it as-is.
-  if (!lineStr || !Number.isFinite(lnum)) return opts.short && bt === 'moneyline' ? shortTeam(pick, p.league) : pick;
+  if (!lineStr || !Number.isFinite(lnum)) return { name: opts.short && bt === 'moneyline' ? shortTeam(pick, p.league) : pick, line: '' };
   // Drop a line already baked into the text, signed or not.
   const base = pick.replace(/\s*[+-]?\d+(\.\d+)?\s*$/, '').trim() || pick;
-  if (bt === 'total' || /^(over|under)\b/i.test(base)) return `${base} ${Math.abs(lnum)}`;
+  if (bt === 'total' || /^(over|under)\b/i.test(base)) return { name: base, line: String(Math.abs(lnum)) };
   const team = opts.short ? shortTeam(base, p.league) : base;
-  if (bt === 'spread') return `${team} ${lnum > 0 ? '+' : ''}${lnum}`;
-  return team;
+  if (bt === 'spread') return { name: team, line: `${lnum > 0 ? '+' : ''}${lnum}` };
+  return { name: team, line: '' };
+}
+function pickText(p, opts = {}) {
+  const { name, line } = pickParts(p, opts);
+  return line ? `${name} ${line}` : name;
+}
+// Narrow rows: the name may ellipsize, the line never does ("Blue Jacke… -1.5").
+function PickLabel({ p }) {
+  const { name, line } = pickParts(p, { short: true });
+  return <><span className="sn">{name}</span>{line ? <span className="sln">{line}</span> : null}</>;
 }
 
 // ── Scores Tab (Direction A — Tape) ───────────────────────────────────
@@ -1469,7 +1482,7 @@ function ExpandedGame({ d, isBet, isFade, displayPick, allPicks, teamChip, stake
             <div className="rm">
               <span className="mkt">{code}</span>
               {isTotal ? <span className="tm ou">{isOver ? '▲' : '▼'}</span> : isDrawPick(display) ? <span className="tm ou">=</span> : teamChip(display.pick, p.league)}
-              <span className="side">{pickText(display, { short: true })}{faded && <i> · fade</i>}</span>
+              <span className="side"><PickLabel p={display} />{faded && <i> · fade</i>}</span>
             </div>
             <span className="p num">{fmt(display.odds)}</span>
             <span className="un num">{stake(p).toFixed(2)}<em style={{ fontStyle: 'normal', fontSize: 9, color: 'var(--dim2)' }}>u</em></span>
