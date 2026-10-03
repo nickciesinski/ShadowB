@@ -47,6 +47,12 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .datepick{display:flex;gap:6px;padding:7px 14px;background:var(--panel3);border-bottom:1px solid var(--line)}
     .datepick button{font:500 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--dim2);background:none;border:1px solid var(--line2);border-radius:3px;padding:4px 9px}
     .datepick button.on{color:var(--take);border-color:rgba(76,154,255,.5);background:rgba(76,154,255,.12)}
+    .ctlrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px 6px 14px;background:var(--panel3);border-bottom:1px solid var(--line)}
+    .ctlrow .datepick{padding:0;background:none;border:0}
+    .ctlrow .seg{display:flex;border:1px solid var(--line2);border-radius:3px;overflow:hidden}
+    .ctlrow .seg button{background:none;border:0;border-right:1px solid var(--line2);padding:5px 7px;font:500 9px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--dim2);font-variant-numeric:tabular-nums}
+    .ctlrow .seg button:last-child{border-right:0}
+    .ctlrow .seg button.on{background:rgba(76,154,255,.12);color:var(--take)}
     .sizerow{display:flex;align-items:center;background:var(--panel3);border-bottom:1px solid var(--line)}
     .sizerow .sl{flex:0 0 auto;padding:0 11px 0 14px;font:500 9px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--dim2)}
     .sizerow .seg{display:flex;flex:1;border-left:1px solid var(--line)}
@@ -57,12 +63,13 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .rangerow button{flex:1;background:none;border:0;border-right:1px solid var(--line);padding:9px 0;font:500 9px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim2)}
     .rangerow button:last-child{border-right:0}
     .rangerow button.on{background:var(--panel);color:var(--take)}
-    .arule{background:var(--panel2);border-bottom:1px solid var(--line);padding:11px 14px 12px;display:flex;flex-direction:column;gap:9px}
+    .arule{background:var(--panel2);border-bottom:1px solid var(--line);padding:8px 14px;display:flex;flex-direction:column;gap:9px}
     .arule-top{display:flex;align-items:center;justify-content:space-between}
     .arule-top .lb{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
     .arule-top .rs{font:500 11px/1 var(--mono);color:var(--dim)}
     .arule-top .rs b{color:var(--take);font-weight:600}
-    .arule-act{display:grid;grid-template-columns:1fr auto;gap:8px}
+    .arule-act{display:grid;grid-template-columns:1fr auto auto auto;gap:6px}
+    .arule-act .abtn.ghost{padding:0 8px;font-size:10px;letter-spacing:.05em}
     .abtn{height:38px;border-radius:4px;border:1px solid rgba(76,154,255,.45);background:rgba(76,154,255,.14);color:#bcd9ff;font:600 12px/1 var(--body);letter-spacing:.09em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:8px}
     .abtn.solid{background:var(--take);border-color:var(--take);color:#03142c}
     .abtn.ghost{border-color:var(--line2);background:transparent;color:var(--dim);padding:0 14px}
@@ -658,7 +665,7 @@ function BestBets({ picks }) {
               <span style={{ background: LEAGUE_COLORS[p.league] || '#6B7280', color: LEAGUE_TEXT[p.league] || 'white', fontSize: 9, fontWeight: 700, padding: '2px 5px', borderRadius: 3 }}>{p.league}</span>
               <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>{p.betType || p.market}</span>
             </div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{p.pick} <span style={{ color: '#34D399', fontWeight: 800 }}>{fmt(p.odds)}</span></div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'white' }}>{pickText(p)} <span style={{ color: '#34D399', fontWeight: 800 }}>{fmt(p.odds)}</span></div>
             <div style={{ fontSize: 10, color: '#64748B', display: 'flex', alignItems: 'center', gap: 6 }}>
               <TeamLogo team={p.away} league={p.league} size={14} />
               <span>{p.away} @ {p.home}</span>
@@ -885,7 +892,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
               name column is ~64px on a phone, so "Draw · fading Chelsea" just
               ellipses into noise — and the control right there already marks the
               model's side with a dot, which is the same information, legibly. */}
-          <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && !threeWay && <i> · fading {p.pick}</i>}</span>
+          <span className="side">{pickText(display, { short: true })}{faded && !threeWay && <i> · fading {pickText(p, { short: true })}</i>}</span>
         </div>
         {sizing === 'model'
           ? <span className="u num">{(p.units || 0).toFixed(2)}<em>u</em></span>
@@ -957,7 +964,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
         <div className="rm">
           <span className="mkt">{code}</span>
           {sideChip(display, p, isTotal, isOver)}
-          <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
+          <span className="side">{pickText(display, { short: true })}{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
         </div>
         <span className="p num">{fmt(display.odds)}</span>
         {isPre
@@ -979,9 +986,17 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
           : <span className="clickable" onClick={() => setPickMode('build')}>{lockedCount} POSITIONS · VIEW: BUILD ▸</span>}
       </div>
 
-      <div className="sizerow">
-        <span className="sl">Sizing</span>
-        <span className="seg">
+      {/* 2026-10-03: date + sizing share one row (were two) so the slate starts
+          higher on a phone. Same controls, same state. */}
+      <div className="ctlrow">
+        {picksDateFilter && (
+          <span className="datepick">
+            {['Today', 'Tomorrow', 'This Week'].map(d => (
+              <button key={d} className={picksDateFilter === d ? 'on' : ''} onClick={() => setPicksDateFilter(d)}>{d === 'This Week' ? 'Week' : d}</button>
+            ))}
+          </span>
+        )}
+        <span className="seg" title="Stake per pick: the model's own size, or a flat amount">
           {sizingPresets.map(s => (
             <button
               key={s}
@@ -991,14 +1006,6 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
           ))}
         </span>
       </div>
-
-      {picksDateFilter && (
-        <div className="datepick">
-          {['Today', 'Tomorrow', 'This Week'].map(d => (
-            <button key={d} className={picksDateFilter === d ? 'on' : ''} onClick={() => setPicksDateFilter(d)}>{d}</button>
-          ))}
-        </div>
-      )}
 
       {pickMode === 'build' ? (
         <div className="astrip">
@@ -1016,10 +1023,8 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
 
       {pickMode === 'build' ? (
         <div className="arule">
-          <div className="arule-top">
-            <span className="lb">Rule · {novigOnly ? 'Novig only' : (minUnitOn && !showAllOn ? '+EV only' : 'all picks')}</span>
-            <span className="rs">commits <b>{commitCount} picks · {commitUnits.toFixed(1)}u</b></span>
-          </div>
+          {/* The old "Rule · all picks — commits N picks · Xu" line repeated the
+              Take button's own label; the highlighted filter button shows the rule. */}
           <div className="arule-act">
             <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake}>
               {`Take ${commitCount} · ${commitUnits.toFixed(1)}u`}
@@ -1247,6 +1252,40 @@ function teamOnly(p) {
   return (p.pick || '').replace(p.line, '').trim();
 }
 
+// Two-word nicknames; every other US team's nickname is its last word.
+const TWO_WORD_NICKNAMES = ['blue jackets', 'red wings', 'golden knights', 'maple leafs',
+  'red sox', 'white sox', 'blue jays', 'trail blazers'];
+
+// "Columbus Blue Jackets" -> "Blue Jackets". Soccer names stay whole: the last
+// word of "Manchester United" or "Crystal Palace" names nobody.
+function shortTeam(name, league) {
+  const n = (name || '').trim();
+  if (!n || isSoccer(league)) return n;
+  const lower = n.toLowerCase();
+  const two = TWO_WORD_NICKNAMES.find(t => lower.endsWith(t));
+  if (two) return n.slice(n.length - two.length);
+  return n.split(/\s+/).pop();
+}
+
+// THE label for a pick, everywhere. 2026-10-03: four call sites appended `line`
+// to a `pick` that sometimes already contained it ("Over 6.5 6.5"), and spreads
+// lost their sign ("Capitals 1.5"). Totals read "Over 6.5", spreads "Team +1.5",
+// moneylines "Team". `short` swaps in the nickname for narrow phone rows.
+function pickText(p, opts = {}) {
+  const pick = (p.pick || '').trim();
+  const lineStr = p.line == null ? '' : String(p.line).trim();
+  const lnum = parseFloat(lineStr);
+  const bt = (p.betType || p.market || '').toLowerCase();
+  // No usable line: the pick text is all we have, show it as-is.
+  if (!lineStr || !Number.isFinite(lnum)) return opts.short && bt === 'moneyline' ? shortTeam(pick, p.league) : pick;
+  // Drop a line already baked into the text, signed or not.
+  const base = pick.replace(/\s*[+-]?\d+(\.\d+)?\s*$/, '').trim() || pick;
+  if (bt === 'total' || /^(over|under)\b/i.test(base)) return `${base} ${Math.abs(lnum)}`;
+  const team = opts.short ? shortTeam(base, p.league) : base;
+  if (bt === 'spread') return `${team} ${lnum > 0 ? '+' : ''}${lnum}`;
+  return team;
+}
+
 // ── Scores Tab (Direction A — Tape) ───────────────────────────────────
 // One game open in the tape at a time; every other game is a condensed row
 // carrying a fixed ML/Spread/Total pip cluster (team mark or O/U per held
@@ -1430,7 +1469,7 @@ function ExpandedGame({ d, isBet, isFade, displayPick, allPicks, teamChip, stake
             <div className="rm">
               <span className="mkt">{code}</span>
               {isTotal ? <span className="tm ou">{isOver ? '▲' : '▼'}</span> : isDrawPick(display) ? <span className="tm ou">=</span> : teamChip(display.pick, p.league)}
-              <span className="side">{display.pick}{display.line ? ` ${display.line}` : ''}{faded && <i> · fade</i>}</span>
+              <span className="side">{pickText(display, { short: true })}{faded && <i> · fade</i>}</span>
             </div>
             <span className="p num">{fmt(display.odds)}</span>
             <span className="un num">{stake(p).toFixed(2)}<em style={{ fontStyle: 'normal', fontSize: 9, color: 'var(--dim2)' }}>u</em></span>
@@ -2032,7 +2071,7 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
       </div>
 
       <div className="datepick">
-        {['Games', 'Props'].map(v => (
+        {['Games'].map(v => (
           <button key={v} className={viewType === v ? 'on' : ''} onClick={() => setViewType(v)}>{v}</button>
         ))}
         {onChangelog && <button onClick={onChangelog}>Changelog</button>}
@@ -2079,7 +2118,7 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
                 <div key={j} className="lr">
                   <span className={`res ${r.result === 'W' ? 'w' : r.result === 'L' ? 'l' : 'p'}`}>{r.result}</span>
                   <span className="tmini">{url ? <img src={url} alt="" /> : <span style={{ fontSize: 6, fontWeight: 700, color: 'var(--dim)' }}>{(r.league || '').slice(0, 3)}</span>}</span>
-                  <span className="nm">{r.pick}{r.line ? ` ${r.line}` : ''} <span>· {isBet(r) ? 'my bet' : r.league}</span></span>
+                  <span className="nm">{pickText(r)} <span>· {(r.betType || r.market || '').toLowerCase() === 'total' && r.away && r.home ? `${shortTeam(r.away, r.league)} @ ${shortTeam(r.home, r.league)} · ` : ''}{isBet(r) ? 'my bet' : r.league}</span></span>
                   <span className="pr">{fmt(r.odds)}</span>
                   <span className={`un ${r.result === 'W' ? 'w' : r.result === 'L' ? 'l' : 'p'}`}>{r.unitReturn >= 0 ? '+' : ''}{(r.unitReturn || 0).toFixed(2)}</span>
                 </div>
@@ -2100,10 +2139,22 @@ async function fetchLiveScores() {
   // made the Scores tab wait on 4 round-trips in series).
   await Promise.all(Object.entries(ESPN_SPORTS).map(async ([league, cfg]) => {
     try {
-      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${cfg.key}/${cfg.league}/scoreboard`);
-      if (!res.ok) return;
-      const data = await res.json();
-      for (const event of (data.events || [])) {
+      // 2026-10-03: the undated scoreboard is ESPN's idea of "today", which at
+      // 7 AM Pacific is still YESTERDAY's slate — so the Scores tab (which keeps
+      // only today's games) showed 1 game while 13 NHL games had picks. Ask for
+      // today's date explicitly (single-day ?dates= works; date RANGES don't),
+      // and keep the undated board too so a game still live past midnight stays.
+      const base = `https://site.api.espn.com/apis/site/v2/sports/${cfg.key}/${cfg.league}/scoreboard`;
+      const today = new Date().toLocaleDateString('en-CA').replace(/-/g, '');
+      const boards = await Promise.all([`${base}?dates=${today}`, base].map(u =>
+        fetch(u).then(r => (r.ok ? r.json() : null)).catch(() => null)));
+      const seen = new Set();
+      const events = [];
+      for (const b of boards) for (const ev of (b?.events || [])) {
+        if (seen.has(ev.id)) continue;
+        seen.add(ev.id); events.push(ev);
+      }
+      for (const event of events) {
         const comp = event.competitions?.[0];
         if (!comp) continue;
         const homeTeam = comp.competitors?.find(c => c.homeAway === 'home');
@@ -2479,11 +2530,15 @@ export default function App() {
   // Default tab: Picks in the early morning, Scores from 9am PT onward.
   // Computed in PT explicitly (matching the backend's America/Los_Angeles day
   // rollover) so it's consistent regardless of the device's timezone.
+  // Nick bets ~9:00–9:30 PM PT (tomorrow's games) or ~5:30–6:00 AM PT (today's).
+  // 2026-10-03: the evening window used to open on Scores with the Picks filter
+  // on Today, i.e. two taps away from the slate he was there to bet.
+  const ptHour = () => new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
+  ).getHours();
   const getDefaultTab = () => {
-    const ptHour = new Date(
-      new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })
-    ).getHours();
-    return ptHour < 9 ? 'picks' : 'scores';
+    const h = ptHour();
+    return h < 9 || h >= 20 ? 'picks' : 'scores';
   };
 
   const [tab, setTab] = useState(getDefaultTab);
@@ -2646,7 +2701,7 @@ export default function App() {
   }, [commitSnapshot, undoLeft]);
 
   const [propDateFilter, setPropDateFilter] = useState('Today');
-  const [picksDateFilter, setPicksDateFilter] = useState('Today');
+  const [picksDateFilter, setPicksDateFilter] = useState(() => (ptHour() >= 20 ? 'Tomorrow' : 'Today'));
   // Novig order log, keyed by pick_id. Lifted to the app component because the
   // Picks-tab date filter needs to know which orders are still open — a posted
   // order has to stay visible after its date rolls over or it can never be
@@ -2965,7 +3020,8 @@ export default function App() {
   const tabs = [
     { id: 'picks', label: 'Picks', icon: '/icons/sonic.png' },
     { id: 'scores', label: 'Scores', icon: '/icons/shadow.png' },
-    { id: 'props', label: 'Props', icon: '/icons/knuckles.png' },
+    // Props hidden 2026-10-03 (Nick): a separate, older pipeline the model doesn't use,
+    // and the busiest screen in the app. PropsTab is kept — add this line back to restore.
     { id: 'results', label: 'Results', icon: '/icons/tails.png' },
   ];
 

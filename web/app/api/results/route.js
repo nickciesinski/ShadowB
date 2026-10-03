@@ -56,17 +56,33 @@ function parsePerfRow(row) {
   };
 }
 
+const PAGE = 1000;
+
+/** Read every row, not the first 1000. `build` must return a FRESH query each call. */
+async function pageAll(build) {
+  const out = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
 export async function GET() {
   try {
     const sb = getSupabase();
 
     // Both full-history queries run in parallel.
+    // 2026-10-03: Supabase returns at most 1000 rows per request and says nothing
+    // when it truncates — the Results tab read "1000 GRADED" and every headline
+    // stat was computed on an arbitrary slice. Page through until a short page.
     const sbGradedQ = sb
-      ? sb.from('performance_log')
-          .select('date, league, game, market, pick, line, odds, confidence, final_units, result')
+      ? pageAll(() => sb.from('performance_log')
+          .select('id, date, league, game, market, pick, line, odds, confidence, final_units, result')
           .in('result', ['W', 'L', 'P'])
           .order('date', { ascending: false })
-          .then(r => (r.error ? null : r.data)).catch(() => null)
+          .order('id', { ascending: false })).catch(() => null)
       : Promise.resolve(null);
 
     const sbPropsQ = sb
