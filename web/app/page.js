@@ -154,7 +154,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .clockbar{grid-column:5;height:4px;border-radius:2px;background:#191d22;position:relative;overflow:hidden}
     .clockbar b{position:absolute;inset:0 auto 0 0;background:var(--line2);transition:width .6s ease}
     .r.locked .tri{display:none}
-    .unl{margin-left:auto;flex:none;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--dim2);font:500 11px/1 var(--mono);padding:3px 6px}
+    .unl{margin-left:6px;flex:none;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--dim2);font:500 11px/1 var(--mono);padding:3px 6px}
     .tapebar{display:flex;height:6px;border-bottom:1px solid var(--line)}
     .tapebar i{display:block;height:100%}
     .agrid{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
@@ -973,7 +973,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
     );
   };
 
-  const renderWatchRow = (p, idx, canUnlock) => {
+  const renderWatchRow = (p, idx) => {
     const faded = isFade(p);
     const display = displayPick(p, allPicks);
     const { code, isTotal, isOver } = marketMeta(display);
@@ -990,7 +990,6 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
           <span className="mkt">{code}</span>
           {sideChip(display, p, isTotal, isOver)}
           <span className="side"><PickLabel p={display} />{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
-          {canUnlock && isPre && <button className="unl" onClick={() => unlockPick(p)} title="Unlock — move back to the list">↺</button>}
         </div>
         <span className="p num">{fmt(display.odds)}</span>
         {isPre
@@ -1178,8 +1177,16 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
                   <span className="at">@</span>
                   <span className="tm2">{g.home.split(' ').pop()}</span>
                   <span className="tme">{cleanTime(g.startTime, showDate)}</span>
+                  {/* Unlock lives on the game line, not each row — on a phone the
+                      row has no width to spare. Only before the game starts. */}
+                  {(() => {
+                    const gm = findGameForPick(liveGames, matchupGames, g.picks[0]);
+                    return (!gm || gm.status === 'pre')
+                      ? <button className="unl" onClick={() => g.picks.forEach(unlockPick)} title="Unlock this game's bets — move them back to the list">↺ Unlock</button>
+                      : null;
+                  })()}
                 </div>
-                {g.picks.map((p, i) => renderWatchRow(p, i, true))}
+                {g.picks.map((p, i) => renderWatchRow(p, i))}
               </div>
             ))}
           </div>
