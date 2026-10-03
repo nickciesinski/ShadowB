@@ -12,10 +12,13 @@ docs. Treat the briefs as the source of truth and keep them current as you
 make changes.
 
 ## How Nick works (read this)
-- Nick is not a strong coder. Explain changes plainly and conservatively — no
-  over-engineering.
-- Ask for his GitHub PAT at the start of any coding session.
-- Push directly to `main` — no PRs.
+- Nick is not a strong coder. Keep every reply SUPER short and clear: plain
+  words, no code jargon, no long explanations. No over-engineering.
+- Cloud sessions have GitHub connected — no PAT needed. Only ask for one if a
+  push is refused.
+- Push directly to `main` — no PRs. Fixes only go live once they are on `main`.
+- Never leave work unpushed. Finish every change by pushing it to `main`,
+  unless Nick confirmed otherwise. If a push fails, say so plainly.
 - Every game must produce ML + spread + total picks. Low confidence = a tiny
   stake, never a dropped pick.
 
