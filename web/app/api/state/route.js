@@ -33,10 +33,21 @@ export async function GET(req) {
     const { data, error } = await sb.from('daily_state').select('my_bets, pick_mode').eq('date', date).maybeSingle();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    // 2026-10-03: locked bets outlive the day they were placed (a bet locked at
+    // 9 PM is for tomorrow's game). With no row for today yet, hand back the
+    // most recent earlier day's entries; the client keeps only the locked ones.
+    let carry;
+    if (!data) {
+      const prev = await sb.from('daily_state').select('my_bets')
+        .lt('date', date).order('date', { ascending: false }).limit(1).maybeSingle();
+      carry = prev.data?.my_bets || [];
+    }
+
     return NextResponse.json({
       found: !!data,
       myBets: data?.my_bets || [],
       pickMode: data?.pick_mode || 'build',
+      ...(carry ? { carry } : {}),
     }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

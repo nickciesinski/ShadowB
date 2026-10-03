@@ -154,6 +154,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .clockbar{grid-column:5;height:4px;border-radius:2px;background:#191d22;position:relative;overflow:hidden}
     .clockbar b{position:absolute;inset:0 auto 0 0;background:var(--line2);transition:width .6s ease}
     .r.locked .tri{display:none}
+    .unl{margin-left:auto;flex:none;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--dim2);font:500 11px/1 var(--mono);padding:3px 6px}
     .tapebar{display:flex;height:6px;border-bottom:1px solid var(--line)}
     .tapebar i{display:block;height:100%}
     .agrid{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--line)}
@@ -579,6 +580,19 @@ const entryStake = (v, p) => (v && typeof v === 'object' && v.stakeUsed != null)
   ? v.stakeUsed
   : (p.units || 0); // legacy/pre-stamp bet: fall back to model units
 
+// 2026-10-03: a LOCKED entry is a bet Nick has actually placed. ✓/F taps only
+// SELECT a side; the Lock button turns selections into locked bets, which move
+// to the "Bet" section of Picks and count everywhere as positions (Scores
+// "Mine", Results "Mine"). Locked entries survive the day rollover — a bet
+// locked at 9 PM for tomorrow's game is still there on game day — and are
+// dropped 30 days after their game. Pending taps and passes stay today-only.
+const isLockedEntry = (v) => !!(v && typeof v === 'object' && v.locked);
+const KEEP_LOCKED_DAYS = 30;
+function carryLocked(entries, todayIso) {
+  const cutoff = new Date(Date.parse(`${todayIso}T12:00:00`) - KEEP_LOCKED_DAYS * 864e5).toLocaleDateString('en-CA');
+  return (entries || []).filter(([, v]) => isLockedEntry(v) && (!v.date || v.date >= cutoff));
+}
+
 // Doubleheader-aware game matching, shared by the Picks (watch mode) and
 // Scores tapes so a pick always resolves to the correct sibling game.
 function buildMatchupGames(liveGames) {
@@ -732,7 +746,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
+function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, isLocked, unlockPick, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
@@ -770,10 +784,12 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
     return 'take';
   };
 
-  const commitList = pool.filter(p => effState(p) === 'take');
+  // Lock = every unlocked pick in the pool with a side selected (✓ by default,
+  // or F). Fades lock too: picking a side and locking it is one action.
+  const commitList = pool.filter(p => !isLocked(p) && (effState(p) === 'take' || effState(p) === 'fade'));
   const commitCount = commitList.length;
   const commitUnits = commitList.reduce((s, p) => s + stake(p), 0);
-  const lockedCount = pickMode === 'build' ? commitCount : pool.filter(p => isBet(p) || isFade(p)).length;
+  const lockedCount = allPicks.filter(p => isLocked(p)).length;
 
   const leagueCounts = {};
   for (const p of allPicks) leagueCounts[p.league] = (leagueCounts[p.league] || 0) + 1;
@@ -810,7 +826,12 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
 
   // ── Grouping into games (shared by both modes) ────────────────────────
   const visible = (sf === 'All' ? pool : pool.filter(p => p.league === sf))
-    .filter(p => pickMode === 'build' || isBet(p) || isFade(p));
+    .filter(p => (pickMode === 'build' ? !isLocked(p) : (isBet(p) || isFade(p))));
+  // Build mode's "Bet" section: locked picks for this date, whatever the
+  // +EV/Novig filters say — a placed bet must never vanish behind a filter.
+  const lockedVisible = pickMode === 'build'
+    ? (sf === 'All' ? allPicks : allPicks.filter(p => p.league === sf)).filter(p => isLocked(p))
+    : [];
   const games = {};
   for (const p of visible) {
     const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
@@ -952,7 +973,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
     );
   };
 
-  const renderWatchRow = (p, idx) => {
+  const renderWatchRow = (p, idx, canUnlock) => {
     const faded = isFade(p);
     const display = displayPick(p, allPicks);
     const { code, isTotal, isOver } = marketMeta(display);
@@ -969,6 +990,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
           <span className="mkt">{code}</span>
           {sideChip(display, p, isTotal, isOver)}
           <span className="side"><PickLabel p={display} />{faded && <i> · {status === 'winning' ? 'fade won' : 'fade'}</i>}</span>
+          {canUnlock && isPre && <button className="unl" onClick={() => unlockPick(p)} title="Unlock — move back to the list">↺</button>}
         </div>
         <span className="p num">{fmt(display.odds)}</span>
         {isPre
@@ -1030,8 +1052,8 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
           {/* The old "Rule · all picks — commits N picks · Xu" line repeated the
               Take button's own label; the highlighted filter button shows the rule. */}
           <div className="arule-act">
-            <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake}>
-              {`Take ${commitCount} · ${commitUnits.toFixed(1)}u`}
+            <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake} title="Lock the selected side on these picks and move them to Bet">
+              {`Lock ${commitCount} · ${commitUnits.toFixed(1)}u`}
             </button>
             <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)} title="Only picks whose calibrated probability beats the price">+EV</button>
             <button className={`abtn ghost${showAllOn ? ' on' : ''}`} onClick={() => setShowAllOn(v => !v)} title="Show every pick, including those with no edge over the price">Show all</button>
@@ -1056,7 +1078,7 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
         </div>
       )}
 
-      {commitSnapshot && pickMode === 'watch' && (
+      {commitSnapshot && (
         <div className="undobar">
           <span className="ul">Locked {committedCount} · {committedUnits.toFixed(1)}u<span className="ct">{undoLeft}s</span></span>
           <button className="ub" onClick={undoCommit}>Undo</button>
@@ -1127,10 +1149,42 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
         })}
         {gameList.length === 0 && (
           <div className="empty">
-            {pickMode === 'watch' ? 'No positions locked yet.' : allPicks.length === 0 ? 'No plays for this day.' : 'No picks match this filter.'}
+            {pickMode === 'watch' ? 'No positions locked yet.'
+              : allPicks.length === 0 ? 'No plays for this day.'
+              : lockedVisible.length > 0 ? 'Everything here is locked — see Bet below.'
+              : 'No picks match this filter.'}
           </div>
         )}
       </div>
+
+      {lockedVisible.length > 0 && (() => {
+        const lg = {};
+        for (const p of lockedVisible) {
+          const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
+          if (!lg[k]) lg[k] = { league: p.league, away: p.away, home: p.home, startTime: p.startTime, picks: [] };
+          lg[k].picks.push(p);
+        }
+        const lockedGames = Object.values(lg).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+        const lockedUnits = lockedVisible.reduce((s, p) => s + stake(p), 0);
+        return (
+          <div className="betsec">
+            <div className="consec"><span>Bet · {lockedVisible.length} locked</span><span>{lockedUnits.toFixed(1)}u</span></div>
+            {lockedGames.map((g, gi) => (
+              <div className="agame" key={`b${gi}`}>
+                <div className="agh">
+                  <span className="lgm">{g.league}</span>
+                  <span className="duo">{teamChip(g.away, g.league, true)}{teamChip(g.home, g.league, true)}</span>
+                  <span className="tm2">{g.away.split(' ').pop()}</span>
+                  <span className="at">@</span>
+                  <span className="tm2">{g.home.split(' ').pop()}</span>
+                  <span className="tme">{cleanTime(g.startTime, showDate)}</span>
+                </div>
+                {g.picks.map((p, i) => renderWatchRow(p, i, true))}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2565,14 +2619,13 @@ export default function App() {
       if (saved) {
         const { date, bets } = JSON.parse(saved);
         const today = new Date().toLocaleDateString();
-        if (date === today) {
-          // Support old Set format (array of strings) and new Map format (array of [key, val])
-          if (Array.isArray(bets) && bets.length > 0 && Array.isArray(bets[0])) {
-            return new Map(bets);
-          }
-          // Legacy: convert old Set to Map (all as 'bet')
-          return new Map(bets.map(k => [k, 'bet']));
-        }
+        // Support old Set format (array of strings) and new Map format (array of [key, val])
+        const entries = (Array.isArray(bets) && bets.length > 0 && Array.isArray(bets[0]))
+          ? bets
+          : (bets || []).map(k => [k, 'bet']); // Legacy: old Set, all as 'bet'
+        if (date === today) return new Map(entries);
+        // A new day: keep locked bets, drop yesterday's pending taps.
+        return new Map(carryLocked(entries, new Date().toLocaleDateString('en-CA')));
       }
     } catch (e) {}
     return new Map();
@@ -2654,6 +2707,14 @@ export default function App() {
         if (d.found) {
           setMyBets(new Map(d.myBets || []));
           setPickMode(d.pickMode || 'build');
+        } else if (Array.isArray(d.carry)) {
+          // First open today on any device: bring forward the bets locked on
+          // earlier days (the server sends the most recent day's state).
+          setMyBets(prev => {
+            const next = new Map(prev);
+            for (const [k, v] of carryLocked(d.carry, todayIso)) if (!next.has(k)) next.set(k, v);
+            return next;
+          });
         }
       })
       .catch(() => {})
@@ -2688,21 +2749,30 @@ export default function App() {
       const next = new Map(prev);
       for (const p of commitList) {
         const key = pickKey(p);
-        // Only stamp picks the rule auto-selected and were never manually
-        // touched — a manual tap already stamped its own stake the moment it
-        // was set (see setPickState), and that's the true "locked at" moment
-        // for that pick, not whenever Take happens to get pressed afterward.
-        if (!next.has(key)) next.set(key, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
+        const cur = next.get(key);
+        const base = (cur && typeof cur === 'object') ? cur : {};
+        // A manual tap already stamped its stake the moment it was set (see
+        // setPickState); a rule-default pick is stamped now. `date` is the
+        // GAME's date — it's what keeps the bet alive until game day.
+        next.set(key, {
+          ...base,
+          state: entryState(cur) === 'fade' ? 'fade' : 'bet',
+          stakeUsed: base.stakeUsed ?? stake(p),
+          at: base.at ?? Date.now(),
+          locked: true,
+          lockedAt: Date.now(),
+          date: p.isoDate || new Date().toLocaleDateString('en-CA'),
+        });
       }
       return next;
     });
-    setPickMode('watch');
+    // Stays on the list (was: jump to watch mode) — locked picks drop into the
+    // Bet section and the rest of the slate is still there to work through.
     setUndoLeft(UNDO_SECONDS);
   }, [myBets, stake]);
   const undoCommit = useCallback(() => {
     if (!commitSnapshot) return;
     setMyBets(commitSnapshot);
-    setPickMode('build');
     setCommitSnapshot(null);
     setUndoLeft(0);
   }, [commitSnapshot]);
@@ -2819,8 +2889,15 @@ export default function App() {
   // entry (a manual exclusion from the Picks threshold rule; see PicksTab's
   // effState), which must never register as a real position anywhere else
   // in the app (Scores, Results, badges, etc.).
-  const isBet = (p) => entryState(myBets.get(pickKey(p))) === 'bet';
-  const isFade = (p) => entryState(myBets.get(pickKey(p))) === 'fade';
+  // Positions are LOCKED entries only — a ✓/F tap is a selection, not a bet.
+  const isLocked = (p) => isLockedEntry(myBets.get(pickKey(p)));
+  const isBet = (p) => isLocked(p) && entryState(myBets.get(pickKey(p))) === 'bet';
+  const isFade = (p) => isLocked(p) && entryState(myBets.get(pickKey(p))) === 'fade';
+  const unlockPick = (p) => setMyBets(prev => {
+    const next = new Map(prev);
+    next.delete(pickKey(p));
+    return next;
+  });
   // Resolves a pick to the side you're actually on, and is handed to every tab so
   // one position can't read as Draw on Picks and as the home team on Scores.
   // Pass `allPicks` where the full slate is in hand (lets the two-way path find a
@@ -3000,7 +3077,7 @@ export default function App() {
   // Uncommitted count for the Picks tab badge — plays in today's slate with no
   // manual take/fade yet. Only meaningful pre-commit; watch mode means the
   // slate's already been triaged, so nothing to flag.
-  const uncommittedCount = pickMode === 'build' ? dedup(todaysPicksOnly).filter(p => !isBet(p) && !isFade(p)).length : 0;
+  const uncommittedCount = pickMode === 'build' ? dedup(todaysPicksOnly).filter(p => !isLocked(p)).length : 0;
   const realGames = liveGames.filter(g => {
     if (g.status === 'in') return true; // live = real
     if (!g.gameDate) return false;
@@ -3095,7 +3172,7 @@ export default function App() {
         {data && tab === 'picks' && (
           <PicksTab
             picks={picksForTab} liveGames={liveGames} myBets={myBets} setMyBets={setMyBets}
-            isBet={isBet} isFade={isFade} toggleBet={toggleBet} setPickState={setPickState} displayPick={displayPick}
+            isBet={isBet} isFade={isFade} isLocked={isLocked} unlockPick={unlockPick} toggleBet={toggleBet} setPickState={setPickState} displayPick={displayPick}
             pickMode={pickMode} setPickMode={setPickMode}
             novigOrders={novigOrders} markNovig={markNovig}
             picksDateFilter={picksDateFilter} setPicksDateFilter={setPicksDateFilter}
