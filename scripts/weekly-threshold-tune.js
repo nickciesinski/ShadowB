@@ -35,7 +35,7 @@ const MARKETS = ['moneyline', 'spread', 'total'];
 // precomputed CLV-points value derived from clv_opening_prob/clv_closing_prob,
 // since Supabase doesn't store raw closing odds.
 const COL = { DATE: 0, LEAGUE: 1, MARKET: 2, ODDS: 9, UNITS: 10, RESULT: 16, RETURN: 17, APPROVAL: 21,
-  CLV_PTS: 33, VIG_PP: 34, NET_EDGE_PP: 35 };
+  CLV_PTS: 33, VIG_PP: 34, NET_EDGE_PP: 35, GAME_DATE: 36 };
 
 // Format a JS Date as 'YYYY-MM-DD' — for the Supabase `date` column filter.
 function toISODate(d) {
@@ -60,10 +60,13 @@ function toISODate(d) {
  */
 function supaRowsToArrayRows(rows) {
   return (rows || []).map(r => {
-    const row = new Array(36).fill('');
+    const row = new Array(37).fill('');
     // date comes back as 'YYYY-MM-DD' from Postgres — convert to M/D/YYYY.
     const m = String(r.date || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
     row[COL.DATE] = m ? `${parseInt(m[2])}/${parseInt(m[3])}/${m[1]}` : '';
+    // 2026-10-04 — game date, M/D/YYYY like DATE. Supabase-only (index 36).
+    const g = String(r.game_date || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    row[COL.GAME_DATE] = g ? `${parseInt(g[2])}/${parseInt(g[3])}/${g[1]}` : '';
     row[COL.LEAGUE] = r.league || '';
     row[COL.MARKET] = r.market || '';
     row[COL.ODDS] = r.odds != null ? r.odds : '';
@@ -356,7 +359,12 @@ async function main() {
     for (const r of rows) {
       const res = String(r[COL.RESULT] || '').trim();
       if (res !== 'W' && res !== 'L' && res !== 'P') continue;
-      const m = String(r[COL.DATE] || '').match(/(\d+)\/(\d+)\/(\d+)/);
+      // 2026-10-04 — window on the GAME date, not the pick date. NFL picks
+      // are made ~6 days ahead, so on Sunday 10-04 every graded NFL pick
+      // (games 9-28 and 10-01) had a pick date before the 7-day cutoff and
+      // the guard reported 0 against 51 real graded picks. Grading happens
+      // after the game, so the game date is what "graded this week" means.
+      const m = String(r[COL.GAME_DATE] || r[COL.DATE] || '').match(/(\d+)\/(\d+)\/(\d+)/);
       if (!m) continue;
       const d = new Date(parseInt(m[3]), parseInt(m[1]) - 1, parseInt(m[2]));
       if (d < cut7) continue;
