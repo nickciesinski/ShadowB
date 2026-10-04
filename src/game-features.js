@@ -526,7 +526,14 @@ function scoreMarket(features, marketWeights) {
 // hide the very thing worth seeing; the fix belongs at the feature, not here.
 // Returns the offenders so the caller can probe them.
 function checkDominance(features, weights, opts = {}) {
-  const threshold = opts.threshold || 0.4; // share of total absolute contribution
+  // 2026-10-04 — raised 0.4 -> 0.6. Every alert since 08-11 was reviewed. The
+  // real faults were far above 0.6: offense_rs_diff 0.89 (08-09), a data
+  // outage at 0.999 (09-15), playoff OPS at 0.748 (10-02). The rest sat at
+  // 0.41-0.56 on healthy data — evenly matched games where one normal-sized
+  // feature (e.g. a 7-turnover gap, Colts@Commanders 10-04, 0.489) is simply
+  // the biggest of a small total. That fired almost daily and buried the real
+  // alerts, the exact failure the 08-18 note below warns about.
+  const threshold = opts.threshold || 0.6; // share of total absolute contribution
   // 2026-08-18 — raised from a pre-production guess of 0.5.
   //
   // The guard fired on Padres@Mets: recent_form_l3_diff at 45% of a total

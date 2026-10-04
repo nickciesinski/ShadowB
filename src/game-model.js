@@ -351,7 +351,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   }
 
   // 2026-08-10 — dominance guard. Fires when a single feature accounts for
-  // >=40% of total absolute contribution, which is what 08-09 looked like
+  // >=60% of total absolute contribution (40% until 2026-10-04), which is what 08-09 looked like
   // (offense_rs_diff at 89%). Probed once per run rather than per game: the
   // condition is a property of the feature set, not of one matchup, and a
   // probe per game would bury the signal it exists to surface.
