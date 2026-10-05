@@ -150,11 +150,27 @@ export async function GET() {
     // Supabase queries for the MAIN load only (today-through-next-week picks +
     // odds snapshot). Graded-history queries were moved to /api/results. Each
     // resolves to null on error so the Sheets fallbacks below still work.
+    // 2026-10-04: select by GAME time as well as publish date. `date` is when a
+    // pick was PUBLISHED; NFL publishes ~6 days ahead, so by game day Sunday's
+    // picks had aged out of the two-days-back window and never reached Picks,
+    // Scores or Locked on the day they were played. Paged: Supabase silently
+    // stops at 1000 rows.
+    const fromTs = new Date(Date.now() - 2 * 864e5).toISOString();
+    const toTs = new Date(Date.now() + 8 * 864e5).toISOString();
     const sbTodayQ = sb
-      ? sb.from('performance_log')
-          .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds, rule_c_eligible, pick_id')
-          .gte('date', isoTwoDaysAgo).lte('date', isoWeekAhead)
-          .then(r => (r.error ? null : r.data)).catch(() => null)
+      ? (async () => {
+          const out = [];
+          for (let from = 0; ; from += 1000) {
+            const { data, error } = await sb.from('performance_log')
+              .select('date, league, game, start_time, market, pick, line, odds, confidence, final_units, result, selection, alt_prices, calibrated_prob, best_odds, rule_c_eligible, pick_id')
+              .or(`and(start_time.gte."${fromTs}",start_time.lte."${toTs}"),and(date.gte.${isoTwoDaysAgo},date.lte.${isoWeekAhead})`)
+              .order('id', { ascending: true })
+              .range(from, from + 999);
+            if (error) return null;
+            out.push(...(data || []));
+            if (!data || data.length < 1000) return out;
+          }
+        })().catch(() => null)
       : Promise.resolve(null);
 
     const sbSnapQ = sb
@@ -181,7 +197,12 @@ export async function GET() {
     if (sbTodayRows && sbTodayRows.length > 0) {
       todayPicks = sbTodayRows.map(r => {
         const gp = (r.game || '').split(' @ ');
-        const rowIso = r.date || isoToday;
+        // The GAME's date in Pacific time — what Today/Tomorrow, Scores and the
+        // Locked tab all mean. Was the publish date (r.date).
+        const gameIso = r.start_time
+          ? new Date(r.start_time).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+          : null;
+        const rowIso = gameIso || r.date || isoToday;
         const [ry, rm2, rd2] = rowIso.split('-');
         const rowDateStr = `${parseInt(rm2)}/${parseInt(rd2)}/${ry}`;
         return {
