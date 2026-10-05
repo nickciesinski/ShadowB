@@ -15,6 +15,7 @@ const { logApiCall } = require('./monitoring');
 const { persistGameOdds } = require('./odds-sink');
 const { persistSnapshotFirst } = require('./snapshot-sink');
 const LOCK_POLICY = require('../config/lock-policy.json');
+const { nflLockHorizon } = require('./nfl-week');
 const { probe, probeKeys } = require('./debug-probe'); // 2026-08-10 diagnostics to DB, not logs
 
 // Odds API cost estimate: $0 for free tier up to 500 req/mo, then prorated.
@@ -1172,7 +1173,11 @@ async function fetchOddsAndGrade() {
       // ever see games close enough to matter. max_days_out comes from lock-policy.
       const horizonDays = (LOCK_POLICY[sportName] && LOCK_POLICY[sportName].max_days_out) || 7;
       const nowIso = new Date().toISOString().slice(0, 19) + 'Z';
-      const toIso = new Date(Date.now() + horizonDays * 864e5).toISOString().slice(0, 19) + 'Z';
+      // NFL locks by WEEK, not a rolling 7 days: the Sunday-evening run takes all
+      // of next week (Thu/Sun/Mon) before Nick's 9 PM window; other days see only
+      // the current week. See src/nfl-week.js.
+      const toMs = sportName === 'NFL' ? nflLockHorizon() : Date.now() + horizonDays * 864e5;
+      const toIso = new Date(toMs).toISOString().slice(0, 19) + 'Z';
       const params = new URLSearchParams({
         apiKey: ODDS_API_KEY,
         regions: 'us',

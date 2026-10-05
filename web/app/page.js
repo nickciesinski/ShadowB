@@ -2847,7 +2847,13 @@ export default function App() {
   }, [commitSnapshot, undoLeft]);
 
   const [propDateFilter, setPropDateFilter] = useState('Today');
-  const [picksDateFilter, setPicksDateFilter] = useState(() => (ptHour() >= 20 ? 'Tomorrow' : 'Today'));
+  // Sunday evening also opens on Week: that's when next week's whole NFL slate
+  // locks (src/nfl-week.js), and Week shows it next to tomorrow's games.
+  const [picksDateFilter, setPicksDateFilter] = useState(() => {
+    if (ptHour() < 20) return 'Today';
+    const ptDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })).getDay();
+    return ptDay === 0 ? 'This Week' : 'Tomorrow';
+  });
   // Novig order log, keyed by pick_id. Lifted to the app component because the
   // Picks-tab date filter needs to know which orders are still open — a posted
   // order has to stay visible after its date rolls over or it can never be
@@ -3115,7 +3121,8 @@ export default function App() {
   // to what the picker's asking for; each pick carries its own isoDate.
   const tmrwDateObj = new Date(); tmrwDateObj.setDate(tmrwDateObj.getDate() + 1);
   const tomorrowDateISO = tmrwDateObj.toLocaleDateString('en-CA');
-  const weekAheadDateObj = new Date(); weekAheadDateObj.setDate(weekAheadDateObj.getDate() + 7);
+  // +8, not +7: from Sunday night, next week's Monday-night game is 8 days out.
+  const weekAheadDateObj = new Date(); weekAheadDateObj.setDate(weekAheadDateObj.getDate() + 8);
   const weekAheadDateISO = weekAheadDateObj.toLocaleDateString('en-CA');
   // Locked tab: every locked bet from today on (earlier days live in Results).
   const lockedPicksForTab = (data?.todayPicks || []).filter(p => !p.isoDate || p.isoDate >= todayDateISO);

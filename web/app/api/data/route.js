@@ -156,7 +156,7 @@ export async function GET() {
     // Scores or Locked on the day they were played. Paged: Supabase silently
     // stops at 1000 rows.
     const fromTs = new Date(Date.now() - 2 * 864e5).toISOString();
-    const toTs = new Date(Date.now() + 8 * 864e5).toISOString();
+    const toTs = new Date(Date.now() + 9 * 864e5).toISOString(); // 9: Sunday-night NFL lock reaches next Monday night
     const sbTodayQ = sb
       ? (async () => {
           const out = [];
