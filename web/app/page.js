@@ -154,6 +154,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .clockbar{grid-column:5;height:4px;border-radius:2px;background:#191d22;position:relative;overflow:hidden}
     .clockbar b{position:absolute;inset:0 auto 0 0;background:var(--line2);transition:width .6s ease}
     .r.locked .tri{display:none}
+    .desel{margin-left:auto;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--take);font:500 9px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px 8px}
     .unl{margin-left:6px;flex:none;background:none;border:1px solid var(--line2);border-radius:3px;color:var(--dim2);font:500 11px/1 var(--mono);padding:3px 6px}
     .tapebar{display:flex;height:6px;border-bottom:1px solid var(--line)}
     .tapebar i{display:block;height:100%}
@@ -1173,7 +1174,23 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
           <span><u>–</u><i>Pass</i></span>
           <span><u className="on">✓</u><i>Take</i></span>
           <span><u className="onf">F</u><i>Fade the model</i></span>
-          <span style={{ marginLeft: 'auto' }}><i>Tick = tier</i></span>
+          {/* 2026-10-04: reset the day's selections before locking. Every pick starts
+              on ✓, so "deselect" = set the visible unlocked picks to pass; when
+              they're all passed it flips to "Select all" (back to the default ✓).
+              Locked bets are never in `visible`, so they're never touched. */}
+          {visible.length > 0 && (() => {
+            const allPassed = visible.every(p => effState(p) === 'pass');
+            return (
+              <button className="desel" onClick={() => setMyBets(prev => {
+                const next = new Map(prev);
+                for (const p of visible) {
+                  if (allPassed) next.delete(pickKey(p));
+                  else next.set(pickKey(p), 'pass');
+                }
+                return next;
+              })}>{allPassed ? 'Select all' : 'Deselect all'}</button>
+            );
+          })()}
         </div>
       )}
       {/* The –/✓/F legend above doesn't describe a soccer moneyline, whose control
