@@ -3157,12 +3157,13 @@ export default function App() {
   // may get a way back in later). The tab/route and SettingsTab component are
   // still here, just unreachable from the tab bar.
   const tabs = [
+    // Order follows Nick's flow: new picks → bets placed → follow the games.
     { id: 'picks', label: 'Picks', icon: '/icons/sonic.png' },
-    { id: 'scores', label: 'Scores', icon: '/icons/shadow.png' },
-    // Props hidden 2026-10-03 (Nick): a separate, older pipeline the model doesn't use,
-    // and the busiest screen in the app. PropsTab is kept — add this line back to restore.
     // Locked (2026-10-04): bets already placed, so Picks only shows what's new.
     { id: 'locked', label: 'Locked', icon: '/icons/knuckles.png' },
+    { id: 'scores', label: 'Scores', icon: '/icons/shadow.png' },
+    // Props hidden 2026-10-03 (Nick): a separate, older pipeline the model doesn't use,
+    // and the busiest screen in the app. PropsTab is kept — add an entry to restore.
     { id: 'results', label: 'Results', icon: '/icons/tails.png' },
   ];
 
