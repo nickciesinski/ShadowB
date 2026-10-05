@@ -746,7 +746,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, isLocked, unlockPick, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
+function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, isLocked, unlockPick, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
   const [sf, setSf] = useState('All');
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
@@ -759,6 +759,10 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
   // this is the switch for looking at the whole slate regardless.
   const [showAllOn, setShowAllOn] = useState(false);
   const [expandedGames, setExpandedGames] = useState({});
+  // 2026-10-04: the Locked tab replaces watch mode. Picks is always the build
+  // list (whatever pick_mode an older version saved); this same component in
+  // `lockedView` renders the positions, reusing the live-status rows below.
+  pickMode = 'build';
 
   const allPicks = dedup(picks);
   const evPool = (minUnitOn && !showAllOn) ? allPicks.filter(p => p.units > MIN_STAKE) : allPicks; // +EV filter
@@ -1000,15 +1004,87 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
     );
   };
 
+  // ── Locked tab ─────────────────────────────────────────────────────
+  if (lockedView) {
+    const allLocked = allPicks.filter(p => isLocked(p));
+    const mine = sf === 'All' ? allLocked : allLocked.filter(p => p.league === sf);
+    const lockedLeagues = {};
+    for (const p of allLocked) lockedLeagues[p.league] = (lockedLeagues[p.league] || 0) + 1;
+    const todayIso = new Date().toLocaleDateString('en-CA');
+    const tomorrowIso = new Date(Date.now() + 864e5).toLocaleDateString('en-CA');
+    const dayName = (iso) => !iso || iso === todayIso ? 'Today' : iso === tomorrowIso ? 'Tomorrow'
+      : new Date(`${iso}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    // date → game → picks, both in start-time order
+    const days = {};
+    for (const p of mine) {
+      const d = p.isoDate || todayIso;
+      if (!days[d]) days[d] = {};
+      const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
+      if (!days[d][k]) days[d][k] = { league: p.league, away: p.away, home: p.home, startTime: p.startTime, picks: [] };
+      days[d][k].picks.push(p);
+    }
+    const units = mine.reduce((s, p) => s + stake(p), 0);
+    return (
+      <div className="tp">
+        <div className="ah">
+          <b>Locked</b>
+          <span>{dayLabel} · {runLabel}</span>
+        </div>
+        <div className="astrip">
+          <div><span className="k">Bets</span><span className="v">{mine.length}</span></div>
+          <div><span className="k">At risk</span><span className="v">{units.toFixed(1)}<s>u</s></span></div>
+          <div><span className="k">Live P/L</span><span className={`v ${dayPL >= 0 ? 'up' : 'dn'}`}>{dayPL >= 0 ? '+' : ''}{dayPL.toFixed(2)}<s>u</s></span></div>
+        </div>
+        {Object.keys(lockedLeagues).length > 1 && (
+          <div className="aleagues">
+            <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{allLocked.length}</span></button>
+            {Object.keys(lockedLeagues).map(l => (
+              <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{lockedLeagues[l]}</span></button>
+            ))}
+          </div>
+        )}
+        {Object.keys(days).sort().map(d => {
+          const games = Object.values(days[d]).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+          const n = games.reduce((s, g) => s + g.picks.length, 0);
+          return (
+            <div key={d}>
+              <div className="consec"><span>{dayName(d)} · {n} bet{n === 1 ? '' : 's'}</span><span>{games.reduce((s, g) => s + g.picks.reduce((t, p) => t + stake(p), 0), 0).toFixed(1)}u</span></div>
+              {games.map((g, gi) => {
+                const gm = findGameForPick(liveGames, matchupGames, g.picks[0]);
+                return (
+                  <div className="agame" key={gi}>
+                    <div className="agh">
+                      <span className="lgm">{g.league}</span>
+                      <span className="duo">{teamChip(g.away, g.league, true)}{teamChip(g.home, g.league, true)}</span>
+                      <span className="tm2">{g.away.split(' ').pop()}</span>
+                      <span className="at">@</span>
+                      <span className="tm2">{g.home.split(' ').pop()}</span>
+                      <span className="tme">{cleanTime(g.startTime, false)}</span>
+                      {/* Unlock lives on the game line — the row has no width to spare
+                          on a phone. Only before the game starts. */}
+                      {(!gm || gm.status === 'pre') && (
+                        <button className="unl" onClick={() => g.picks.forEach(unlockPick)} title="Unlock this game's bets — move them back to Picks">↺ Unlock</button>
+                      )}
+                    </div>
+                    {g.picks.map((p, i) => renderWatchRow(p, i))}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        {mine.length === 0 && (
+          <div className="empty">No locked bets yet. Pick a side on Picks and press Lock.</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="tp">
       <div className="ah">
         <b>Shadow Bets</b>
-        {pickMode === 'build'
-          ? (positions.length > 0
-            ? <span className="clickable" onClick={() => setPickMode('watch')}>{dayLabel} · VIEW: WATCH ▸</span>
-            : <span>{dayLabel} · {runLabel}</span>)
-          : <span className="clickable" onClick={() => setPickMode('build')}>{lockedCount} POSITIONS · VIEW: BUILD ▸</span>}
+        <span>{dayLabel} · {runLabel}</span>
       </div>
 
       {/* 2026-10-03: date + sizing share one row (were two) so the slate starts
@@ -1150,48 +1226,11 @@ function PicksTab({ novigOrders, markNovig, picks, liveGames, myBets, setMyBets,
           <div className="empty">
             {pickMode === 'watch' ? 'No positions locked yet.'
               : allPicks.length === 0 ? 'No plays for this day.'
-              : lockedVisible.length > 0 ? 'Everything here is locked — see Bet below.'
+              : lockedVisible.length > 0 ? 'Everything here is locked — see the Locked tab.'
               : 'No picks match this filter.'}
           </div>
         )}
       </div>
-
-      {lockedVisible.length > 0 && (() => {
-        const lg = {};
-        for (const p of lockedVisible) {
-          const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
-          if (!lg[k]) lg[k] = { league: p.league, away: p.away, home: p.home, startTime: p.startTime, picks: [] };
-          lg[k].picks.push(p);
-        }
-        const lockedGames = Object.values(lg).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
-        const lockedUnits = lockedVisible.reduce((s, p) => s + stake(p), 0);
-        return (
-          <div className="betsec">
-            <div className="consec"><span>Bet · {lockedVisible.length} locked</span><span>{lockedUnits.toFixed(1)}u</span></div>
-            {lockedGames.map((g, gi) => (
-              <div className="agame" key={`b${gi}`}>
-                <div className="agh">
-                  <span className="lgm">{g.league}</span>
-                  <span className="duo">{teamChip(g.away, g.league, true)}{teamChip(g.home, g.league, true)}</span>
-                  <span className="tm2">{g.away.split(' ').pop()}</span>
-                  <span className="at">@</span>
-                  <span className="tm2">{g.home.split(' ').pop()}</span>
-                  <span className="tme">{cleanTime(g.startTime, showDate)}</span>
-                  {/* Unlock lives on the game line, not each row — on a phone the
-                      row has no width to spare. Only before the game starts. */}
-                  {(() => {
-                    const gm = findGameForPick(liveGames, matchupGames, g.picks[0]);
-                    return (!gm || gm.status === 'pre')
-                      ? <button className="unl" onClick={() => g.picks.forEach(unlockPick)} title="Unlock this game's bets — move them back to the list">↺ Unlock</button>
-                      : null;
-                  })()}
-                </div>
-                {g.picks.map((p, i) => renderWatchRow(p, i))}
-              </div>
-            ))}
-          </div>
-        );
-      })()}
     </div>
   );
 }
@@ -3063,6 +3102,9 @@ export default function App() {
   const tomorrowDateISO = tmrwDateObj.toLocaleDateString('en-CA');
   const weekAheadDateObj = new Date(); weekAheadDateObj.setDate(weekAheadDateObj.getDate() + 7);
   const weekAheadDateISO = weekAheadDateObj.toLocaleDateString('en-CA');
+  // Locked tab: every locked bet from today on (earlier days live in Results).
+  const lockedPicksForTab = (data?.todayPicks || []).filter(p => !p.isoDate || p.isoDate >= todayDateISO);
+  const lockedUpcoming = dedup(lockedPicksForTab).filter(p => isLocked(p)).length;
   const picksForTab = (data?.todayPicks || []).filter(p => {
     if (!p.isoDate) return picksDateFilter === 'Today'; // no date = assume today
     // An unsettled Novig order outlives its date. Orders are posted the night
@@ -3119,6 +3161,8 @@ export default function App() {
     { id: 'scores', label: 'Scores', icon: '/icons/shadow.png' },
     // Props hidden 2026-10-03 (Nick): a separate, older pipeline the model doesn't use,
     // and the busiest screen in the app. PropsTab is kept — add this line back to restore.
+    // Locked (2026-10-04): bets already placed, so Picks only shows what's new.
+    { id: 'locked', label: 'Locked', icon: '/icons/knuckles.png' },
     { id: 'results', label: 'Results', icon: '/icons/tails.png' },
   ];
 
@@ -3175,6 +3219,19 @@ export default function App() {
               <button className="abtn ghost" style={{ marginTop: 14 }} onClick={() => { setError(null); setLoading(true); fetchData(); }}>Retry</button>
             </div>
           </div>
+        )}
+        {data && tab === 'locked' && (
+          <PicksTab lockedView
+            picks={lockedPicksForTab} liveGames={liveGames} myBets={myBets} setMyBets={setMyBets}
+            isBet={isBet} isFade={isFade} isLocked={isLocked} unlockPick={unlockPick} toggleBet={toggleBet} setPickState={setPickState} displayPick={displayPick}
+            pickMode={pickMode} setPickMode={setPickMode}
+            novigOrders={novigOrders} markNovig={markNovig}
+            picksDateFilter={picksDateFilter} setPicksDateFilter={setPicksDateFilter}
+            showDate={false} lastUpdated={lastUpdated}
+            commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
+            undoLeft={undoLeft} commitTake={commitTake} undoCommit={undoCommit}
+            stake={stake} sizing={sizing} setSizing={setSizing} sizingPresets={SIZING_PRESETS}
+          />
         )}
         {data && tab === 'picks' && (
           <PicksTab
@@ -3238,6 +3295,7 @@ export default function App() {
             {t.id === 'scores' && closeCount > 0 && <span className="badge">{closeCount}</span>}
             {t.id === 'scores' && betCount > 0 && closeCount === 0 && <span className="badge" style={{ background: 'var(--take)', color: '#03142c' }}>{betCount}</span>}
             {t.id === 'picks' && uncommittedCount > 0 && <span className="badge">{uncommittedCount}</span>}
+            {t.id === 'locked' && lockedUpcoming > 0 && <span className="badge" style={{ background: 'var(--take)', color: '#03142c' }}>{lockedUpcoming}</span>}
           </button>
         ))}
       </div>
