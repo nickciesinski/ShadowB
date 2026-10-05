@@ -3091,8 +3091,6 @@ export default function App() {
   const liveCount = liveGames.filter(g => g.status === 'in').length;
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;
 
-  const betCount = myBets.size;
-  const fadeCount = [...myBets.values()].filter(v => entryState(v) === 'fade').length;
   // Only show leagues that have real games today (hides off-season leagues like NFL in April)
   const todayDateISO = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
   // Picks tab date picker: /api/data now returns today-through-next-week (soccer
@@ -3123,6 +3121,9 @@ export default function App() {
   // rather than the full today-through-next-week data (matching a future pick
   // to today's game by team name alone would be wrong).
   const todaysPicksOnly = (data?.todayPicks || []).filter(p => !p.isoDate || p.isoDate === todayDateISO);
+  // Scores badge: TODAY's locked bets (was every saved entry, passes and
+  // other days' bets included).
+  const betCount = dedup(todaysPicksOnly).filter(p => isBet(p) || isFade(p)).length;
   // Uncommitted count for the Picks tab badge — plays in today's slate with no
   // manual take/fade yet. Only meaningful pre-commit; watch mode means the
   // slate's already been triaged, so nothing to flag.
