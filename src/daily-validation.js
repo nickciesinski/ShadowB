@@ -184,17 +184,15 @@ async function checkModel(sb, todayISO) {
 
 // ── Layer 4: PRICE ───────────────────────────────────────────────────────────
 // Is the recorded price real, reachable, and attached to the right line?
-// Picks whose >10pt CLV was checked against the raw odds snapshots and found
-// to be a REAL market move, not a capture error. Listed by pick_id so the
-// check stays strict for everything else. Add only after checking every book.
+// 2026-10-12 — "impossible" CLV limit raised 0.10 -> 0.20.
 //
-// 2026-10-04 Braves@Dodgers, Dodgers -1.5: locked +160 at Bovada the night
-// before. On game day every book moved together (Dodgers ML -155 -> -230,
-// run line +145 -> -120 between 12:30 and 18:52 UTC), so the -111 close and
-// +12.4pt CLV are genuine.
-const VERIFIED_LARGE_CLV = new Set([
-  'evt:583202487b52f61769b2404a64e01c77:spread',
-]);
+// Every real capture bug on record (August side-flips, v2.0) was 0.22-0.31.
+// Every >0.10 since has been a genuine market move confirmed in the raw odds
+// snapshots: Dodgers -1.5 10-04 (0.124, ML -155 -> -230 on game day) and
+// Jaguars ML 10-11 (0.126, -200 -> -405 across every book over the week).
+// NFL now locks a week ahead, so 10+ point moves are expected, not errors.
+// 0.20 still sits below every known bug. Replaces a one-pick allowlist.
+const IMPOSSIBLE_CLV = 0.20;
 
 async function checkPrice(sb, sinceISO) {
   const { data, error } = await sb.from('performance_log')
@@ -218,7 +216,7 @@ async function checkPrice(sb, sinceISO) {
     if (r.market === 'spread' && l !== null && cl !== null && Math.sign(l) !== Math.sign(cl)) sideFlip++;
     if (num(r.close_lag_hours) !== null && num(r.close_lag_hours) < 0) negLag++;
     const clv = num(r.clv_prob_delta);
-    if (clv !== null && Math.abs(clv) > 0.10 && !VERIFIED_LARGE_CLV.has(r.pick_id)) impossible++;
+    if (clv !== null && Math.abs(clv) > IMPOSSIBLE_CLV) impossible++;
     if (!r.placed_book) nullBook++;
     if (r.placed_book) books[r.placed_book] = (books[r.placed_book] || 0) + 1;
   }
