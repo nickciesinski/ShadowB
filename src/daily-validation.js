@@ -193,10 +193,18 @@ async function checkModel(sb, todayISO) {
 // NFL now locks a week ahead, so 10+ point moves are expected, not errors.
 // 0.20 still sits below every known bug. Replaces a one-pick allowlist.
 const IMPOSSIBLE_CLV = 0.20;
+// 2026-10-13 — picks locked well before kickoff are REPORTED, not failed.
+// Ravens ML 10-11: locked -192 a week out, then every book flipped them to
+// +150 on 10-06 (injury news) — a real 0.26 move, inside the 0.22-0.31 range
+// of the August bugs, so no single limit separates the two. What does: every
+// August bug was a same-day pick (8-18h lead). A week of news can genuinely
+// swing a line that far; one day of quotes cannot. Long-lead moves still show
+// up in large_clv_long_lead so a rising count stays visible.
+const LONG_LEAD_HOURS = 48;
 
 async function checkPrice(sb, sinceISO) {
   const { data, error } = await sb.from('performance_log')
-    .select('pick_id, market, line, close_line, odds, close_odds, placed_book, close_lag_hours, clv_prob_delta, clv_basis, status, graded_at, model_version, commence_time')
+    .select('pick_id, market, line, close_line, odds, close_odds, placed_book, close_lag_hours, clv_prob_delta, clv_basis, status, graded_at, model_version, commence_time, locked_at')
     .eq('pick_regime', 'v2_clv').gte('game_date', sinceISO);
   if (error) return { pass: false, error: error.message };
 
@@ -209,14 +217,19 @@ async function checkPrice(sb, sinceISO) {
   // backlog) still spans the full window, since those apply to every row
   // regardless of which model produced it.
   const rows = all.filter((r) => String(r.model_version || '').startsWith(BASELINE_VERSION_PREFIX));
-  let sideFlip = 0, negLag = 0, impossible = 0, nullBook = 0;
+  let sideFlip = 0, negLag = 0, impossible = 0, nullBook = 0, largeLongLead = 0;
   const books = {};
   for (const r of rows) {
     const l = num(r.line), cl = num(r.close_line);
     if (r.market === 'spread' && l !== null && cl !== null && Math.sign(l) !== Math.sign(cl)) sideFlip++;
     if (num(r.close_lag_hours) !== null && num(r.close_lag_hours) < 0) negLag++;
     const clv = num(r.clv_prob_delta);
-    if (clv !== null && Math.abs(clv) > IMPOSSIBLE_CLV) impossible++;
+    if (clv !== null && Math.abs(clv) > IMPOSSIBLE_CLV) {
+      const leadH = (r.locked_at && r.commence_time)
+        ? (new Date(r.commence_time).getTime() - new Date(r.locked_at).getTime()) / 3.6e6 : null;
+      if (Number.isFinite(leadH) && leadH >= LONG_LEAD_HOURS) largeLongLead++;
+      else impossible++;
+    }
     if (!r.placed_book) nullBook++;
     if (r.placed_book) books[r.placed_book] = (books[r.placed_book] || 0) + 1;
   }
@@ -263,7 +276,7 @@ async function checkPrice(sb, sinceISO) {
     pass: sideFlip === 0 && negLag === 0 && impossible === 0,
     baseline_n: rows.length, window_n: all.length,
     spread_side_flip: sideFlip, negative_lag: negLag,
-    impossible_clv: impossible, null_placed_book: nullBook,
+    impossible_clv: impossible, large_clv_long_lead: largeLongLead, null_placed_book: nullBook,
     unreachable_books: unreachable,
     ungraded_past_close: ungraded,
     median_close_lag_h: lags.length ? round(lags.sort((a, b) => a - b)[Math.floor(lags.length / 2)], 2) : null,
