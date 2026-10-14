@@ -1376,8 +1376,14 @@ async function fetchInjuryReports() {
           const status = (inj.status || inj.type?.description || '').toLowerCase();
           const position = athlete.position?.abbreviation || '';
 
+          // ESPN's team entry is { id, displayName, injuries } — no abbreviation.
+          // The abbreviation lives on each athlete. Reading only the team entry
+          // left Team blank on every row, so injury-impact.js skipped them all
+          // and every injury feature read 0 in every league (found 2026-10-13).
+          const rowAbbr = teamAbbr || athlete.team?.abbreviation || '';
+
           // Skip healthy/active players
-          if (!playerName || status === 'active' || status === 'healthy') continue;
+          if (!playerName || !rowAbbr || status === 'active' || status === 'healthy') continue;
 
           // Map ESPN status to our severity scale
           let impact = 0.3; // default moderate
@@ -1386,7 +1392,7 @@ async function fetchInjuryReports() {
           else if (status.includes('questionable')) impact = 0.5;
           else if (status.includes('probable') || status.includes('day-to-day')) impact = 0.2;
 
-          allRows.push([ts, label, teamAbbr, playerName, status, position, impact]);
+          allRows.push([ts, label, rowAbbr, playerName, status, position, impact]);
         }
       }
 
