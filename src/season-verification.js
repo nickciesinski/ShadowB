@@ -87,11 +87,18 @@ async function runSeasonStartChecks(now = new Date()) {
     // if pace/defRating are still null for most teams, the fallbacks failed
     // and the largest NBA total weight is running on zeros again.
     try {
-      const { rate, teams } = await teamStatsFillRate(SHEETS.NBA_TEAM_STATS, [8, 9]);
+      // 2026-10-16 — defRating only. ESPN's NBA team statistics have no pace
+      // field at all (verified live: only FGA/FTA/OREB/TOV etc.), so pace is
+      // blank for 30/30 teams and requiring it made this fail every day of
+      // the window. Pace is a model decision (it would activate untested total
+      // weights), not a collection bug, so it is reported here, not failed.
+      const { rate, teams } = await teamStatsFillRate(SHEETS.NBA_TEAM_STATS, [8]);
+      const pace = await teamStatsFillRate(SHEETS.NBA_TEAM_STATS, [9]);
       results.push({
-        league: 'NBA', check: 'pace/defRating fill (7/7 fix verification)',
+        league: 'NBA', check: 'defRating fill (7/7 fix verification)',
         ok: rate >= 0.5,
-        detail: `${(rate * 100).toFixed(0)}% of ${teams} teams have defRating+pace populated${rate < 0.5 ? ' — check trigger2 one-time diagnostic log for real ESPN stat keys' : ''}`,
+        detail: `${(rate * 100).toFixed(0)}% of ${teams} teams have defRating populated `
+          + `(pace ${(pace.rate * 100).toFixed(0)}% — ESPN publishes no pace stat)`,
       });
     } catch (err) {
       results.push({ league: 'NBA', check: 'pace/defRating fill', ok: false, detail: `check errored: ${err.message}` });
