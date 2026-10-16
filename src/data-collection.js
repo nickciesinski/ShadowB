@@ -257,6 +257,8 @@ async function updateTeamStats() {
     // efficiency and turnovers, all of which carried weight but were never
     // collected. Sparse by design: MLB fills 22-24, NFL fills 25-32.
     'OPS', 'BattingAvg', 'WHIP', 'YardsPerGame', 'OppYardsPerGame', 'PassYardsPerGame', 'RushYardsPerGame', 'ThirdDownPct', 'RedZonePct', 'Takeaways', 'Giveaways',
+    // 2026-10-16 — index 33. NBA estimated possessions per game (candidate).
+    'PaceEst',
   ];
   const allRows = [HEADER];
   const ts = new Date().toISOString();
@@ -292,7 +294,7 @@ async function updateTeamStats() {
           pointsFor: '', pointsAgainst: '',
           recentFormPct: '', last10W: '', last10L: '',
           formL1: '', formL3: '', formL5: '',
-          ops: '', battingAvg: '', whip: '', yardsPerGame: '', oppYardsPerGame: '', passYardsPerGame: '', rushYardsPerGame: '', thirdDownPct: '', redZonePct: '', takeaways: '', giveaways: '',
+          ops: '', battingAvg: '', whip: '', yardsPerGame: '', oppYardsPerGame: '', passYardsPerGame: '', rushYardsPerGame: '', thirdDownPct: '', redZonePct: '', takeaways: '', giveaways: '', paceEst: '',
         };
       }
 
@@ -316,6 +318,7 @@ async function updateTeamStats() {
           // reader indexes 0-18 and is unaffected.
           t.formL1, t.formL3, t.formL5,
           t.ops, t.battingAvg, t.whip, t.yardsPerGame, t.oppYardsPerGame, t.passYardsPerGame, t.rushYardsPerGame, t.thirdDownPct, t.redZonePct, t.takeaways, t.giveaways,
+          t.paceEst,
         ]);
       }
 
@@ -445,6 +448,17 @@ async function enrichTeamStats(league, espn, teamMap) {
  * candidates still miss, it stays 0 (paceAdjustment() already guards this
  * safely -- no crash, just no signal, same as today).
  */
+/** Estimated NBA possessions per game, or '' if a stat is missing or the
+ *  result is implausible (real teams sit roughly 92-104). */
+function nbaPaceEstimate(stats) {
+  const g = (k) => parseFloat(stats['offensive.' + k] ?? stats[k]);
+  const fga = g('avgFieldGoalsAttempted'), fta = g('avgFreeThrowsAttempted');
+  const oreb = g('avgOffensiveRebounds'), tov = g('avgTurnovers');
+  if (![fga, fta, oreb, tov].every(Number.isFinite)) return '';
+  const est = fga + 0.44 * fta - oreb + tov;
+  return est >= 85 && est <= 115 ? Number(est.toFixed(2)) : '';
+}
+
 let _nbaStatKeysLogged = false;
 async function enrichNBA(espn, teamMap) {
   // The scoreboard gives us today's schedule; for ratings we hit each team
@@ -473,6 +487,13 @@ async function enrichNBA(espn, teamMap) {
       teamMap[abbr].pointsFor = pointsFor;
       teamMap[abbr].pointsAgainst = pointsAgainst;
       teamMap[abbr]._explicitRatings = !!(stats['offensiveRating'] || stats['offRtg']);
+      // 2026-10-16 — ESPN publishes no pace stat (verified live), so `pace`
+      // above stays blank. Estimate possessions per game from the box-score
+      // averages it does publish: FGA + 0.44*FTA - OREB + TOV (the standard
+      // estimate). Stored as paceEst, a SEPARATE field that nothing in the
+      // live model reads, so it feeds only the weight-0 candidate feature
+      // nba_pace_est and moves no pick until it is measured.
+      teamMap[abbr].paceEst = nbaPaceEstimate(stats);
     } catch (err) {
       // Skip individual team failures silently
     }
@@ -1422,6 +1443,7 @@ async function fetchInjuryReports() {
 }
 
 module.exports = {
+  nbaPaceEstimate,
   updatePlayerStats,
   updateTeamStats,
   updateScheduleContext,

@@ -58,7 +58,8 @@
     "nba_rest_days_diff": 0,
     "nba_b2b_diff": 0,
     "nba_density_diff": 0,
-    "nba_travel_miles_diff": 0
+    "nba_travel_miles_diff": 0,
+    "nba_pace_est": 0
   },
   "spread": {
     "nba_pace_adj_net": 0,
@@ -96,7 +97,8 @@
     "nba_rest_days_diff": 0,
     "nba_b2b_diff": 0,
     "nba_density_diff": 0,
-    "nba_travel_miles_diff": 0
+    "nba_travel_miles_diff": 0,
+    "nba_pace_est": 0
   },
   "total": {
     "nba_pace_adj_net": 0,
@@ -123,6 +125,7 @@
     "nba_rest_days_diff": 0,
     "nba_b2b_diff": 0,
     "nba_density_diff": 0,
-    "nba_travel_miles_diff": 0
+    "nba_travel_miles_diff": 0,
+    "nba_pace_est": 0
   }
 }

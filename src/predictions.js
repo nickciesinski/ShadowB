@@ -533,7 +533,7 @@ async function generateMLBPredictions() {
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
         ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
         oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
-        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '', paceEst: row[33] || '',
       };
   }
 
@@ -630,7 +630,7 @@ async function generateNBAPredictions() {
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
         ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
         oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
-        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '', paceEst: row[33] || '',
       };
   }
 
@@ -696,7 +696,7 @@ async function generateNHLPredictions() {
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
         ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
         oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
-        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '', paceEst: row[33] || '',
       };
   }
 
@@ -773,7 +773,7 @@ async function generateNFLPredictions() {
         formL1: row[19] || '', formL3: row[20] || '', formL5: row[21] || '',
         ops: row[22] || '', battingAvg: row[23] || '', whip: row[24] || '', yardsPerGame: row[25] || '',
         oppYardsPerGame: row[26] || '', passYardsPerGame: row[27] || '', rushYardsPerGame: row[28] || '', thirdDownPct: row[29] || '',
-        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '',
+        redZonePct: row[30] || '', takeaways: row[31] || '', giveaways: row[32] || '', paceEst: row[33] || '',
       };
   }
 

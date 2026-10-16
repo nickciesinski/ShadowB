@@ -240,6 +240,18 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
     const hPaceAdj = (hOff - hDef) * (hPaceR / 100);
     const aPaceAdj = (aOff - aDef) * (aPaceR / 100);
     f.nba_pace_adj_net = (hPaceAdj - aPaceAdj) / norm.rating;
+
+    // CANDIDATE (weight 0, stakes nothing). 2026-10-16. ESPN has no pace stat,
+    // so h.pace is always blank and every pace term above runs on its neutral
+    // default. paceEst is estimated possessions per game (data-collection.js
+    // nbaPaceEstimate). Average of the two teams, centred on 98 and scaled so
+    // 5 possessions = 1 unit, clamped to +/-3. Positive = a faster game,
+    // which should matter for the total. Measured before it is trusted.
+    const hEst = parseFloat(h.paceEst);
+    const aEst = parseFloat(a.paceEst);
+    if (Number.isFinite(hEst) && Number.isFinite(aEst)) {
+      f.nba_pace_est = Math.max(-3, Math.min(3, ((hEst + aEst) / 2 - 98) / 5));
+    }
   } else {
     f.nba_pace_adj_net = 0;
   }
