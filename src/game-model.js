@@ -56,6 +56,7 @@ const { fetchMatchupContext } = require('./mlb-matchup');
 const { fetchTravelContext } = require('./travel-context');
 const { fetchNflContext } = require('./nfl-context');
 const { fetchNflInjuries } = require('./nfl-injuries');
+const { fetchNflForm } = require('./nfl-form');
 // Season gating reuses the EXISTING src/season-windows.js rather than a second
 // implementation — it already reads config/season-windows.json, which also
 // carries EPL for the soccer system.
@@ -1122,6 +1123,10 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     if (league === 'NFL') {
       try { ctx.nflCtx = await fetchNflContext(gameDate); }
       catch (err) { console.warn(`[game-model] ${gameDate} NFL context failed:`, err.message); }
+      try {
+        ctx.nflForm = await fetchNflForm(gameDate);
+        console.log(`[game-model] NFL ${gameDate} form: ${ctx.nflForm.size} teams`);
+      } catch (err) { console.warn(`[game-model] ${gameDate} NFL form failed:`, err.message); }
       if (!nflInjuriesTried) {
         nflInjuriesTried = true;
         try {

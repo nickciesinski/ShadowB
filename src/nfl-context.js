@@ -12,6 +12,7 @@
 // is meaningless here — "last 7 days" is one game, and this season is a week
 // old. Form windows are deliberately NOT ported from src/form-windows.js; they
 // would be a noisier copy of the season stats the model already has.
+// (2026-10-20: by week 7 that no longer holds — see src/nfl-form.js.)
 //
 // WHY A COORDINATE TABLE. ESPN exposes NFL venues as city/state only, with no
 // latitude or longitude (verified 2026-09-11), unlike MLB's StatsAPI which

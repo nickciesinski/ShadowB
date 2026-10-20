@@ -75,7 +75,12 @@
     "nfl_skill_out_diff": 0,
     "nfl_oline_out_diff": 0,
     "nfl_secondary_out_diff": 0,
-    "nfl_frontseven_out_diff": 0
+    "nfl_frontseven_out_diff": 0,
+    "nfl_margin_l3_diff": 0,
+    "nfl_pf_l3_diff": 0,
+    "nfl_pa_l3_diff": 0,
+    "nfl_margin_l3_surge_diff": 0,
+    "nfl_game_pts_l3_surge": 0
   },
   "spread": {
     "nfl_points_margin": 0,
@@ -125,7 +130,12 @@
     "nfl_skill_out_diff": 0,
     "nfl_oline_out_diff": 0,
     "nfl_secondary_out_diff": 0,
-    "nfl_frontseven_out_diff": 0
+    "nfl_frontseven_out_diff": 0,
+    "nfl_margin_l3_diff": 0,
+    "nfl_pf_l3_diff": 0,
+    "nfl_pa_l3_diff": 0,
+    "nfl_margin_l3_surge_diff": 0,
+    "nfl_game_pts_l3_surge": 0
   },
   "total": {
     "nfl_points_margin": 0,
@@ -161,6 +171,11 @@
     "nfl_skill_out_diff": 0,
     "nfl_oline_out_diff": 0,
     "nfl_secondary_out_diff": 0,
-    "nfl_frontseven_out_diff": 0
+    "nfl_frontseven_out_diff": 0,
+    "nfl_margin_l3_diff": 0,
+    "nfl_pf_l3_diff": 0,
+    "nfl_pa_l3_diff": 0,
+    "nfl_margin_l3_surge_diff": 0,
+    "nfl_game_pts_l3_surge": 0
   }
 }

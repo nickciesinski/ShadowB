@@ -6,6 +6,7 @@ const { buildMatchupFeatures } = require('./mlb-matchup');
 const { buildTravelFeatures } = require('./travel-context');
 const { buildNflFeatures } = require('./nfl-context');
 const { buildInjuryFeatures } = require('./nfl-injuries');
+const { buildNflFormFeatures } = require('./nfl-form');
 const { buildArenaFeatures } = require('./arena-context');
 const { getTeamInjuryScore } = require('./injury-impact');
 // =============================================================
@@ -484,6 +485,13 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   // See src/nfl-injuries.js.
   if (league === 'NFL' && ctx.nflInjuries && ctx.homeTeam && ctx.awayTeam) {
     Object.assign(f, buildInjuryFeatures(ctx.nflInjuries, ctx.homeTeam, ctx.awayTeam));
+  }
+
+  // CANDIDATES (weight 0), NFL: short-window form from game scores (last 3
+  // games, and last 3 minus season). The recent_form_* keys above are season
+  // win-pct for NFL, not real windows. See src/nfl-form.js.
+  if (league === 'NFL' && ctx.nflForm && ctx.homeTeam && ctx.awayTeam) {
+    Object.assign(f, buildNflFormFeatures(ctx.nflForm, ctx.homeTeam, ctx.awayTeam));
   }
 
   // CANDIDATES (weight 0), NBA/NHL: schedule density, travel and body clock.
