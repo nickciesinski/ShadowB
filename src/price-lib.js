@@ -65,4 +65,19 @@ function selectGradedPrice(approvalStatus, medianOdds, bestOdds) {
   return medianOdds;
 }
 
-module.exports = { bestAmericanPrice, medianAmericanPrice, priceStats, selectGradedPrice };
+// 2026-10-21 — ported from ShadowB-Soccer (epl-v1.1.1). A spread/total MAIN
+// line is priced near a coin flip by design (MLB/NHL run/puck lines reach about
+// -280/+235). A single book quoting the main line outside 10-90% is a stale or
+// junk quote, not a price; on the soccer side one such quote logged a level
+// handicap at +2755 and "won" 13.8 units. buildGameObjects drops these quotes
+// before taking Bovada/median/best, so one bad book can't set the price.
+const MAIN_LINE_MIN_PROB = 0.10;
+const MAIN_LINE_MAX_PROB = 0.90;
+function isPlausibleMainLinePrice(price) {
+  const v = parseFloat(price);
+  if (!Number.isFinite(v) || Math.abs(v) < 100) return false; // same rule as isValidAmericanOdds
+  const p = v > 0 ? 100 / (v + 100) : -v / (-v + 100);
+  return p >= MAIN_LINE_MIN_PROB && p <= MAIN_LINE_MAX_PROB;
+}
+
+module.exports = { bestAmericanPrice, medianAmericanPrice, priceStats, selectGradedPrice, isPlausibleMainLinePrice };

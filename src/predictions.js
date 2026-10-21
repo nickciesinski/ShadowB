@@ -19,7 +19,7 @@ const dataStore = require('./data-store');
 const { parseWeightRows, sheetForLeague, readWeights } = require('./weights');
 const { generateAllPicks } = require('./game-model');
 const { americanToImpliedProb, roundUnits } = require('./market-pricing');
-const { priceStats, selectGradedPrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
+const { priceStats, selectGradedPrice, isPlausibleMainLinePrice } = require('./price-lib'); // R2.1 line-shopping (best vs median)
 const BOOKS = require('../config/books.json'); // 2026-08-08 books we can actually bet at
 
 const USABLE_BOOKS = new Set((BOOKS.usable || []).map((b) => String(b).toLowerCase()));
@@ -54,7 +54,7 @@ const paramStore = require('./param-store');
 // 2026-10-01 — v2.3.4: NHL early-season blending + goalie presumed starters.
 // 2026-10-01 — v2.3.5: NBA standings (records, points allowed, early-season blend), Clippers alias, schedule lookup by normalized name.
 // 2026-10-02 — v2.3.6: a missing stat on either side means no gap (not a 0-vs-real gap); NHL 0-GP = league average.
-const MODEL_VERSION = 'v2.3.6-2026-10-02';
+const MODEL_VERSION = 'v2.3.7-2026-10-21';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {
@@ -338,6 +338,17 @@ function buildGameObjects(oddsRows, sportFilter) {
               for (const e of g.entries) nearEntries.push(e);
             }
           }
+          // 2026-10-21: drop implausible main-line quotes (see price-lib.js).
+          // If every quote fails, keep them all and warn — never drop a pick.
+          const plausibleNear = nearEntries.filter((e) => isPlausibleMainLinePrice(e.price));
+          if (plausibleNear.length < nearEntries.length) {
+            console.warn(`[buildGameObjects] ${market}|${outcome} @ ${chosenPoint}: dropped ${nearEntries.length - plausibleNear.length} implausible quote(s): ${nearEntries.filter((e) => !isPlausibleMainLinePrice(e.price)).map((e) => `${e.bookmaker}:${e.price}`).join(',')}`);
+          }
+          if (plausibleNear.length) {
+            nearEntries.length = 0;
+            nearEntries.push(...plausibleNear);
+          }
+          if (chosenPrice !== null && plausibleNear.length && !isPlausibleMainLinePrice(chosenPrice)) chosenPrice = null; // use the median instead
           const nearPrices = nearEntries.map((e) => e.price).sort((a, b) => a - b);
           const medianPrice = chosenPrice !== null ? chosenPrice : nearPrices[Math.floor(nearPrices.length / 2)];
           // R2.1: best-available price across books (additive — does not change

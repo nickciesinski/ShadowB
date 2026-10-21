@@ -68,3 +68,19 @@ test('selectGradedPrice: unknown/missing approval status defaults to median (saf
   assert.strictEqual(selectGradedPrice(undefined, -110, 120), -110);
   assert.strictEqual(selectGradedPrice('', -110, 120), -110);
 });
+
+// 2026-10-21 — ported from ShadowB-Soccer: implausible main-line quotes.
+const { isPlausibleMainLinePrice } = require('../src/price-lib');
+
+test('isPlausibleMainLinePrice keeps real spread/total prices', () => {
+  for (const p of [-110, -105, 100, -120, 105, -280, 235, -235, 189, '-115']) {
+    assert.strictEqual(isPlausibleMainLinePrice(p), true, `${p} should pass`);
+  }
+});
+
+test('isPlausibleMainLinePrice rejects junk and impossible main-line quotes', () => {
+  // +2755 is the soccer level-handicap price that started this.
+  for (const p of [2755, 1460, 3825, -3000, -1, 0, 50, NaN, '', null, undefined]) {
+    assert.strictEqual(isPlausibleMainLinePrice(p), false, `${p} should fail`);
+  }
+});
