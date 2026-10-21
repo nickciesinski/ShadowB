@@ -68,7 +68,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .arule-top .lb{font:500 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--dim2)}
     .arule-top .rs{font:500 11px/1 var(--mono);color:var(--dim)}
     .arule-top .rs b{color:var(--take);font-weight:600}
-    .arule-act{display:grid;grid-template-columns:1fr auto auto auto;gap:6px}
+    .arule-act{display:grid;grid-template-columns:1fr 1fr auto auto auto;gap:6px}
     .arule-act .abtn.ghost{padding:0 8px;font-size:10px;letter-spacing:.05em}
     .abtn{height:38px;border-radius:4px;border:1px solid rgba(76,154,255,.45);background:rgba(76,154,255,.14);color:#bcd9ff;font:600 12px/1 var(--body);letter-spacing:.09em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:8px}
     .abtn.solid{background:var(--take);border-color:var(--take);color:#03142c}
@@ -803,6 +803,39 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
 
   const commitTake = () => commitTakeApp(commitList);
 
+  // 2026-10-20 TEMPORARY "Test" selection. For each game where the model's
+  // moneyline and spread pick the SAME team, select just one of them — the
+  // spread for NBA/NFL/soccer, the moneyline for every other sport — and pass
+  // everything else. Games where ML and spread disagree are skipped. Confidence
+  // is ignored, so the +EV and Novig filters are switched off to keep every
+  // selected pick in the Lock pool. Only touches selections; Lock still commits.
+  const selectTest = () => {
+    const scope = (sf === 'All' ? allPicks : allPicks.filter(p => p.league === sf)).filter(p => !isLocked(p));
+    const byGame = {};
+    for (const p of scope) {
+      const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
+      (byGame[k] = byGame[k] || []).push(p);
+    }
+    const chosen = new Set();
+    for (const ps of Object.values(byGame)) {
+      const ml = ps.find(p => (p.betType || p.market || '').toLowerCase() === 'moneyline');
+      const spr = ps.find(p => (p.betType || p.market || '').toLowerCase() === 'spread');
+      if (!ml || !spr || !ml.pick || (ml.pick || '').toLowerCase() !== (spr.pick || '').toLowerCase()) continue;
+      const useSpread = ml.league === 'NBA' || ml.league === 'NFL' || isSoccer(ml.league);
+      chosen.add(pickKey(useSpread ? spr : ml));
+    }
+    setMinUnitOn(false);
+    setNovigOnly(false);
+    setMyBets(prev => {
+      const next = new Map(prev);
+      for (const p of scope) {
+        if (chosen.has(pickKey(p))) next.delete(pickKey(p));
+        else next.set(pickKey(p), 'pass');
+      }
+      return next;
+    });
+  };
+
   // ── Watch mode: derive positions, live P/L, tape-bar proportions ──────
   const positions = pool.filter(p => isBet(p) || isFade(p));
   const matchupGames = buildMatchupGames(liveGames);
@@ -1131,6 +1164,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
             <button className="abtn solid" disabled={commitCount === 0} onClick={commitTake} title="Lock the selected side on these picks and move them to Bet">
               {`Lock ${commitCount} · ${commitUnits.toFixed(1)}u`}
             </button>
+            <button className="abtn" onClick={selectTest} title="Temporary: select one pick per game where ML and spread agree (spread for NBA/NFL/soccer, ML otherwise)">Test</button>
             <button className={`abtn ghost${minUnitOn ? ' on' : ''}`} onClick={() => setMinUnitOn(v => !v)} title="Only picks whose calibrated probability beats the price">+EV</button>
             <button className={`abtn ghost${showAllOn ? ' on' : ''}`} onClick={() => setShowAllOn(v => !v)} title="Show every pick, including those with no edge over the price">Show all</button>
             <button className={`abtn ghost${novigOnly ? ' on' : ''}`} onClick={() => setNovigOnly(v => !v)} title="Only picks with a Novig posting price — the list to work down when placing maker orders">Novig</button>
