@@ -79,7 +79,7 @@ export async function GET() {
     // stat was computed on an arbitrary slice. Page through until a short page.
     const sbGradedQ = sb
       ? pageAll(() => sb.from('performance_log')
-          .select('id, date, league, game, market, pick, line, odds, confidence, final_units, result')
+          .select('id, date, league, game, start_time, market, pick, line, odds, confidence, final_units, result')
           .in('result', ['W', 'L', 'P'])
           .order('date', { ascending: false })
           .order('id', { ascending: false })).catch(() => null)
@@ -100,13 +100,21 @@ export async function GET() {
     if (sbGradedRows && sbGradedRows.length > 0) {
       gradedPicks = sbGradedRows.map(r => {
         const gameParts = (r.game || '').split(' @ ');
-        let dateStr = r.date || '';
+        // 2026-10-24: group by the GAME's day (Pacific), as Picks/Locked do —
+        // `date` is when the pick was published, often a day or two earlier
+        // (NBA, NFL), which put results under the wrong day and broke the
+        // Today/Yesterday filters. `isoDate` also lets Mine find bets locked
+        // under the app's date-stamped keys.
+        const isoDate = r.start_time
+          ? new Date(r.start_time).toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+          : null;
+        let dateStr = isoDate || r.date || '';
         if (dateStr.includes('-')) {
           const [y, m, d] = dateStr.split('-');
           dateStr = `${parseInt(m)}/${parseInt(d)}/${y}`;
         }
         return {
-          date: dateStr, league: r.league || '', market: r.market || '',
+          date: dateStr, isoDate, league: r.league || '', market: r.market || '',
           away: gameParts[0] || '', home: gameParts[1] || '',
           betType: r.market || '', pick: r.pick || '',
           line: r.line != null ? String(r.line) : '',

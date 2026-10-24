@@ -92,7 +92,8 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .aleagues.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .aleagues.scroll::-webkit-scrollbar{display:none}
     .aleagues.scroll button{flex:0 0 auto;min-width:62px;padding:9px 12px 8px}
-    .aleagues.scroll button:last-child{position:sticky;right:0;flex:0 0 42px;min-width:42px;background:var(--bg);border-left:1px solid var(--line);border-right:0;justify-content:center}
+    .aleagues.scroll button:last-child{border-right:0}
+    .aleagues.scroll button.sort{position:sticky;right:0;flex:0 0 42px;min-width:42px;background:var(--bg);border-left:1px solid var(--line);border-right:0;justify-content:center}
     .agame{border-bottom:1px solid var(--line)}
     .agh{display:flex;align-items:center;gap:8px;padding:8px 14px 7px;background:#0c0e11}
     .agh .lgm{font:600 9px/1 var(--mono);letter-spacing:.1em;color:var(--dim2);width:26px;flex-shrink:0}
@@ -321,8 +322,23 @@ const fmt = (odds) => (odds > 0 ? `+${odds}` : `${odds}`);
 const confColor = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? '#34D399' : n >= 6 ? '#F59E0B' : '#64748B'; };
 const confBg = (c) => { const n = parseFloat(c) || 0; return n >= 8 ? 'rgba(16,185,129,0.15)' : n >= 6 ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.08)'; };
 
+// 2026-10-24: one spelling per team. The odds feed (and so every pick) says
+// "Los Angeles Clippers" and "Montréal Canadiens"; ESPN says "LA Clippers" and
+// "Montreal Canadiens". Exact-name matching meant a Clippers pick never found
+// its game — no live score on Scores or Locked, no logo. Compare through this.
+const TEAM_ALIASES = { 'la clippers': 'los angeles clippers' };
+function teamId(name) {
+  const n = (name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+  return TEAM_ALIASES[n] || n;
+}
+const sameTeam = (a, b) => teamId(a) === teamId(b);
+// Same league and same two teams, whichever feed spelled the names.
+const pickInGame = (p, g) => p.league === g.league && sameTeam(p.away, g.away) && sameTeam(p.home, g.home);
+const TEAM_CODES_BY_ID = Object.fromEntries(Object.entries(TEAM_CODES).map(([k, v]) => [teamId(k), v]));
+
 function teamLogo(teamName, league) {
-  const code = TEAM_CODES[teamName];
+  const code = TEAM_CODES[teamName] || TEAM_CODES_BY_ID[teamId(teamName)];
   if (!code) return null;
   const sport = { NBA: 'nba', NHL: 'nhl', MLB: 'mlb', NFL: 'nfl', EPL: 'soccer' }[league] || 'nba';
   return `https://a.espncdn.com/i/teamlogos/${sport}/500/${code}.png`;
@@ -354,13 +370,25 @@ function dedup(picks) {
   const seen = {};
   const result = [];
   for (const p of picks) {
-    const key = `${p.away}|${p.home}|${(p.betType || p.market || '').toLowerCase()}|${p.pick}|${p.line}`;
+    // Game date in the key: the Week view can hold the same matchup twice.
+    const key = `${p.away}|${p.home}|${(p.betType || p.market || '').toLowerCase()}|${p.pick}|${p.line}|${p.isoDate || ''}`;
     if (!seen[key]) {
       seen[key] = true;
       result.push(p);
     }
   }
   return result;
+}
+
+// Is this pick on the home team? Exact team match first (either feed's
+// spelling, any trailing line stripped), then the old substring test.
+function pickedHomeSide(pick, game) {
+  const t = teamId((pick.pick || '').replace(/\s*[+-]?\d+(\.\d+)?\s*$/, ''));
+  if (t && t === teamId(game.home)) return true;
+  if (t && t === teamId(game.away)) return false;
+  const pickTeam = (pick.pick || '').toLowerCase();
+  const home = (game.home || '').toLowerCase();
+  return !!pickTeam && !!home && (pickTeam.includes(home) || home.includes(pickTeam));
 }
 
 function getPickStatus(pick, game) {
@@ -370,26 +398,22 @@ function getPickStatus(pick, game) {
   const bt = pick.betType?.toLowerCase() || pick.market?.toLowerCase();
   if (bt === 'moneyline') {
     const pickTeam = (pick.pick || '').toLowerCase();
-    const home = (game.home || '').toLowerCase();
-    const away = (game.away || '').toLowerCase();
     if (isSoccer(pick.league)) {
       // 3-way: Draw is a real outcome, not a push.
       const level = aS === hS;
       if (pickTeam === 'draw') return level ? 'winning' : 'losing';
-      const pickedHomeE = pickTeam.includes(home) || home.includes(pickTeam);
+      const pickedHomeE = pickedHomeSide(pick, game);
       if (level) return 'losing';
       return pickedHomeE ? (hS > aS ? 'winning' : 'losing') : (aS > hS ? 'winning' : 'losing');
     }
     if (aS === hS) return 'even';
-    const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
+    const pickedHome = pickedHomeSide(pick, game);
     if (pickedHome) return hS > aS ? 'winning' : 'losing';
     return aS > hS ? 'winning' : 'losing';
   }
   if (bt === 'spread') {
     const line = parseFloat(pick.line) || 0;
-    const pickTeam = (pick.pick || '').toLowerCase();
-    const home = (game.home || '').toLowerCase();
-    const isHome = pickTeam.includes(home) || home.includes(pickTeam);
+    const isHome = pickedHomeSide(pick, game);
     const margin = isHome ? (hS + line) - aS : (aS + line) - hS;
     return margin > 0 ? 'winning' : margin < 0 ? 'losing' : 'even';
   }
@@ -424,8 +448,7 @@ function getLiveState(pick, game) {
   const aS = game.awayScore, hS = game.homeScore;
   const bt = (pick.betType || pick.market || '').toLowerCase();
   const pickTeam = (pick.pick || '').toLowerCase();
-  const home = (game.home || '').toLowerCase();
-  const pickedHome = pickTeam.includes(home) || home.includes(pickTeam);
+  const pickedHome = pickedHomeSide(pick, game);
 
   if (bt === 'moneyline') {
     // Soccer is 3-way: a "Draw" pick trends well while level, poorly once someone leads.
@@ -596,10 +619,11 @@ function carryLocked(entries, todayIso) {
 
 // Doubleheader-aware game matching, shared by the Picks (watch mode) and
 // Scores tapes so a pick always resolves to the correct sibling game.
+const matchupKey = (x) => `${x.league}|${teamId(x.away)}@${teamId(x.home)}`;
 function buildMatchupGames(liveGames) {
   const matchupGames = {};
   for (const g of liveGames) {
-    const mk = `${g.league}|${g.away}@${g.home}`;
+    const mk = matchupKey(g);
     if (!matchupGames[mk]) matchupGames[mk] = [];
     matchupGames[mk].push(g);
   }
@@ -609,7 +633,7 @@ function buildMatchupGames(liveGames) {
   return matchupGames;
 }
 function pickBelongsToGame(matchupGames, p, game) {
-  const siblings = matchupGames[`${game.league}|${game.away}@${game.home}`] || [];
+  const siblings = matchupGames[matchupKey(game)] || [];
   if (siblings.length < 2) return true;
   const t = Date.parse(p.startTime || '');
   let target = null;
@@ -628,14 +652,65 @@ function pickBelongsToGame(matchupGames, p, game) {
   return target === game;
 }
 function findGameForPick(liveGames, matchupGames, p) {
-  const candidates = liveGames.filter(g => g.league === p.league && g.away === p.away && g.home === p.home);
+  const candidates = liveGames.filter(g => pickInGame(p, g));
   if (candidates.length <= 1) return candidates[0] || null;
   return candidates.find(g => pickBelongsToGame(matchupGames, p, g)) || candidates[0];
 }
 
 // Pick/prop identity keys — shared by App's myBets store and the tape tabs.
-const pickKey = (p) => `${p.league}|${p.away}|${p.home}|${(p.betType||p.market||'').toLowerCase()}|${p.pick}|${p.line}`;
+// 2026-10-24: the key carries the GAME DATE. Without it, a bet locked on one
+// game also "locked" the next meeting of the same teams (same side, same line —
+// every ML pick, most NHL totals) for the 30 days locked bets are kept, so that
+// later pick vanished from Picks straight into Locked. Entries saved before
+// this change have no date in their key; getEntry()/setEntry() still read and
+// replace them, but only for the game date stamped inside the entry.
+const pickBaseKey = (p) => `${p.league}|${p.away}|${p.home}|${(p.betType||p.market||'').toLowerCase()}|${p.pick}|${p.line}`;
+const pickKey = (p) => (p.isoDate ? `${pickBaseKey(p)}|${p.isoDate}` : pickBaseKey(p));
+const legacyFits = (v, p) => !(v && typeof v === 'object' && v.date && p.isoDate && v.date !== p.isoDate);
+function getEntry(map, p) {
+  const v = map.get(pickKey(p));
+  if (v !== undefined || !p.isoDate) return v;
+  const old = map.get(pickBaseKey(p));
+  return legacyFits(old, p) ? old : undefined;
+}
+// Write (or with val == null, delete) a pick's entry on a Map being built.
+// Returns the keys removed, for the unlock list sent to /api/state.
+function setEntry(next, p, val) {
+  const removed = [];
+  if (p.isoDate && next.has(pickBaseKey(p)) && legacyFits(next.get(pickBaseKey(p)), p)) {
+    next.delete(pickBaseKey(p)); removed.push(pickBaseKey(p));
+  }
+  if (val == null) { if (next.delete(pickKey(p))) removed.push(pickKey(p)); }
+  else next.set(pickKey(p), val);
+  return removed;
+}
 const propKey = (p) => `prop|${p.league}|${p.player}|${p.market}|${p.direction}|${p.book}`;
+
+// ── League filter row (Picks, Locked, Scores, Results) ───────────────
+// 2026-10-24: one league choice shared by every tab (pick NBA once and Locked,
+// Scores and Results show NBA too). Leagues sit in a fixed order so buttons
+// don't jump around as counts change, and the chosen league keeps its button
+// even when this tab has nothing for it — before, it vanished from the row
+// while still filtering, leaving an empty screen with no visible way out.
+const LEAGUE_ORDER = ['NBA', 'NFL', 'NHL', 'MLB', 'EPL', 'LALIGA', 'SERIEA', 'BUNDESLIGA', 'UCL', 'MLS'];
+const leagueRank = (l) => { const i = LEAGUE_ORDER.indexOf(l); return i === -1 ? 99 : i; };
+function LeagueRow({ league, setLeague, counts, allCount, toggles = [], onSort }) {
+  const ls = Object.keys(counts).filter(l => l && counts[l] > 0);
+  if (league !== 'All' && !ls.includes(league)) ls.push(league);
+  ls.sort((a, b) => leagueRank(a) - leagueRank(b) || a.localeCompare(b));
+  return (
+    <div className="aleagues scroll">
+      <button className={league === 'All' ? 'sel' : ''} onClick={() => setLeague('All')}><span className="lg">ALL</span><span className="ct">{allCount}</span></button>
+      {toggles.map(t => (
+        <button key={t.label} className={t.on ? 'sel' : ''} disabled={t.disabled} onClick={t.onClick}><span className="lg">{t.label}</span><span className="ct">{t.count}</span></button>
+      ))}
+      {ls.map(l => (
+        <button key={l} className={league === l ? 'sel' : ''} onClick={() => setLeague(l)}><span className="lg">{l}</span><span className="ct">{counts[l] || 0}</span></button>
+      ))}
+      {onSort && <button className="sort" onClick={onSort}><span className="glyph">⇅</span></button>}
+    </div>
+  );
+}
 
 // ── Filter Pills ────────────────────────────────────────────────────
 function Pills({ items, active, onChange, color = '#1F2937' }) {
@@ -747,8 +822,7 @@ function MorningSummary({ picks, isBet, isFade, onLockAll }) {
 // ── Picks Tab (Direction A — Tape) ───────────────────────────────────
 // Build mode: triage the morning slate with the rule bar + tri-state rows.
 // Watch mode: same tape, locked — price/live-P&L/progress replace the tri-state.
-function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, isLocked, unlockPick, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets }) {
-  const [sf, setSf] = useState('All');
+function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets, setMyBets, isBet, isFade, isLocked, unlockPick, toggleBet, setPickState, displayPick, pickMode, setPickMode, picksDateFilter, setPicksDateFilter, showDate, lastUpdated, commitSnapshot, committedCount, committedUnits, undoLeft, commitTake: commitTakeApp, undoCommit, stake, sizing, setSizing, sizingPresets, league: sf, setLeague: setSf, getEntry: entryOf }) {
   const [sortDesc, setSortDesc] = useState(false);
   const [minUnitOn, setMinUnitOn] = useState(false);
   // Novig-only view. Nick posts these as maker orders in one sitting, so the
@@ -759,7 +833,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
   // Build mode hides no-edge picks by default to keep the card actionable;
   // this is the switch for looking at the whole slate regardless.
   const [showAllOn, setShowAllOn] = useState(false);
-  const [expandedGames, setExpandedGames] = useState({});
+  const [expandedGames, setExpandedGames] = useState({}); // keyed by game, not list position
   // 2026-10-04: the Locked tab replaces watch mode. Picks is always the build
   // list (whatever pick_mode an older version saved); this same component in
   // `lockedView` renders the positions, reusing the live-status rows below.
@@ -782,26 +856,16 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
   // tier cut no longer gates commits at all — tierOf() survives only for tick
   // heights and the build-mode collapse rule.
   const effState = (p) => {
-    const manual = entryState(myBets.get(pickKey(p)));
+    const manual = entryState(entryOf(p));
     if (manual === 'pass') return 'pass';
     if (manual === 'fade') return 'fade';
     if (manual === 'bet') return 'take';
     return 'take';
   };
 
-  // Lock = every unlocked pick in the pool with a side selected (✓ by default,
-  // or F). Fades lock too: picking a side and locking it is one action.
-  const commitList = pool.filter(p => !isLocked(p) && (effState(p) === 'take' || effState(p) === 'fade'));
-  const commitCount = commitList.length;
-  const commitUnits = commitList.reduce((s, p) => s + stake(p), 0);
   const lockedCount = allPicks.filter(p => isLocked(p)).length;
-
   const leagueCounts = {};
   for (const p of allPicks) leagueCounts[p.league] = (leagueCounts[p.league] || 0) + 1;
-  const leagues = Object.keys(leagueCounts).sort((a, b) => leagueCounts[b] - leagueCounts[a]);
-
-
-  const commitTake = () => commitTakeApp(commitList);
 
   // 2026-10-20 TEMPORARY "Test" selection. For each game where the model's
   // moneyline and spread pick the SAME team, select just one of them — the
@@ -829,8 +893,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
     setMyBets(prev => {
       const next = new Map(prev);
       for (const p of scope) {
-        if (chosen.has(pickKey(p))) next.delete(pickKey(p));
-        else next.set(pickKey(p), 'pass');
+        setEntry(next, p, chosen.has(pickKey(p)) ? null : 'pass');
       }
       return next;
     });
@@ -873,7 +936,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
   const games = {};
   for (const p of visible) {
     const k = `${p.league}|${p.away}@${p.home}|${p.startTime || ''}`;
-    if (!games[k]) games[k] = { league: p.league, away: p.away, home: p.home, startTime: p.startTime, picks: [] };
+    if (!games[k]) games[k] = { key: k, league: p.league, away: p.away, home: p.home, startTime: p.startTime, picks: [] };
     games[k].picks.push(p);
   }
   let gameList = Object.values(games);
@@ -888,6 +951,25 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
     if (!sb) return -1;
     return sa.localeCompare(sb);
   });
+  // Rows actually on screen per game: no-edge (tier 5) rows fold under
+  // "+ N markets" when the game has a better one, unless Show all or the game
+  // was expanded.
+  for (const g of gameList) {
+    const rows = [...g.picks].sort((a, b) => tierOf(b) - tierOf(a));
+    g.shown = showAllOn ? rows
+      : rows.filter(p => tierOf(p) > 5 || expandedGames[g.key] || rows.every(r => tierOf(r) <= 5));
+    g.hidden = rows.filter(p => !g.shown.includes(p));
+  }
+
+  // Lock = every pick ON SCREEN with a side selected (✓ by default, or F).
+  // Fades lock too: picking a side and locking it is one action.
+  // 2026-10-24: was every unlocked pick for the date in ALL leagues, folded
+  // rows included — with NBA chosen, Lock also locked the NHL/NFL picks you
+  // couldn't see, and its count didn't match the screen.
+  const commitList = gameList.flatMap(g => g.shown).filter(p => effState(p) === 'take' || effState(p) === 'fade');
+  const commitCount = commitList.length;
+  const commitUnits = commitList.reduce((s, p) => s + stake(p), 0);
+  const commitTake = () => commitTakeApp(commitList);
 
   const marketMeta = (p) => {
     const bt = (p.betType || p.market || '').toLowerCase();
@@ -926,7 +1008,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
     // manual override (reverts to whatever the threshold rule says); tapping
     // any other button sets an explicit override — 'pass' included, so a
     // rule-auto-selected pick can actually be excluded, not just left alone.
-    const manual = entryState(myBets.get(pickKey(p)));
+    const manual = entryState(entryOf(p));
     const tap = (val) => setPickState(p, manual === val ? null : val);
 
     // A soccer moneyline has three outcomes, so its control names the OUTCOMES
@@ -938,7 +1020,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
     // become the two fade options.
     const threeWay = isThreeWay(p);
     const mSide = threeWay ? modelSide(p) : null;
-    const selSide = threeWay && eff !== 'pass' ? (entrySide(myBets.get(pickKey(p))) || mSide) : null;
+    const selSide = threeWay && eff !== 'pass' ? (entrySide(entryOf(p)) || mSide) : null;
     const tapSide = (sd) => {
       const want = sd === mSide ? 'bet' : 'fade';
       if (manual === want && selSide === sd) setPickState(p, null);
@@ -1058,6 +1140,15 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
       days[d][k].picks.push(p);
     }
     const units = mine.reduce((s, p) => s + stake(p), 0);
+    // Live P/L for the bets on screen (respects the league filter).
+    let minePL = 0;
+    for (const p of mine) {
+      const game = findGameForPick(liveGames, matchupGames, p);
+      if (!game || game.status === 'pre') continue;
+      const display = displayPick(p, allPicks);
+      const status = getEffectiveStatus(display, game);
+      minePL += status === 'winning' ? calcProfit(display.odds, stake(p)) : status === 'losing' ? -stake(p) : 0;
+    }
     return (
       <div className="tp">
         <div className="ah">
@@ -1067,15 +1158,10 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
         <div className="astrip">
           <div><span className="k">Bets</span><span className="v">{mine.length}</span></div>
           <div><span className="k">At risk</span><span className="v">{units.toFixed(1)}<s>u</s></span></div>
-          <div><span className="k">Live P/L</span><span className={`v ${dayPL >= 0 ? 'up' : 'dn'}`}>{dayPL >= 0 ? '+' : ''}{dayPL.toFixed(2)}<s>u</s></span></div>
+          <div><span className="k">Live P/L</span><span className={`v ${minePL >= 0 ? 'up' : 'dn'}`}>{minePL >= 0 ? '+' : ''}{minePL.toFixed(2)}<s>u</s></span></div>
         </div>
-        {Object.keys(lockedLeagues).length > 1 && (
-          <div className="aleagues">
-            <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{allLocked.length}</span></button>
-            {Object.keys(lockedLeagues).map(l => (
-              <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{lockedLeagues[l]}</span></button>
-            ))}
-          </div>
+        {allLocked.length > 0 && (
+          <LeagueRow league={sf} setLeague={setSf} counts={lockedLeagues} allCount={allLocked.length} />
         )}
         {Object.keys(days).sort().map(d => {
           const games = Object.values(days[d]).sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
@@ -1097,7 +1183,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
                       {/* Unlock lives on the game line — the row has no width to spare
                           on a phone. Only before the game starts. */}
                       {(!gm || gm.status === 'pre') && (
-                        <button className="unl" onClick={() => g.picks.forEach(unlockPick)} title="Unlock this game's bets — move them back to Picks">↺ Unlock</button>
+                        <button className="unl" onClick={() => unlockPick(g.picks)} title="Unlock this game's bets — move them back to Picks">↺ Unlock</button>
                       )}
                     </div>
                     {g.picks.map((p, i) => renderWatchRow(p, i))}
@@ -1108,7 +1194,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
           );
         })}
         {mine.length === 0 && (
-          <div className="empty">No locked bets yet. Pick a side on Picks and press Lock.</div>
+          <div className="empty">{allLocked.length > 0 ? `No locked ${sf} bets.` : 'No locked bets yet. Pick a side on Picks and press Lock.'}</div>
         )}
       </div>
     );
@@ -1195,13 +1281,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
         </div>
       )}
 
-      <div className="aleagues">
-        <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{allPicks.length}</span></button>
-        {leagues.map(l => (
-          <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{leagueCounts[l]}</span></button>
-        ))}
-        <button onClick={() => setSortDesc(v => !v)}><span className="glyph">⇅</span></button>
-      </div>
+      <LeagueRow league={sf} setLeague={setSf} counts={leagueCounts} allCount={allPicks.length} onSort={() => setSortDesc(v => !v)} />
 
       {pickMode === 'build' && (
         <div className="legend">
@@ -1217,10 +1297,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
             return (
               <button className="desel" onClick={() => setMyBets(prev => {
                 const next = new Map(prev);
-                for (const p of visible) {
-                  if (allPassed) next.delete(pickKey(p));
-                  else next.set(pickKey(p), 'pass');
-                }
+                for (const p of visible) setEntry(next, p, allPassed ? null : 'pass');
                 return next;
               })}>{allPassed ? 'Select all' : 'Deselect all'}</button>
             );
@@ -1244,16 +1321,10 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
       )}
 
       <div>
-        {gameList.map((g, gi) => {
-          const rows = [...g.picks].sort((a, b) => tierOf(b) - tierOf(a));
-          // showAllOn bypasses the build-mode collapse entirely: every pick in
-          // every game, whether or not it clears the tier threshold.
-          const shown = (pickMode === 'build' && !showAllOn)
-            ? rows.filter((p, i) => tierOf(p) > 5 || expandedGames[gi] || rows.every(r => tierOf(r) <= 5))
-            : rows;
-          const hidden = (pickMode === 'build' && !showAllOn) ? rows.filter(p => !shown.includes(p)) : [];
+        {gameList.map((g) => {
+          const { shown, hidden } = g;
           return (
-            <div className="agame" key={gi}>
+            <div className="agame" key={g.key}>
               <div className="agh">
                 <span className="lgm">{g.league}</span>
                 <span className="duo">{teamChip(g.away, g.league, true)}{teamChip(g.home, g.league, true)}</span>
@@ -1266,7 +1337,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
                 ? renderBuildRow(p, i)
                 : renderWatchRow(p, i))}
               {hidden.length > 0 && (
-                <div className="more" onClick={() => setExpandedGames(prev => ({ ...prev, [gi]: true }))}>
+                <div className="more" onClick={() => setExpandedGames(prev => ({ ...prev, [g.key]: true }))}>
                   + {hidden.length} market{hidden.length > 1 ? 's' : ''} · tier 5
                 </div>
               )}
@@ -1278,6 +1349,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
             {pickMode === 'watch' ? 'No positions locked yet.'
               : allPicks.length === 0 ? 'No plays for this day.'
               : lockedVisible.length > 0 ? 'Everything here is locked — see the Locked tab.'
+              : sf !== 'All' && !leagueCounts[sf] ? `No ${sf} plays for this day.`
               : 'No picks match this filter.'}
           </div>
         )}
@@ -1454,27 +1526,34 @@ function PickLabel({ p }) {
 // One game open in the tape at a time; every other game is a condensed row
 // carrying a fixed ML/Spread/Total pip cluster (team mark or O/U per held
 // slot, faint dot when empty).
-function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, stake }) {
-  const hasAnyPosition = picks.some(p => isBet(p) || isFade(p));
-  const [sf, setSf] = useState(() => (hasAnyPosition ? 'My Bets' : 'All'));
+function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, stake, league: sf, setLeague: setSf }) {
+  const matchupGames = buildMatchupGames(liveGames);
+  const pickBelongs = (p, game) => pickBelongsToGame(matchupGames, p, game);
+  const picksFor = (g) => picks.filter(p => pickInGame(p, g) && pickBelongs(p, g));
+  const hasMine = (g) => picksFor(g).some(p => isBet(p) || isFade(p));
+  const hasPicks = (g) => picksFor(g).length > 0;
+
+  // 2026-10-24: Mine / Picks / Live are views that COMBINE with the league
+  // (NBA + Mine works). They used to share one row with the leagues, so it was
+  // either "my bets" or "NBA", never both. Picks = every game the model has a
+  // prediction for. Tap a lit view again to turn it off.
+  const [view, setView] = useState(() => (
+    liveGames.some(hasMine) ? 'mine' : liveGames.some(hasPicks) ? 'picks' : 'all'));
   const [sortAlt, setSortAlt] = useState(false);
   const [expandedKey, setExpandedKey] = useState(null);
 
-  const matchupGames = buildMatchupGames(liveGames);
-  const pickBelongs = (p, game) => pickBelongsToGame(matchupGames, p, game);
-
+  const inView = (g) => view === 'mine' ? hasMine(g) : view === 'picks' ? hasPicks(g) : view === 'live' ? g.status === 'in' : true;
+  const inLeague = (g) => sf === 'All' || g.league === sf;
   const leagueCounts = {};
-  for (const g of liveGames) leagueCounts[g.league] = (leagueCounts[g.league] || 0) + 1;
-  const leagues = Object.keys(leagueCounts).sort((a, b) => leagueCounts[b] - leagueCounts[a]);
+  for (const g of liveGames) if (inView(g)) leagueCounts[g.league] = (leagueCounts[g.league] || 0) + 1;
   const liveCount = liveGames.filter(g => g.status === 'in').length;
-  const mineCount = liveGames.filter(g => picks.some(p => p.league === g.league && p.away === g.away && p.home === g.home && pickBelongs(p, g) && (isBet(p) || isFade(p)))).length;
-
-  const sportFiltered = liveGames.filter(g => {
-    if (sf === 'My Bets') return picks.some(p => p.league === g.league && p.away === g.away && p.home === g.home && pickBelongs(p, g) && (isBet(p) || isFade(p)));
-    if (sf === 'Live') return g.status === 'in';
-    if (sf === 'All') return true;
-    return g.league === sf;
+  const leagueGames = liveGames.filter(inLeague);
+  const viewToggle = (id, label, test) => ({
+    label, on: view === id, count: leagueGames.filter(test).length,
+    onClick: () => setView(v => (v === id ? 'all' : id)),
   });
+
+  const sportFiltered = liveGames.filter(g => inLeague(g) && inView(g));
   const sorted = sortAlt ? [...sportFiltered].sort((a, b) => (a.gameDate || '').localeCompare(b.gameDate || '')) : sortGames(sportFiltered);
 
   const gameData = sorted.map(game => {
@@ -1482,7 +1561,7 @@ function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, 
     // context view). myPicks: just the ones actually taken/faded — the condensed
     // row's pips, stake total, and live P/L must only ever reflect these, never
     // the whole slate, or a game you have one market on reads as if you had all.
-    const gamePicks = picks.filter(p => p.league === game.league && p.away === game.away && p.home === game.home && pickBelongs(p, game));
+    const gamePicks = picksFor(game);
     const myPicks = gamePicks.filter(p => isBet(p) || isFade(p));
     const displayPicks = myPicks.map(p => displayPick(p, picks));
     const isPre = game.status === 'pre';
@@ -1498,13 +1577,13 @@ function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, 
     return { game, gamePicks, myPicks, displayPicks, isPre, isLive, isPost, key, dayPL };
   });
 
-  // Slate strip: final W-L and live W-L(-push) across ALL of today's positions,
-  // independent of the active filter.
+  // Slate strip: final W-L and live W-L(-push) across today's positions in the
+  // chosen league (all leagues on ALL), whatever the Mine/Picks/Live view.
   const tally = { final: { w: 0, l: 0 }, live: { w: 0, l: 0, t: 0 } };
   let dayPLTotal = 0;
-  for (const g of liveGames) {
+  for (const g of leagueGames) {
     if (g.status === 'pre') continue;
-    const gPicks = picks.filter(p => p.league === g.league && p.away === g.away && p.home === g.home && pickBelongs(p, g) && (isBet(p) || isFade(p)));
+    const gPicks = picksFor(g).filter(p => isBet(p) || isFade(p));
     for (const p of gPicks) {
       const disp = displayPick(p, picks);
       const status = getEffectiveStatus(disp, g);
@@ -1567,17 +1646,16 @@ function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, 
         <div><span className="k">Live</span><span className="v">{tally.live.w}–{tally.live.l}{tally.live.t ? <s>–{tally.live.t}</s> : null}</span></div>
         <div><span className="k">Day P/L</span><span className={`v ${dayPLTotal >= 0 ? 'up' : 'dn'}`}>{dayPLTotal >= 0 ? '+' : ''}{dayPLTotal.toFixed(2)}<s>u</s></span></div>
       </div>
-      <div className="aleagues scroll">
-        <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{liveGames.length}</span></button>
-        <button className={sf === 'My Bets' ? 'sel' : ''} disabled={mineCount === 0} onClick={() => setSf('My Bets')}><span className="lg">MINE</span><span className="ct">{mineCount}</span></button>
-        <button className={sf === 'Live' ? 'sel' : ''} onClick={() => setSf('Live')}><span className="lg">LIVE</span><span className="ct">{liveCount}</span></button>
-        {leagues.map(l => (
-          <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{leagueCounts[l]}</span></button>
-        ))}
-        <button onClick={() => setSortAlt(v => !v)}><span className="glyph">⇅</span></button>
-      </div>
+      <LeagueRow league={sf} setLeague={setSf} counts={leagueCounts}
+        allCount={liveGames.filter(inView).length}
+        toggles={[viewToggle('mine', 'MINE', hasMine), viewToggle('picks', 'PICKS', hasPicks), viewToggle('live', 'LIVE', g => g.status === 'in')]}
+        onSort={() => setSortAlt(v => !v)} />
 
-      {isEmpty && <div className="empty">{sf === 'Live' ? 'No live games right now.' : sf === 'My Bets' ? 'No positions on today’s games yet.' : 'No games today.'}</div>}
+      {isEmpty && <div className="empty">{
+        view === 'live' ? 'No live games right now.'
+          : view === 'mine' ? `No locked bets on today’s ${sf === 'All' ? '' : sf + ' '}games.`
+          : view === 'picks' ? `No ${sf === 'All' ? '' : sf + ' '}games with picks today.`
+          : `No ${sf === 'All' ? '' : sf + ' '}games today.`}</div>}
 
       {gameData.length > 0 && <div className="consec"><span>Today · {gameData.length} game{gameData.length > 1 ? 's' : ''}</span></div>}
       {gameData.map(d => d.key === openKey
@@ -2116,10 +2194,11 @@ function UnitsChart({ results }) {
 }
 
 // ── Results Tab (Direction A — Tape) ──────────────────────────────────
-function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onChangelog }) {
+function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onChangelog, league: sf, setLeague: setSf }) {
   const [viewType, setViewType] = useState('Games');
   const [range, setRange] = useState('Last 30 Days');
-  const [sf, setSf] = useState('All');
+  // Mine combines with the league (NBA + Mine) — see ScoresTab.
+  const [mineOnly, setMineOnly] = useState(false);
   // Re-price comparison: recompute the graded window as if every bet had been
   // a flat 0.20u, to see whether the model's own sizing is earning its keep.
   // Read-only — never touches how history was actually bet (that's stake(),
@@ -2149,26 +2228,12 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
   };
 
   const showProps = viewType === 'Props';
-  const allLeagues = [...new Set([...results.map(r => r.league), ...(gradedProps || []).map(r => r.league)])].filter(Boolean);
-
-  const filteredGames = showProps ? [] : results.filter(r => {
-    if (!dateMatch(r)) return false;
-    if (sf === 'My Bets') return isBet(r);
-    if (sf !== 'All' && r.league !== sf) return false;
-    return true;
-  });
-  const filteredProps = !showProps ? [] : (gradedProps || []).filter(r => {
-    if (!dateMatch(r)) return false;
-    if (sf === 'My Bets') return isPropBet(r);
-    if (sf !== 'All' && r.league !== sf) return false;
-    return true;
-  });
-  const filtered = showProps ? filteredProps : filteredGames;
-
-  const rangeGames = showProps ? [] : results.filter(dateMatch);
-  const rangeProps = !showProps ? [] : (gradedProps || []).filter(dateMatch);
-  const rangeAll = showProps ? rangeProps : rangeGames;
-  const leagueCount = (l) => rangeAll.filter(r => r.league === l).length;
+  const rangeAll = (showProps ? (gradedProps || []) : results).filter(dateMatch);
+  const isMine = showProps ? isPropBet : isBet;
+  const inLeague = (r) => sf === 'All' || r.league === sf;
+  const filtered = rangeAll.filter(r => inLeague(r) && (!mineOnly || isMine(r)));
+  const leagueCounts = {};
+  for (const r of rangeAll) if (!mineOnly || isMine(r)) leagueCounts[r.league] = (leagueCounts[r.league] || 0) + 1;
 
   // Record and Win % are identical by construction whether priced or as-bet —
   // same bets, same outcomes — so they always read off `filtered` directly.
@@ -2241,13 +2306,9 @@ function ResultsTab({ results, gradedProps, isBet, isPropBet, lastUpdated, onCha
         {onChangelog && <button onClick={onChangelog}>Changelog</button>}
       </div>
 
-      <div className="aleagues">
-        <button className={sf === 'All' ? 'sel' : ''} onClick={() => setSf('All')}><span className="lg">ALL</span><span className="ct">{rangeAll.length}</span></button>
-        <button className={sf === 'My Bets' ? 'sel' : ''} onClick={() => setSf('My Bets')}><span className="lg">MINE</span><span className="ct">{rangeAll.filter(showProps ? isPropBet : isBet).length}</span></button>
-        {allLeagues.map(l => (
-          <button key={l} className={sf === l ? 'sel' : ''} onClick={() => setSf(l)}><span className="lg">{l}</span><span className="ct">{leagueCount(l)}</span></button>
-        ))}
-      </div>
+      <LeagueRow league={sf} setLeague={setSf} counts={leagueCounts}
+        allCount={rangeAll.filter(r => !mineOnly || isMine(r)).length}
+        toggles={[{ label: 'MINE', on: mineOnly, count: rangeAll.filter(r => inLeague(r) && isMine(r)).length, onClick: () => setMineOnly(v => !v) }]} />
 
       {filtered.length >= 2 && (
         <div style={{ position: 'relative' }}>
@@ -2706,7 +2767,18 @@ export default function App() {
   };
 
   const [tab, setTab] = useState(getDefaultTab);
-  const [sf, setSf] = useState('All'); // Props tab league/My-Bets filter only — Picks/Scores/Results manage their own now
+  const [sf, setSf] = useState('All'); // Props tab league/My-Bets filter only
+  // League filter shared by Picks, Locked, Scores and Results; remembered on
+  // this device. Restored in an effect (not the initializer) to keep the
+  // first render identical to the server's.
+  const [league, setLeagueState] = useState('All');
+  useEffect(() => {
+    try { const v = localStorage.getItem('sb.league'); if (v) setLeagueState(v); } catch (e) {}
+  }, []);
+  const setLeague = (v) => {
+    setLeagueState(v);
+    try { localStorage.setItem('sb.league', v); } catch (e) {}
+  };
   const [pf, setPf] = useState('All');
   // My Bets — persisted to localStorage, auto-resets daily
   // Map<key, 'bet' | 'fade'> — 'bet' = tailed the pick, 'fade' = bet the opposite
@@ -2753,7 +2825,7 @@ export default function App() {
   // whatever sizing was active then, regardless of what the toggle reads now;
   // only a pick with no entry yet takes the current sizing live.
   const stake = (p) => {
-    const v = myBets.get(pickKey(p));
+    const v = getEntry(myBets, p);
     if (v) return entryStake(v, p);
     return sizing === 'model' ? (p.units || 0) : sizing;
   };
@@ -2787,46 +2859,94 @@ export default function App() {
   }, [pickMode]);
 
   // Cross-device sync: today's myBets/pickMode also live in Supabase
-  // (daily_state, one row per day, last write wins) so a pick tapped on your
-  // phone shows up on your computer and vice versa — localStorage above is
-  // per-device only. On mount, pull the server's copy if one exists; local
-  // state stays authoritative until that resolves, so a blank server row
-  // doesn't wipe out picks made on this device moments before the fetch
-  // lands. After that, every myBets/pickMode change gets pushed up.
+  // (daily_state, one row per day) so a pick tapped on your phone shows up on
+  // your computer and vice versa — localStorage above is per-device only.
+  //
+  // 2026-10-24 hardening — locks were being lost:
+  //  * The server now MERGES: a locked bet already saved is kept unless this
+  //    device unlocked it (`unlocked` below). Before, the whole day was one
+  //    last-write-wins blob, so a phone or laptop with an older copy open could
+  //    wipe bets locked on the other device with its next tap.
+  //  * Saves go out one at a time, newest last. Two quick saves (tap ✓, then
+  //    Lock) could arrive out of order and the older one won.
+  //  * Reopening the app (tab visible again) re-reads the server copy, and a
+  //    date change since the last read starts the new day from locked bets only.
   const [stateSynced, setStateSynced] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
+  const myBetsRef = useRef(myBets); myBetsRef.current = myBets;
+  const pickModeRef = useRef(pickMode); pickModeRef.current = pickMode;
+  const unlockedRef = useRef(new Set()); // keys unlocked here, not yet saved
+  const stateDateRef = useRef(null);     // day of the state currently loaded
+  const loadState = useCallback(() => {
     const todayIso = new Date().toLocaleDateString('en-CA');
-    fetch(`/api/state?date=${todayIso}`)
+    return fetch(`/api/state?date=${todayIso}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(d => {
-        if (cancelled) return;
+        if (d.error) return;
+        const newDay = stateDateRef.current && stateDateRef.current !== todayIso;
+        stateDateRef.current = todayIso;
         if (d.found) {
-          setMyBets(new Map(d.myBets || []));
+          const next = new Map(d.myBets || []);
+          for (const k of unlockedRef.current) next.delete(k);
+          setMyBets(next);
           setPickMode(d.pickMode || 'build');
-        } else if (Array.isArray(d.carry)) {
+        } else {
           // First open today on any device: bring forward the bets locked on
           // earlier days (the server sends the most recent day's state).
           setMyBets(prev => {
+            const next = new Map(newDay ? carryLocked([...prev.entries()], todayIso) : prev);
+            for (const [k, v] of carryLocked(d.carry || [], todayIso)) {
+              if (!next.has(k) && !unlockedRef.current.has(k)) next.set(k, v);
+            }
+            return next;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    loadState().finally(() => setStateSynced(true));
+    const onVisible = () => { if (document.visibilityState === 'visible') loadState(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [loadState]);
+  const saving = useRef(false), saveAgain = useRef(false);
+  const saveState = useCallback(() => {
+    if (saving.current) { saveAgain.current = true; return; }
+    saving.current = true; saveAgain.current = false;
+    const unlocked = [...unlockedRef.current];
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: new Date().toLocaleDateString('en-CA'),
+        myBets: [...myBetsRef.current.entries()], pickMode: pickModeRef.current, unlocked,
+      }),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (!d.ok) return;
+        for (const k of unlocked) unlockedRef.current.delete(k);
+        // Locks saved from another device that this one hadn't seen yet.
+        if (Array.isArray(d.kept) && d.kept.length) {
+          setMyBets(prev => {
             const next = new Map(prev);
-            for (const [k, v] of carryLocked(d.carry, todayIso)) if (!next.has(k)) next.set(k, v);
+            for (const [k, v] of d.kept) if (!isLockedEntry(next.get(k)) && !unlockedRef.current.has(k)) next.set(k, v);
             return next;
           });
         }
       })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setStateSynced(true); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        saving.current = false;
+        if (saveAgain.current) saveState();
+      });
   }, []);
   useEffect(() => {
-    if (!stateSynced) return;
-    const todayIso = new Date().toLocaleDateString('en-CA');
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: todayIso, myBets: [...myBets.entries()], pickMode }),
-    }).catch(() => {});
-  }, [stateSynced, myBets, pickMode]);
+    if (stateSynced) saveState();
+  }, [stateSynced, myBets, pickMode, saveState]);
+  // Every unlock (and every Undo of a Lock) goes through here so the server
+  // drops the bet instead of keeping it as "locked elsewhere".
+  const markUnlocked = (keys) => { for (const k of keys) unlockedRef.current.add(k); };
 
   // Commit/Undo snapshot for the Picks rule-bar "Take" action — lifted here
   // (rather than owned by PicksTab) so a build→watch→build→watch mode toggle
@@ -2845,13 +2965,12 @@ export default function App() {
     setMyBets(prev => {
       const next = new Map(prev);
       for (const p of commitList) {
-        const key = pickKey(p);
-        const cur = next.get(key);
+        const cur = getEntry(next, p);
         const base = (cur && typeof cur === 'object') ? cur : {};
         // A manual tap already stamped its stake the moment it was set (see
         // setPickState); a rule-default pick is stamped now. `date` is the
         // GAME's date — it's what keeps the bet alive until game day.
-        next.set(key, {
+        markUnlocked(setEntry(next, p, {
           ...base,
           state: entryState(cur) === 'fade' ? 'fade' : 'bet',
           stakeUsed: base.stakeUsed ?? stake(p),
@@ -2859,7 +2978,7 @@ export default function App() {
           locked: true,
           lockedAt: Date.now(),
           date: p.isoDate || new Date().toLocaleDateString('en-CA'),
-        });
+        }));
       }
       return next;
     });
@@ -2869,10 +2988,11 @@ export default function App() {
   }, [myBets, stake]);
   const undoCommit = useCallback(() => {
     if (!commitSnapshot) return;
+    markUnlocked([...myBets.keys()].filter(k => isLockedEntry(myBets.get(k)) && !isLockedEntry(commitSnapshot.get(k))));
     setMyBets(commitSnapshot);
     setCommitSnapshot(null);
     setUndoLeft(0);
-  }, [commitSnapshot]);
+  }, [commitSnapshot, myBets]);
   useEffect(() => {
     if (!commitSnapshot) return;
     if (undoLeft <= 0) { setCommitSnapshot(null); return; }
@@ -2948,13 +3068,12 @@ export default function App() {
 
   // Three-state toggle: none → bet → fade → none
   const toggleBet = (p) => {
-    const key = pickKey(p);
     setMyBets(prev => {
       const next = new Map(prev);
-      const cur = entryState(next.get(key));
-      if (!cur) next.set(key, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
-      else if (cur === 'bet') next.set(key, { state: 'fade', stakeUsed: stake(p), at: Date.now() });
-      else next.delete(key);
+      const cur = entryState(getEntry(next, p));
+      if (!cur) setEntry(next, p, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
+      else if (cur === 'bet') setEntry(next, p, { state: 'fade', stakeUsed: stake(p), at: Date.now() });
+      else setEntry(next, p, null);
       return next;
     });
   };
@@ -2967,12 +3086,9 @@ export default function App() {
   // home/draw/away you put yourself on. Omitted everywhere else, where the model
   // has only one side and `state` alone says whether you're with it or against it.
   const setPickState = (p, state, side) => {
-    const key = pickKey(p);
     setMyBets(prev => {
       const next = new Map(prev);
-      if (!state) next.delete(key);
-      else if (state === 'pass') next.set(key, 'pass');
-      else next.set(key, { state, side, stakeUsed: stake(p), at: Date.now() });
+      setEntry(next, p, !state ? null : state === 'pass' ? 'pass' : { state, side, stakeUsed: stake(p), at: Date.now() });
       return next;
     });
   };
@@ -2993,19 +3109,21 @@ export default function App() {
   // effState), which must never register as a real position anywhere else
   // in the app (Scores, Results, badges, etc.).
   // Positions are LOCKED entries only — a ✓/F tap is a selection, not a bet.
-  const isLocked = (p) => isLockedEntry(myBets.get(pickKey(p)));
-  const isBet = (p) => isLocked(p) && entryState(myBets.get(pickKey(p))) === 'bet';
-  const isFade = (p) => isLocked(p) && entryState(myBets.get(pickKey(p))) === 'fade';
-  const unlockPick = (p) => setMyBets(prev => {
+  const entryOf = (p) => getEntry(myBets, p);
+  const isLocked = (p) => isLockedEntry(entryOf(p));
+  const isBet = (p) => isLocked(p) && entryState(entryOf(p)) === 'bet';
+  const isFade = (p) => isLocked(p) && entryState(entryOf(p)) === 'fade';
+  // One pick or a list (a game's bets).
+  const unlockPick = (ps) => setMyBets(prev => {
     const next = new Map(prev);
-    next.delete(pickKey(p));
+    for (const p of [].concat(ps)) markUnlocked(setEntry(next, p, null));
     return next;
   });
   // Resolves a pick to the side you're actually on, and is handed to every tab so
   // one position can't read as Draw on Picks and as the home team on Scores.
   // Pass `allPicks` where the full slate is in hand (lets the two-way path find a
   // real opposite-side row instead of approximating one).
-  const displayPick = (p, allPicks) => displayPickFor(p, myBets.get(pickKey(p)), allPicks);
+  const displayPick = (p, allPicks) => displayPickFor(p, entryOf(p), allPicks);
   const isPropBet = (p) => {
     const v = myBets.get(propKey(p));
     return !!v;
@@ -3015,23 +3133,6 @@ export default function App() {
     return (typeof v === 'object' ? v.state : v) === 'fade';
   };
   // Get all stored prop bets for "My Bets" view
-  // Lock all picks above threshold (for morning quick-lock)
-  const lockAll = useCallback(() => {
-    if (!data?.todayPicks) return;
-    // "Morning quick-lock" is a today-only action — scope it to today's picks even
-    // though data.todayPicks now spans the next week (soccer's CLV lookahead).
-    const todaysOnly = data.todayPicks.filter(p => !p.isoDate || p.isoDate === new Date().toLocaleDateString('en-CA'));
-    const qualified = dedup(todaysOnly).filter(p => p.units >= 0.2);
-    setMyBets(prev => {
-      const next = new Map(prev);
-      for (const p of qualified) {
-        const key = pickKey(p);
-        if (!next.has(key)) next.set(key, { state: 'bet', stakeUsed: stake(p), at: Date.now() });
-      }
-      return next;
-    });
-  }, [data?.todayPicks, stake]);
-
   const getMyPropBets = () => {
     const result = [];
     for (const [key, val] of myBets.entries()) {
@@ -3185,7 +3286,7 @@ export default function App() {
   // Uncommitted count for the Picks tab badge — plays in today's slate with no
   // manual take/fade yet. Only meaningful pre-commit; watch mode means the
   // slate's already been triaged, so nothing to flag.
-  const uncommittedCount = pickMode === 'build' ? dedup(todaysPicksOnly).filter(p => !isLocked(p)).length : 0;
+  const uncommittedCount = pickMode === 'build' ? dedup(todaysPicksOnly).filter(p => !isLocked(p) && entryState(entryOf(p)) !== 'pass').length : 0;
   const realGames = liveGames.filter(g => {
     if (g.status === 'in') return true; // live = real
     if (!g.gameDate) return false;
@@ -3291,6 +3392,7 @@ export default function App() {
             commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
             undoLeft={undoLeft} commitTake={commitTake} undoCommit={undoCommit}
             stake={stake} sizing={sizing} setSizing={setSizing} sizingPresets={SIZING_PRESETS}
+            league={league} setLeague={setLeague} getEntry={entryOf}
           />
         )}
         {data && tab === 'picks' && (
@@ -3304,6 +3406,7 @@ export default function App() {
             commitSnapshot={commitSnapshot} committedCount={committedCount} committedUnits={committedUnits}
             undoLeft={undoLeft} commitTake={commitTake} undoCommit={undoCommit}
             stake={stake} sizing={sizing} setSizing={setSizing} sizingPresets={SIZING_PRESETS}
+            league={league} setLeague={setLeague} getEntry={entryOf}
           />
         )}
         {data && tab === 'scores' && (
@@ -3316,6 +3419,7 @@ export default function App() {
               catch { return false; }
             })}
             picks={todaysPicksOnly} isBet={isBet} isFade={isFade} displayPick={displayPick} lastUpdated={lastUpdated} stake={stake}
+            league={league} setLeague={setLeague}
           />
         )}
         {data && tab === 'props' && <PropsTab props={data.props} todayGames={data.todayGames} sf={sf} pf={pf} propDateFilter={propDateFilter} isPropBet={isPropBet} isPropFade={isPropFade} toggleProp={toggleProp} liveStats={liveStats} myPropBets={getMyPropBets()} />}
@@ -3327,7 +3431,7 @@ export default function App() {
         )}
         {data && tab === 'results' && resultType !== 'Changelog' && (
           resultsData
-            ? <ResultsTab results={resultsData.gradedPicks} gradedProps={resultsData.gradedProps || []} isBet={isBet} isPropBet={isPropBet} lastUpdated={lastUpdated} onChangelog={() => setResultType('Changelog')} />
+            ? <ResultsTab results={resultsData.gradedPicks} gradedProps={resultsData.gradedProps || []} isBet={isBet} isPropBet={isPropBet} lastUpdated={lastUpdated} onChangelog={() => setResultType('Changelog')} league={league} setLeague={setLeague} />
             : resultsError
               ? (
                 <div className="tp">

@@ -357,6 +357,13 @@ function gradeTicket(t, awayScore, homeScore) {
   return null;
 }
 
+// 2026-10-24: ESPN says "LA Clippers", the odds feed (our rows) "Los Angeles
+// Clippers". The team-name match missed, so every Clippers game sat ungraded
+// (Kings @ Clippers 10-21 was still open three days later). Same alias as
+// game-model.js's TEAM_ALIASES.
+const GRADE_ALIASES = { 'la clippers': 'los angeles clippers' };
+const teamKey = (s) => { const n = norm(s); return GRADE_ALIASES[n] || n; };
+
 // Grade closed v2 tickets whose games have finished, by matching to ESPN finals.
 // Anchored on game_date (not pick_date), so a pick logged weeks early still grades.
 async function gradeClosedTickets() {
@@ -421,14 +428,14 @@ async function gradeClosedTickets() {
       };
       // Merging two dates can surface the same event twice; a completed record
       // always wins over a scheduled one.
-      const tk = `${norm(ev.awayName)}@${norm(ev.homeName)}`;
+      const tk = `${teamKey(ev.awayName)}@${teamKey(ev.homeName)}`;
       if (!byId[ev.id] || ev.completed) byId[ev.id] = ev;
       if (!byTeams[tk] || ev.completed) byTeams[tk] = ev;
     }
 
     for (const t of groups[key]) {
       let ev = t.espn_event_id ? byId[t.espn_event_id] : null;
-      if (!ev) ev = byTeams[`${norm(t.away_team)}@${norm(t.home_team)}`];
+      if (!ev) ev = byTeams[`${teamKey(t.away_team)}@${teamKey(t.home_team)}`];
       if (!ev || !ev.completed || !Number.isFinite(ev.awayScore) || !Number.isFinite(ev.homeScore)) { unmatched++; continue; }
       const result = gradeTicket(t, ev.awayScore, ev.homeScore);
       if (!result) { unmatched++; continue; }
