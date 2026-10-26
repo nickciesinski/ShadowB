@@ -51,6 +51,9 @@ vm.runInContext([
   extractFn('displayPickFor'),
   extractFn('findOppositePick'),
   extractFn('flipPick'),
+  extractConst("const TEAM_ALIASES = {"),
+  extractFn('teamId'),
+  extractFn('pickedHomeSide'),
   extractFn('getPickStatus'),
   // `const` declarations stay lexical inside the vm script and never land on the
   // context object, unlike function declarations. Hand the arrow-function helpers

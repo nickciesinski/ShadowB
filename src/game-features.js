@@ -194,12 +194,15 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   const aPace = parseFloat(a.pace) || 0;
   f.pace_diff = hPace && aPace ? (hPace - aPace) / norm.pace : 0;
   f.pace_factor = hPace && aPace ? ((hPace + aPace) / 2 - 100) / norm.pace : 0;
-  f.pace_combined = hPace && aPace ? (hPace + aPace) / 200 : 0.5; // normalized to ~0.5
+  // 2026-10-26: centered on 0. These used to sit at a constant 0.5 (no pace or
+  // shooting data is collected), which with their NBA total weights added a
+  // fixed ~+0.7 score = an Over push on every game. No data = no signal.
+  f.pace_combined = hPace && aPace ? (hPace + aPace) / 200 - 0.5 : 0;
 
   // ── Combined stats (for totals market) ──
-  f.fg_percentage_combined = 0.5;
-  f.three_point_combined = 0.5;
-  f.turnovers_combined = 0.5;
+  f.fg_percentage_combined = 0;    // Not in current team stats
+  f.three_point_combined = 0;
+  f.turnovers_combined = 0;
 
   // ── Injury features (from Injury Summary + Prop_Status scratches) ──
   const homeAbbr = (home.abbr || home.Abbr || '').toUpperCase();

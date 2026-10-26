@@ -260,6 +260,28 @@ function modelDisagreement(mainProb, simpleProb, betType) {
 // Aliases map onto ESPN's spelling, compared after normName().
 const TEAM_ALIASES = { 'los angeles clippers': 'la clippers' };
 const _normIndex = new WeakMap();
+
+// Mean of (for + against) across every team in teamsMap = the league's
+// average-matchup total right now. Keeps the sp_*_total signal zero-mean as
+// scoring levels move season to season. Null when fewer than 10 teams have
+// data, so callers fall back to AVG_TOTAL.
+const _baselineCache = new WeakMap();
+function leagueMatchupBaseline(teamsMap, forKey, againstKey) {
+  if (!teamsMap) return null;
+  const ck = forKey + '|' + againstKey;
+  let byKey = _baselineCache.get(teamsMap);
+  if (!byKey) { byKey = {}; _baselineCache.set(teamsMap, byKey); }
+  if (ck in byKey) return byKey[ck];
+  const sums = [];
+  for (const t of new Set(Object.values(teamsMap))) {
+    const f = parseFloat(t && t[forKey]);
+    const a = parseFloat(t && t[againstKey]);
+    if (isFinite(f) && isFinite(a)) sums.push(f + a);
+  }
+  byKey[ck] = sums.length >= 10 ? sums.reduce((x, y) => x + y, 0) / sums.length : null;
+  return byKey[ck];
+}
+
 function lookupTeam(teamsMap, name, fallback = {}) {
   if (!teamsMap || !name) return fallback;
   if (teamsMap[name]) return teamsMap[name];
@@ -460,7 +482,11 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
     const tLine2 = tMkt2 ? parseFloat(tMkt2.point) : NaN;
     if (isFinite(hFor) && isFinite(hAgainst) && isFinite(aFor) && isFinite(aAgainst) && isFinite(tLine2)) {
       const expTotal2 = (hFor + aFor + hAgainst + aAgainst) / 2;
-      const matchupDev2 = expTotal2 - (AVG_TOTAL[league] || tLine2);
+      // 2026-10-26: baseline is the league's CURRENT average matchup, not the
+      // hard-coded AVG_TOTAL. NBA scoring ran ~231 vs the 226 constant, so every
+      // average game read +5 and the 10/19-10/26 slate went 43/43 Over.
+      const baseline2 = leagueMatchupBaseline(teamsMap, forKey, againstKey) || AVG_TOTAL[league] || tLine2;
+      const matchupDev2 = expTotal2 - baseline2;
       features.sp_pred_total = Math.max(-bound, Math.min(bound, matchupDev2));
       features.sp_edge_total = Math.max(-0.4, Math.min(0.4, totalToOverProb(tLine2 + matchupDev2, tLine2, league) - 0.5));
     }
