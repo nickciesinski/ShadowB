@@ -36,11 +36,26 @@ async function readAll(sb, table, columns, apply) {
   console.log(`[dashboard] ${perfRows.length} approved rows, ${triggerRuns.length} job runs -> ${values.length} rows`);
   if (dryRun) { for (const r of values) console.log(r.join(' | ')); return; }
 
-  const { clearSheet, setValues } = require('../src/sheets');
-  await clearSheet(SPREADSHEET_ID, SHEETS.DASHBOARD);
-  // Pad rows to a rectangle so the API never rejects a ragged range.
+  const { getSheetsClient, withRetry } = require('../src/sheets');
+  const sheets = await getSheetsClient();
+  const tab = SHEETS.DASHBOARD;
+  // The March Apps Script layout left merged cells behind; a value written into
+  // a merged cell is hidden, so unmerge the whole tab before writing.
+  const meta = await withRetry('dashboard meta', () =>
+    sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID, fields: 'sheets.properties' }));
+  const sheet = meta.data.sheets.find(s => s.properties.title === tab);
+  if (!sheet) throw new Error(`no "${tab}" tab in the spreadsheet`);
+  const { sheetId } = sheet.properties;
+  await withRetry('dashboard unmerge', () => sheets.spreadsheets.batchUpdate({ spreadsheetId: SPREADSHEET_ID,
+    requestBody: { requests: [{ unmergeCells: { range: { sheetId } } }] } }));
+  await withRetry('dashboard clear', () =>
+    sheets.spreadsheets.values.clear({ spreadsheetId: SPREADSHEET_ID, range: tab }));
+  // Pad rows to a rectangle; RAW so "+4.1%" stays text instead of becoming 0.041.
   const width = Math.max(...values.map(r => r.length), 1);
-  await setValues(SPREADSHEET_ID, SHEETS.DASHBOARD, 'A1',
-    values.map(r => [...r, ...Array(width - r.length).fill('')]));
+  const padded = values.map(r => [...r, ...Array(width - r.length).fill('')]);
+  const { ensureGridRows } = require('../src/sheets');
+  await ensureGridRows(SPREADSHEET_ID, tab, padded.length + 10);
+  await withRetry('dashboard write', () => sheets.spreadsheets.values.update({ spreadsheetId: SPREADSHEET_ID,
+    range: `${tab}!A1`, valueInputOption: 'RAW', requestBody: { values: padded } }));
   console.log('[dashboard] Dashboard tab rewritten');
 })().catch((e) => { console.error('[dashboard] FAILED:', e.message); process.exit(1); });
