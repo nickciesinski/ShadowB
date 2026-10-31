@@ -1,4 +1,8 @@
-name: Final Card — Place These Bets Email
+name: Final Card — Morning Odds/Predictions Top-up (no email)
+
+# 2026-10-31: the 5 AM PT "place these bets" email was turned off at Nick's
+# request — the 9 PM PT evening digest is now the only picks email. The odds
+# and predictions top-up below still runs so the ledger stays fresh.
 
 # NICK'S 5 AM PT DELIVERABLE. This is the email he acts on.
 #
@@ -64,9 +68,3 @@ jobs:
       - name: Trigger 4 — Top up predictions (idempotent)
         run: node src/triggers.js trigger4
         continue-on-error: true
-
-      # if: always() — the card goes out even if the top-up failed.
-      # sendDailyPicksEmail() flags a zero-pick slate in the subject line.
-      - name: Trigger 9 — Send "place these bets" email
-        if: always()
-        run: node src/triggers.js trigger9
