@@ -94,11 +94,18 @@ test('missing inputs omit features rather than asserting zero', () => {
   assert.deepStrictEqual(nc.buildNflFeatures(ctxOf({}), 'Not A Team', 'Seattle Seahawks'), {});
 });
 
-test('every feature is declared at weight 0 in the shipped NFL config', () => {
+// 2026-10-31 — Nick promoted rest days and off-bye on the sides after both
+// read t>2 against results-vs-market (ML t=+2.73/+2.42, spread +2.07/+2.06).
+// Everything else here is still a weight-0 candidate.
+const PROMOTED = new Set(['nfl_rest_days_diff', 'nfl_off_bye_diff']);
+test('every unpromoted feature is declared at weight 0 in the shipped NFL config', () => {
   const cfg = require('../config/model-params.NFL.json');
   for (const [market, w] of Object.entries(cfg)) {
     if (!w || typeof w !== 'object' || !('nfl_rest_days_diff' in w)) continue;
-    for (const n of nc.featureNames()) assert.strictEqual(w[n], 0, `${market}.${n}`);
+    for (const n of nc.featureNames()) {
+      if (PROMOTED.has(n) && market !== 'total') assert.ok(w[n] > 0, `${market}.${n} promoted`);
+      else assert.strictEqual(w[n], 0, `${market}.${n}`);
+    }
   }
 });
 

@@ -93,6 +93,53 @@ async function buildPlayerLookup() {
   return lookup;
 }
 
+// 2026-10-31 — real player ratings. trigger18 (player-rankings.js) writes a
+// per-league "<LEAGUE> Rankings" sheet with a 0-100 composite score, ranked
+// against players at the same position. When a player is rated, that score
+// sets his tier instead of his position alone — so a backup QB ruled out no
+// longer counts like the starter. Same cutoffs as player-rankings.js tiers.
+const RANKINGS_SPREADSHEET_ID = process.env.RANKINGS_SPREADSHEET_ID || '';
+const RATING_SHEETS = { NBA: 'NBA Rankings', NHL: 'NHL Rankings', NFL: 'NFL Rankings', MLB: 'MLB Rankings' };
+
+function tierFromRating(score) {
+  if (!isFinite(score)) return null;
+  if (score >= 85) return 'S';
+  if (score >= 68) return 'A';
+  if (score >= 50) return 'B';
+  if (score >= 32) return 'C';
+  return 'D';
+}
+
+/** Overlay rated players onto the roster lookup. Missing sheets are skipped. */
+async function applyPlayerRatings(lookup) {
+  if (!RANKINGS_SPREADSHEET_ID) return 0;
+  let rated = 0;
+  for (const [league, sheet] of Object.entries(RATING_SHEETS)) {
+    try {
+      const rows = await getValues(RANKINGS_SPREADSHEET_ID, sheet);
+      // Summary schema: Name(0), Team(1), Position(2), Group(3), Composite(4)
+      for (const row of (rows || []).slice(1)) {
+        const name = normalizeName(row[0]);
+        const score = parseFloat(row[4]);
+        const tier = tierFromRating(score);
+        if (!name || !tier) continue;
+        const key = `${league}|${name}`;
+        const team = String(row[1] || '').trim().toUpperCase() || (lookup[key] && lookup[key].team);
+        if (!team) continue;
+        lookup[key] = { team, league, tier, score, rated: true };
+        rated++;
+      }
+    } catch (e) {
+      console.warn(`[injury-impact] Could not read ${sheet}:`, e.message);
+    }
+  }
+  return rated;
+}
+
+// Known for weeks and already priced into season stats — counting them would
+// double-count. What moves a game is this week's report.
+const LONG_TERM = new Set(['injured reserve', 'ir', '60-day-il', 'suspension', 'suspended']);
+
 /**
  * Normalize a player name for fuzzy matching
  */
@@ -144,6 +191,8 @@ async function loadInjuryImpact() {
 
   // Build player lookup from all 4 league stat sheets
   const playerLookup = await buildPlayerLookup();
+  const rated = await applyPlayerRatings(playerLookup);
+  if (rated > 0) console.log(`[injury-impact] Applied ratings for ${rated} players`);
   const lookupSize = Object.keys(playerLookup).length;
   if (lookupSize > 0) {
     console.log(`[injury-impact] Built player lookup: ${lookupSize} players across all leagues`);
@@ -212,6 +261,7 @@ async function loadInjuryImpact() {
 
           const status = (row[statusIdx] || '').trim().toLowerCase();
           if (status === 'active' || status === 'healthy' || status === 'available') continue;
+          if (LONG_TERM.has(status)) continue;
 
           const playerName = playerIdx >= 0 ? (row[playerIdx] || '').trim() : '';
           const tKey = `${league}|${team}`;
@@ -289,8 +339,15 @@ function resetInjuryCache() {
   _teamInjuries = null;
 }
 
+/** Seed the cache directly (tests). */
+function setInjuryScores(map) {
+  _teamInjuries = { ...map };
+}
+
 module.exports = {
+  tierFromRating,
   loadInjuryImpact,
   getTeamInjuryScore,
   resetInjuryCache,
+  setInjuryScores,
 };

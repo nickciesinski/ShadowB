@@ -54,7 +54,7 @@ const paramStore = require('./param-store');
 // 2026-10-01 — v2.3.4: NHL early-season blending + goalie presumed starters.
 // 2026-10-01 — v2.3.5: NBA standings (records, points allowed, early-season blend), Clippers alias, schedule lookup by normalized name.
 // 2026-10-02 — v2.3.6: a missing stat on either side means no gap (not a 0-vs-real gap); NHL 0-GP = league average.
-const MODEL_VERSION = 'v2.3.7-2026-10-21';
+const MODEL_VERSION = 'v2.4-2026-10-31';
 const WEIGHTS_HASH_CACHE = {};
 
 function weightsHashFor(league) {

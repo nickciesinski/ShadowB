@@ -9,6 +9,7 @@ const { buildInjuryFeatures } = require('./nfl-injuries');
 const { buildNflFormFeatures } = require('./nfl-form');
 const { buildArenaFeatures } = require('./arena-context');
 const { getTeamInjuryScore } = require('./injury-impact');
+const { teamAbbr } = require('./team-abbr');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
 // the weighted linear model.
@@ -205,8 +206,10 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   f.turnovers_combined = 0;
 
   // ── Injury features (from Injury Summary + Prop_Status scratches) ──
-  const homeAbbr = (home.abbr || home.Abbr || '').toUpperCase();
-  const awayAbbr = (away.abbr || away.Abbr || '').toUpperCase();
+  // 2026-10-31: team-stats rows carry no abbreviation, so these were always ''
+  // and every injury feature read 0. Fall back to the game's team names.
+  const homeAbbr = (home.abbr || home.Abbr || teamAbbr(league, ctx.homeTeam)).toUpperCase();
+  const awayAbbr = (away.abbr || away.Abbr || teamAbbr(league, ctx.awayTeam)).toUpperCase();
   const homeInjScore = getTeamInjuryScore(league, homeAbbr);
   const awayInjScore = getTeamInjuryScore(league, awayAbbr);
   f.home_injury_weight = homeInjScore;           // 0-1, higher = more injured

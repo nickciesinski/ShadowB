@@ -11,18 +11,26 @@
   "leagues": {
     "NHL": {
       "minEdgePct": 2.5,
-      "minConfidence": 3
+      "minConfidence": 3,
+      "maxEdgePct": 20,
+      "trackingOnlyMlUnderdogs": true
     },
     "NBA": {
       "minEdgePct": 2.5,
-      "maxUncertainty": 0.65
+      "maxUncertainty": 0.65,
+      "trackingOnlyMarkets": [
+        "total"
+      ]
     },
     "MLB": {
       "minEdgePct": 1.5,
       "minConfidence": 4,
-      "minMarketQuality": 0.3
+      "minMarketQuality": 0.3,
+      "maxEdgePct": 30
     },
-    "NFL": {}
+    "NFL": {
+      "maxEdgePct": 30
+    }
   },
   "tuning_history": [
     {
@@ -37,7 +45,7 @@
       "changes": {
         "minEdgePct": 2
       },
-      "reason": "7d ROI +40.9% on 228 bets — loosen minEdgePct 2.5→2"
+      "reason": "7d ROI +40.9% on 228 bets \u2014 loosen minEdgePct 2.5\u21922"
     },
     {
       "date": "2026-06-21",
@@ -45,7 +53,30 @@
       "changes": {
         "minEdgePct": 1.5
       },
-      "reason": "7d ROI +14.9% on 228 bets — loosen minEdgePct 2→1.5"
+      "reason": "7d ROI +14.9% on 228 bets \u2014 loosen minEdgePct 2\u21921.5"
+    },
+    {
+      "date": "2026-10-31",
+      "league": "NHL,NFL,MLB,NBA",
+      "changes": {
+        "NHL": {
+          "maxEdgePct": 20,
+          "trackingOnlyMlUnderdogs": true
+        },
+        "NFL": {
+          "maxEdgePct": 30
+        },
+        "MLB": {
+          "maxEdgePct": 30
+        },
+        "NBA": {
+          "trackingOnlyMarkets": [
+            "total"
+          ]
+        }
+      },
+      "reason": "Clean-era review: oversized claimed edges lose (NHL 20+ pts, NFL 30+ pts); NHL ML underdogs -24% flat ROI (n~60); NBA totals 39% win rate, -25% flat ROI (n=71). Hand-set by Nick's request."
     }
-  ]
+  ],
+  "_caps_doc": "maxEdgePct: claimed edges above this are tracking-only (model likely missing info). trackingOnlyMarkets / trackingOnlyMlUnderdogs: segments Nick moved to tracking-only on 2026-10-31. Both are guards \u2014 they never change a side or drop a pick."
 }

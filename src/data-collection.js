@@ -1194,9 +1194,8 @@ async function fetchOddsAndGrade() {
       // ever see games close enough to matter. max_days_out comes from lock-policy.
       const horizonDays = (LOCK_POLICY[sportName] && LOCK_POLICY[sportName].max_days_out) || 7;
       const nowIso = new Date().toISOString().slice(0, 19) + 'Z';
-      // NFL locks by WEEK, not a rolling 7 days: the Sunday-evening run takes all
-      // of next week (Thu/Sun/Mon) before Nick's 9 PM window; other days see only
-      // the current week. See src/nfl-week.js.
+      // NFL locks the night before each game (kickoff within 26h), so picks see
+      // the week's final injury report. See src/nfl-week.js.
       const toMs = sportName === 'NFL' ? nflLockHorizon() : Date.now() + horizonDays * 864e5;
       const toIso = new Date(toMs).toISOString().slice(0, 19) + 'Z';
       const params = new URLSearchParams({

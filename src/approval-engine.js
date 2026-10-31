@@ -154,6 +154,26 @@ function shouldApprove(pick, thresholds, league) {
     reasons.push('NBA moneyline data contaminated (stake=0 bug)');
   }
 
+  // 8. Edge cap (2026-10-31). A claimed edge far above what any real model
+  // gets over a betting market almost always means the model is missing news
+  // the market has (goalie, injury, rest). Clean-era ledger: NHL picks
+  // claiming 20+ pts went 33-49% with -9% to -35% flat ROI; NFL 30+ pts -22%
+  // to -33%. Such picks still log (coverage rule), they just aren't staked.
+  if (edge !== null && isFinite(thresholds.maxEdgePct) && edge > thresholds.maxEdgePct) {
+    reasons.push(`edge ${edge.toFixed(1)}% > cap ${thresholds.maxEdgePct}% (likely missing info)`);
+  }
+
+  // 9. Segments moved to tracking-only by Nick (2026-10-31), from
+  // config/approval-thresholds.json: whole markets, and moneyline underdogs.
+  const trackMarkets = Array.isArray(thresholds.trackingOnlyMarkets) ? thresholds.trackingOnlyMarkets : [];
+  if (trackMarkets.includes(betType)) {
+    reasons.push(`${league} ${betType} set to tracking-only`);
+  }
+  const odds = Number(pick._odds);
+  if (thresholds.trackingOnlyMlUnderdogs && betType === 'moneyline' && isFinite(odds) && odds > 0) {
+    reasons.push(`${league} moneyline underdog set to tracking-only`);
+  }
+
   // 7. Backfill picks (confidence 1%, units 0.01) are always tracking
   if (confidence <= 1) {
     reasons.push('backfill pick (confidence ≤1%)');

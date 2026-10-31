@@ -29,7 +29,7 @@
 //   - No NFL team plays on consecutive days, so a team's previous game is final
 //     well before 9 PM PT the night before and 5:30 AM PT the morning of. Both
 //     windows therefore see the same games and the same values.
-//   - Picks lock early (all of next week on Sunday evening, see nfl-week.js).
+//   - Picks lock the night before each game (see nfl-week.js).
 //     At that lock a team's most recent game may not be played yet; the vector
 //     simply uses the games that ARE final. That is staleness, not a leak, and
 //     the feature-CLV report only uses lock-time vectors.
