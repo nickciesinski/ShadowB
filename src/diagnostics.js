@@ -50,7 +50,7 @@ async function generateSystemHealthReport() {
         }
       }
 
-      const expectedTriggers = ['trigger1', 'trigger2', 'trigger3', 'trigger4', 'trigger6', 'trigger9', 'trigger10', 'trigger11', 'trigger12', 'trigger14', 'trigger16'];
+      const expectedTriggers = ['trigger1', 'trigger2', 'trigger3', 'trigger4', 'trigger6', 'trigger10', 'trigger11', 'trigger12', 'trigger14', 'trigger16'];
       const missing = expectedTriggers.filter(t => !recentTriggers.has(t));
 
       if (missing.length === 0 && triggerErrors.length === 0) {

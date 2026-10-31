@@ -9,11 +9,12 @@
 // =============================================================
 
 // Triggers expected to run on a given ET day-of-week (0=Sun … 6=Sat).
+// trigger9 (5 AM picks email) is off since 2026-10-31 — not expected.
 // trigger13 only runs Monday (01:00 UTC = Sun 8PM ET).
 function expectedTriggersFor(dayOfWeek) {
   const daily = [
     'trigger1', 'trigger2', 'trigger3', 'trigger4',
-    'trigger6', 'trigger7', 'trigger8', 'trigger9',
+    'trigger6', 'trigger7', 'trigger8',
     'trigger10', 'trigger11', 'trigger12', 'trigger14',
   ];
   if (dayOfWeek === 1) daily.push('trigger13');

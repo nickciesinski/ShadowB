@@ -3,11 +3,12 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { expectedTriggersFor, mergeTriggerRuns, categorize } = require('../src/trigger-health');
 
-test('expected list is 12 daily triggers, +trigger13 on Monday only', () => {
-  assert.strictEqual(expectedTriggersFor(0).length, 12); // Sun
-  assert.strictEqual(expectedTriggersFor(2).length, 12); // Tue
+test('expected list is 11 daily triggers (trigger9 off), +trigger13 on Monday only', () => {
+  assert.strictEqual(expectedTriggersFor(0).length, 11); // Sun
+  assert.strictEqual(expectedTriggersFor(2).length, 11); // Tue
   const mon = expectedTriggersFor(1);
-  assert.strictEqual(mon.length, 13);
+  assert.strictEqual(mon.length, 12);
+  assert.ok(!mon.includes('trigger9'));
   assert.ok(mon.includes('trigger13'));
 });
 
@@ -45,7 +46,7 @@ test('REGRESSION: at exactly 3 Sheet rows, Supabase backfill still prevents fals
   const { passed, failed, missing } = categorize(expected, merged);
   assert.strictEqual(missing.length, 0);
   assert.strictEqual(failed.length, 0);
-  assert.strictEqual(passed.length, 12);
+  assert.strictEqual(passed.length, 11);
 });
 
 test('categorize still reports genuinely absent triggers as missing', () => {
@@ -53,7 +54,7 @@ test('categorize still reports genuinely absent triggers as missing', () => {
   const runMap = { trigger1: { status: 'SUCCESS', duration: '5' } };
   const { passed, missing } = categorize(expected, runMap);
   assert.strictEqual(passed.length, 1);
-  assert.strictEqual(missing.length, 11);
+  assert.strictEqual(missing.length, 10);
   assert.ok(missing.includes('trigger4'));
 });
 

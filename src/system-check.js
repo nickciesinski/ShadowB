@@ -96,7 +96,7 @@ async function runHealthCheck() {
 
   const expectedDaily = [
     'trigger1', 'trigger2', 'trigger3', 'trigger4',
-    'trigger6', 'trigger7', 'trigger8', 'trigger9',
+    'trigger6', 'trigger7', 'trigger8',
     'trigger10', 'trigger11', 'trigger12', 'trigger14', 'trigger16',
   ];
   const dayOfWeek = new Date().getDay();
