@@ -1,22 +1,18 @@
 import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
 // Player rankings for the Rankings tab. trigger18 (src/player-rankings.js)
-// writes a "<LEAGUE> Rankings" sheet to the rankings spreadsheet every Tuesday;
-// src/injury-impact.js turns each player's score into a tier, and the tier
-// into how much an absence costs his team. This route reads the same sheet and
-// applies the same rules, so the tab shows exactly what the model charges.
+// writes a "<LEAGUE> Rankings" sheet every Tuesday. For each injured starter
+// this route also finds his replacement and the impact (rating gap), using
+// src/injury-replacement.js — the same code the model runs.
 export const dynamic = 'force-dynamic';
 
 const LEAGUES = ['NBA', 'NFL', 'NHL', 'MLB'];
 
-// Mirrors src/injury-impact.js — keep in step if those change.
-const TIER_SEVERITY = { S: 0.50, A: 0.35, B: 0.20, C: 0.10, D: 0.05 };
-const STATUS_MULTIPLIER = {
-  out: 1.0, o: 1.0, scratched: 1.0, suspended: 1.0, doubtful: 0.75, d: 0.75,
-  questionable: 0.40, q: 0.40, 'day-to-day': 0.30, dtd: 0.30, probable: 0.10, p: 0.10,
-};
-const LONG_TERM = new Set(['injured reserve', 'ir', '60-day-il', 'suspension', 'suspended']);
+// Same code the model uses (copied from src/ at build by copy-params.mjs).
+import replacement from './_shared/injury-replacement.js';
+const { computeReplacementImpact } = replacement;
 
 function tierFromRating(score) {
   if (!Number.isFinite(score)) return null;
@@ -27,13 +23,25 @@ function tierFromRating(score) {
   return 'D';
 }
 
-// What this player's current status costs his team in the model, or null if
-// he is healthy. Long-term absences are already in the season stats, so 0.
-function injuryCost(tier, status) {
-  const s = String(status || '').trim().toLowerCase();
-  if (!s || s === 'active' || s === 'healthy' || s === 'available') return null;
-  if (LONG_TERM.has(s)) return 0;
-  return (TIER_SEVERITY[tier] || TIER_SEVERITY.C) * (STATUS_MULTIPLIER[s] ?? 0.5);
+const norm = (n) => String(n || '').toLowerCase().replace(/[^a-z\s]/g, '').trim();
+
+// Today's injury report (the rankings sheet's own column is a weekly snapshot).
+async function latestInjuries(league) {
+  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  const sb = createClient(url, key, {
+    auth: { persistSession: false },
+    global: { fetch: (u, o) => fetch(u, { ...o, cache: 'no-store' }) },
+  });
+  const { data: last } = await sb.from('daily_injuries').select('date')
+    .eq('league', league).order('date', { ascending: false }).limit(1);
+  const date = last?.[0]?.date;
+  if (!date) return null;
+  const { data } = await sb.from('daily_injuries').select('player, status')
+    .eq('league', league).eq('date', date).limit(5000);
+  const map = {};
+  for (const r of data || []) map[norm(r.player)] = r.status || '';
+  return { date, map };
 }
 
 export async function GET(req) {
@@ -61,30 +69,31 @@ export async function GET(req) {
 
     // Summary schema: Name, Team, Position, Group, Composite, Tier, Rank,
     // Injury Status, Frozen Score, Frozen Rank, Age, Last Updated
+    let inj = null;
+    try { inj = await latestInjuries(league); } catch (e) { inj = null; }
     let updated = '';
-    const players = [];
+    const base = [];
     for (const r of rows) {
       const name = (r[0] || '').trim();
-      const score = parseFloat(r[4]);
+      const score = parseFloat(r[4]); // same column the model reads
       if (!name || !Number.isFinite(score)) continue;
-      const tier = tierFromRating(score);
-      const status = (r[7] || '').trim();
-      players.push({
-        name,
-        team: (r[1] || '').trim().toUpperCase(),
-        pos: (r[2] || '').trim(),
-        group: (r[3] || '').trim(),
-        score: Math.round(score * 10) / 10,
-        tier,
-        status,
-        cost: injuryCost(tier, status),
+      const status = inj ? (inj.map[norm(name)] || '') : (r[7] || '').trim();
+      base.push({
+        name, team: (r[1] || '').trim().toUpperCase(), pos: (r[2] || '').trim(),
+        group: (r[3] || '').trim(), score: Math.round(score * 10) / 10, status,
       });
       if (r[11] && r[11] > updated) updated = r[11];
     }
-    players.sort((a, b) => b.score - a.score);
+    const { players: scored, teams } = computeReplacementImpact(league, base);
+    const players = scored.map(p => ({
+      name: p.name, team: p.team, pos: p.pos, group: p.group, score: p.score,
+      tier: tierFromRating(p.score), status: p.status, starter: p.starter,
+      replacement: p.replacement, replacementScore: p.replacementScore,
+      impact: p.status ? Math.round(p.impact * 100) / 100 : null,
+    })).sort((a, b) => b.score - a.score);
 
     return NextResponse.json(
-      { ok: true, league, updated, players },
+      { ok: true, league, updated, injuriesAsOf: inj?.date || null, players, teams },
       { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=3600' } },
     );
   } catch (err) {

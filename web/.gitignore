@@ -3,3 +3,4 @@ node_modules/
 .env.local
 app/api/params/_data/
 app/api/data/_shared/
+app/api/rankings/_shared/

@@ -27,3 +27,11 @@ for (const lg of ['MLB', 'NBA', 'NFL', 'NHL']) {
 }
 console.log(`[copy-params] copied ${n} param file(s) -> ${outDir}`);
 console.log(`[copy-params] copied display module + ${c} calibration map(s) -> ${sharedOut}`);
+
+// 2026-11-03 — the Rankings tab shows each injury's replacement and impact
+// with the same code the model uses.
+const rankShared = path.resolve(here, '..', 'app', 'api', 'rankings', '_shared');
+fs.mkdirSync(rankShared, { recursive: true });
+fs.copyFileSync(path.resolve(here, '..', '..', 'src', 'injury-replacement.js'),
+                path.join(rankShared, 'injury-replacement.js'));
+console.log(`[copy-params] copied injury-replacement.js -> ${rankShared}`);

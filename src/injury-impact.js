@@ -16,9 +16,14 @@
 const { getValues } = require('./sheets');
 const dataStore = require('./data-store');
 const { SPREADSHEET_ID, SHEETS } = require('./config');
+const { computeReplacementImpact } = require('./injury-replacement');
 
 // ── Module cache (loaded once per trigger run) ─────────────────
 let _teamInjuries = null; // { "NBA|BOS": 0.3, "NHL|TOR": 0.7, ... }
+// 2026-11-03 — same idea, but each absence is worth the gap between the
+// player and his replacement (src/injury-replacement.js). Measured at
+// weight 0 alongside the old score before it is trusted.
+let _teamInjuryGap = null; // { "NBA|BOS": 0.42, ... }
 
 // Position → importance score. 'G' means goalie in the NHL (the one player
 // who decides a game) but just "guard" in the NBA, where ESPN lists most
@@ -138,7 +143,8 @@ async function applyPlayerRatings(lookup) {
         const key = `${league}|${name}`;
         const team = String(row[1] || '').trim().toUpperCase() || (lookup[key] && lookup[key].team);
         if (!team) continue;
-        lookup[key] = { team, league, tier, score, rated: true };
+        const pos = String(row[2] || '').trim().toUpperCase() || (lookup[key] && lookup[key].pos) || '';
+        lookup[key] = { team, league, tier, score, rated: true, pos, name: String(row[0] || '').trim() };
         rated++;
       }
     } catch (e) {
@@ -200,6 +206,8 @@ function findPlayer(lookup, league, playerName) {
 async function loadInjuryImpact() {
   if (_teamInjuries) return _teamInjuries;
   _teamInjuries = {};
+  _teamInjuryGap = {};
+  const statusByPlayer = {}; // "NBA|lebron james" → "out" (incl. long-term)
 
   // Build player lookup from all 4 league stat sheets
   const playerLookup = await buildPlayerLookup();
@@ -224,6 +232,7 @@ async function loadInjuryImpact() {
         const player = (row[2] || '').trim();
         if (!league || !player) continue;
 
+        statusByPlayer[`${league}|${normalizeName(player)}`] = 'out';
         // Look up player to get team and tier
         const info = findPlayer(playerLookup, league, player);
 
@@ -273,9 +282,13 @@ async function loadInjuryImpact() {
 
           const status = (row[statusIdx] || '').trim().toLowerCase();
           if (status === 'active' || status === 'healthy' || status === 'available') continue;
+          const playerName = playerIdx >= 0 ? (row[playerIdx] || '').trim() : '';
+          if (playerName) {
+            const k = `${league}|${normalizeName(playerName)}`;
+            if (!statusByPlayer[k]) statusByPlayer[k] = status;
+          }
           if (LONG_TERM.has(status)) continue;
 
-          const playerName = playerIdx >= 0 ? (row[playerIdx] || '').trim() : '';
           const tKey = `${league}|${team}`;
 
           // Determine severity: player-tier-weighted if we can find the player
@@ -305,6 +318,26 @@ async function loadInjuryImpact() {
     }
   } catch (e) {
     console.warn('[injury-impact] Could not read Injury Summary:', e.message);
+  }
+
+  // Replacement-gap scores from the rated depth charts.
+  try {
+    const byLeague = {};
+    for (const [key, info] of Object.entries(playerLookup)) {
+      if (!info.rated || !info.pos) continue;
+      (byLeague[info.league] = byLeague[info.league] || []).push({
+        name: info.name || key.split('|')[1], team: info.team, pos: info.pos, score: info.score,
+        status: statusByPlayer[key] || '',
+      });
+    }
+    for (const [league, players] of Object.entries(byLeague)) {
+      const { teams } = computeReplacementImpact(league, players);
+      for (const [team, v] of Object.entries(teams)) _teamInjuryGap[`${league}|${team}`] = v;
+    }
+    const n = Object.keys(_teamInjuryGap).length;
+    if (n) console.log(`[injury-impact] Replacement-gap scores for ${n} teams`);
+  } catch (e) {
+    console.warn('[injury-impact] Replacement-gap scoring failed:', e.message);
   }
 
   const teamCount = Object.keys(_teamInjuries).filter(k => _teamInjuries[k] > 0).length;
@@ -347,16 +380,24 @@ function getTeamInjuryScore(league, teamAbbr) {
   return _teamInjuries[key] || 0;
 }
 
+/** Replacement-gap injury score for a team (0 = no meaningful absence). */
+function getTeamInjuryGap(league, teamAbbr) {
+  if (!_teamInjuryGap) return 0;
+  return _teamInjuryGap[`${league}|${teamAbbr}`] || 0;
+}
+
 /**
  * Reset cache between trigger runs.
  */
 function resetInjuryCache() {
   _teamInjuries = null;
+  _teamInjuryGap = null;
 }
 
 /** Seed the cache directly (tests). */
-function setInjuryScores(map) {
+function setInjuryScores(map, gapMap = {}) {
   _teamInjuries = { ...map };
+  _teamInjuryGap = { ...gapMap };
 }
 
 module.exports = {
@@ -365,6 +406,7 @@ module.exports = {
   tierFromRating,
   loadInjuryImpact,
   getTeamInjuryScore,
+  getTeamInjuryGap,
   resetInjuryCache,
   setInjuryScores,
 };

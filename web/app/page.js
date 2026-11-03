@@ -2610,8 +2610,8 @@ function findPlayerStat(playerName, market, boxPlayers) {
 // ── Main App ────────────────────────────────────────────────────────
 // ── Rankings Tab ─────────────────────────────────────────────────────
 // 2026-11-03 (Nick): a quick way to eyeball the player ratings that drive the
-// injury features. "Cost" is what that player's current status takes off his
-// team's injury score, using the same rules as src/injury-impact.js.
+// injury features. For an injured starter, "Impact" is the rating gap to the
+// player who replaces him (src/injury-replacement.js — same code as the model).
 const RANK_LEAGUES = ['NBA', 'NFL', 'NHL', 'MLB'];
 const TIER_COLOR = { S: '#4C9AFF', A: '#34C77B', B: '#E7E9EC', C: '#79818B', D: '#565e68' };
 function defaultRankLeague() {
@@ -2672,7 +2672,7 @@ function RankingsTab() {
               <th style={{ ...head, textAlign: 'left' }}>Pos</th>
               <th style={{ ...head, textAlign: 'right' }}>Score</th>
               <th style={{ ...head, textAlign: 'center' }}>Tier</th>
-              <th style={{ ...head, textAlign: 'right' }}>Cost</th>
+              <th style={{ ...head, textAlign: 'right' }}>Impact</th>
             </tr></thead>
             <tbody>
               {shown.slice(0, 300).map(p => (
@@ -2681,13 +2681,21 @@ function RankingsTab() {
                   <td style={{ ...cell, whiteSpace: 'normal' }}>
                     <div style={{ font: '600 12px/1.2 var(--body)' }}>{p.name}</div>
                     <div style={{ color: 'var(--dim2)', fontSize: 10, marginTop: 2 }}>
-                      {p.team}{p.status && <span style={{ color: p.cost ? 'var(--fade)' : 'var(--dim)', marginLeft: 6, textTransform: 'uppercase' }}>{p.status}</span>}
+                      {p.team}{p.status && <span style={{ color: p.impact ? 'var(--fade)' : 'var(--dim)', marginLeft: 6, textTransform: 'uppercase' }}>{p.status}</span>}
                     </div>
+                    {p.status && p.impact > 0 && (
+                      <div style={{ color: 'var(--dim)', fontSize: 10, marginTop: 2 }}>
+                        → {p.replacement || 'no healthy backup'}{p.replacementScore != null && ` (${p.replacementScore.toFixed(0)})`}
+                      </div>
+                    )}
+                    {p.status && !p.impact && (
+                      <div style={{ color: 'var(--dim2)', fontSize: 10, marginTop: 2 }}>{p.starter ? 'backup is as good' : 'not a starter'}</div>
+                    )}
                   </td>
                   <td style={{ ...cell, color: 'var(--dim)' }}>{p.pos}</td>
                   <td style={{ ...cell, textAlign: 'right' }}>{p.score.toFixed(1)}</td>
                   <td style={{ ...cell, textAlign: 'center', fontWeight: 700, color: TIER_COLOR[p.tier] }}>{p.tier}</td>
-                  <td style={{ ...cell, textAlign: 'right', color: p.cost ? 'var(--fade)' : 'var(--dim2)' }}>{p.cost == null ? '' : p.cost.toFixed(2)}</td>
+                  <td style={{ ...cell, textAlign: 'right', color: p.impact ? 'var(--fade)' : 'var(--dim2)' }}>{p.impact == null ? '' : p.impact.toFixed(2)}</td>
                 </tr>
               ))}
             </tbody>
@@ -2696,7 +2704,7 @@ function RankingsTab() {
       )}
       {shown.length > 300 && <div className="empty">Showing top 300 — search to find others.</div>}
       <div style={{ padding: '12px 14px', color: 'var(--dim2)', font: '500 10px/1.5 var(--mono)' }}>
-        Tier: S 85+ · A 68+ · B 50+ · C 32+ · D below. Cost = how much this player's status adds to his team's injury score (team max 1.0). Long-term injuries cost 0 — already in the season stats.
+        Tier: S 85+ · A 68+ · B 50+ · C 32+ · D below. Impact = the rating gap between an injured starter and the healthy teammate who replaces him, scaled by how likely he is to sit (Out 100%, Questionable 40%). A star with a weak backup is a big number; a bench player out is 0. Long-term injuries are 0 — the team already plays without them.
       </div>
     </div>
   );

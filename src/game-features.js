@@ -8,7 +8,7 @@ const { buildNflFeatures } = require('./nfl-context');
 const { buildInjuryFeatures } = require('./nfl-injuries');
 const { buildNflFormFeatures } = require('./nfl-form');
 const { buildArenaFeatures } = require('./arena-context');
-const { getTeamInjuryScore } = require('./injury-impact');
+const { getTeamInjuryScore, getTeamInjuryGap } = require('./injury-impact');
 const { teamAbbr } = require('./team-abbr');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -218,6 +218,13 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   f.total_injury_weight = homeInjScore + awayInjScore; // both banged up = more variance
   f.severe_injury_factor = Math.max(homeInjScore, awayInjScore) > 0.5 ? 1 : 0;
   f.injury_advantage = Math.max(-1, Math.min(1, f.injury_weight_diff * 2)); // normalized -1 to 1
+  // 2026-11-03 — replacement-aware version: each absence counts the gap
+  // between the player and whoever replaces him. Weight 0 until measured.
+  const homeGap = getTeamInjuryGap(league, homeAbbr);
+  const awayGap = getTeamInjuryGap(league, awayAbbr);
+  f.home_injury_gap = homeGap;
+  f.away_injury_gap = awayGap;
+  f.injury_gap_diff = awayGap - homeGap; // positive = away hurt more = good for home
 
   // ── Schedule/rest ──
   if (scheduleInfo) {
