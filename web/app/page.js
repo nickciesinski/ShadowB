@@ -2608,6 +2608,100 @@ function findPlayerStat(playerName, market, boxPlayers) {
 }
 
 // ── Main App ────────────────────────────────────────────────────────
+// ── Rankings Tab ─────────────────────────────────────────────────────
+// 2026-11-03 (Nick): a quick way to eyeball the player ratings that drive the
+// injury features. "Cost" is what that player's current status takes off his
+// team's injury score, using the same rules as src/injury-impact.js.
+const RANK_LEAGUES = ['NBA', 'NFL', 'NHL', 'MLB'];
+const TIER_COLOR = { S: '#4C9AFF', A: '#34C77B', B: '#E7E9EC', C: '#79818B', D: '#565e68' };
+function defaultRankLeague() {
+  // NBA runs mid-October to the end of June; MLB the rest of the year.
+  const d = new Date();
+  const m = d.getMonth() + 1, day = d.getDate();
+  const nbaOn = m >= 11 || m <= 6 || (m === 10 && day >= 15);
+  return nbaOn ? 'NBA' : 'MLB';
+}
+function RankingsTab() {
+  const [lg, setLg] = useState(defaultRankLeague);
+  const [q, setQ] = useState('');
+  const [hurtOnly, setHurtOnly] = useState(false);
+  const [state, setState] = useState({ loading: true });
+
+  useEffect(() => {
+    let live = true;
+    setState({ loading: true });
+    fetch(`/api/rankings?league=${lg}`)
+      .then(r => r.json())
+      .then(j => { if (live) setState(j.ok ? { data: j } : { error: j.error || 'Load failed' }); })
+      .catch(e => { if (live) setState({ error: e.message }); });
+    return () => { live = false; };
+  }, [lg]);
+
+  const players = state.data?.players || [];
+  const needle = q.trim().toLowerCase();
+  const shown = players
+    .map((p, i) => ({ ...p, rank: i + 1 }))
+    .filter(p => !hurtOnly || p.status)
+    .filter(p => !needle || p.name.toLowerCase().includes(needle) || p.team.toLowerCase() === needle || p.pos.toLowerCase() === needle);
+  const hurtCount = players.filter(p => p.status).length;
+
+  const cell = { padding: '7px 6px', borderBottom: '1px solid var(--line-soft)', font: '500 11px/1.2 var(--mono)', color: 'var(--text)', whiteSpace: 'nowrap' };
+  const head = { ...cell, font: '500 9px/1 var(--mono)', letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--dim2)', background: 'var(--bg)' };
+
+  return (
+    <div className="tp">
+      <div className="ah"><b>Rankings</b><span>{state.data?.updated ? `UPDATED ${state.data.updated}` : ''}</span></div>
+      <div className="aleagues scroll">
+        {RANK_LEAGUES.map(l => (
+          <button key={l} className={lg === l ? 'sel' : ''} onClick={() => setLg(l)}><span className="lg">{l}</span>{lg === l && <span className="ct">{players.length}</span>}</button>
+        ))}
+        <button className={hurtOnly ? 'sel' : ''} onClick={() => setHurtOnly(v => !v)}><span className="lg">INJURED</span><span className="ct">{hurtCount}</span></button>
+      </div>
+      <div style={{ padding: '6px 14px', background: 'var(--panel3)', borderBottom: '1px solid var(--line)' }}>
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search player, team (LAL) or position"
+          style={{ width: '100%', background: 'var(--panel)', border: '1px solid var(--line2)', borderRadius: 3, padding: '7px 9px', color: 'var(--text)', font: '500 12px/1 var(--mono)' }} />
+      </div>
+      {state.loading && <div className="empty">Loading rankings…</div>}
+      {state.error && <div className="empty">Couldn't load rankings.<br /><span style={{ fontSize: 11 }}>{state.error}</span></div>}
+      {state.data && (
+        shown.length === 0 ? <div className="empty">No players match.</div> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr>
+              <th style={{ ...head, textAlign: 'right' }}>#</th>
+              <th style={{ ...head, textAlign: 'left' }}>Player</th>
+              <th style={{ ...head, textAlign: 'left' }}>Pos</th>
+              <th style={{ ...head, textAlign: 'right' }}>Score</th>
+              <th style={{ ...head, textAlign: 'center' }}>Tier</th>
+              <th style={{ ...head, textAlign: 'right' }}>Cost</th>
+            </tr></thead>
+            <tbody>
+              {shown.slice(0, 300).map(p => (
+                <tr key={`${p.name}|${p.team}`}>
+                  <td style={{ ...cell, textAlign: 'right', color: 'var(--dim2)' }}>{p.rank}</td>
+                  <td style={{ ...cell, whiteSpace: 'normal' }}>
+                    <div style={{ font: '600 12px/1.2 var(--body)' }}>{p.name}</div>
+                    <div style={{ color: 'var(--dim2)', fontSize: 10, marginTop: 2 }}>
+                      {p.team}{p.status && <span style={{ color: p.cost ? 'var(--fade)' : 'var(--dim)', marginLeft: 6, textTransform: 'uppercase' }}>{p.status}</span>}
+                    </div>
+                  </td>
+                  <td style={{ ...cell, color: 'var(--dim)' }}>{p.pos}</td>
+                  <td style={{ ...cell, textAlign: 'right' }}>{p.score.toFixed(1)}</td>
+                  <td style={{ ...cell, textAlign: 'center', fontWeight: 700, color: TIER_COLOR[p.tier] }}>{p.tier}</td>
+                  <td style={{ ...cell, textAlign: 'right', color: p.cost ? 'var(--fade)' : 'var(--dim2)' }}>{p.cost == null ? '' : p.cost.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      )}
+      {shown.length > 300 && <div className="empty">Showing top 300 — search to find others.</div>}
+      <div style={{ padding: '12px 14px', color: 'var(--dim2)', font: '500 10px/1.5 var(--mono)' }}>
+        Tier: S 85+ · A 68+ · B 50+ · C 32+ · D below. Cost = how much this player's status adds to his team's injury score (team max 1.0). Long-term injuries cost 0 — already in the season stats.
+      </div>
+    </div>
+  );
+}
+
 // ── Settings Tab ──────────────────────────────────────────────────────
 function SettingsTab() {
   const [confirmReview, setConfirmReview] = useState(false);
@@ -3325,6 +3419,7 @@ export default function App() {
     // Props hidden 2026-10-03 (Nick): a separate, older pipeline the model doesn't use,
     // and the busiest screen in the app. PropsTab is kept — add an entry to restore.
     { id: 'results', label: 'Results', icon: '/icons/tails.png' },
+    { id: 'rankings', label: 'Rankings', icon: '/icons/rankings.svg' },
   ];
 
   // Picks/Scores/Results are self-contained tape screens with their own header,
@@ -3445,12 +3540,13 @@ export default function App() {
               : <div className="tp"><div className="ah"><b>Results</b></div><div className="empty">Loading results…</div></div>
         )}
         {tab === 'settings' && <SettingsTab />}
+        {tab === 'rankings' && <RankingsTab />}
       </div>
 
       {/* Tab Bar */}
       <div className="tp tabs" style={{
         position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '100%', maxWidth: 480, gridTemplateColumns: 'repeat(4, 1fr)', zIndex: 30,
+        width: '100%', maxWidth: 480, gridTemplateColumns: `repeat(${tabs.length}, 1fr)`, zIndex: 30,
       }}>
         {tabs.map(t => (
           <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => handleTabChange(t.id)} style={{ position: 'relative' }}>
