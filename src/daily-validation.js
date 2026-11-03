@@ -28,7 +28,7 @@
 
 const db = require('./db');
 const { probe } = require('./debug-probe');
-const { checkDeadWeights } = require('./feature-health');
+const { checkDeadWeights, KNOWN_LOW_CARDINALITY } = require('./feature-health');
 
 const LEAGUES = ['MLB', 'NBA', 'NFL', 'NHL'];
 
@@ -106,7 +106,8 @@ async function checkFeatures(sb, todayISO) {
         out.coverage[`${lg}.${m.market}`] = m.liveMassPct;
         if (m.unexpected && m.unexpected.length) unexpected.push(...m.unexpected);
       }
-      if (unexpected.length) { out.pass = false; out.leagues[lg] = { new_dead_weights: unexpected }; }
+      // The same weight shows up once per market; list it once.
+      if (unexpected.length) { out.pass = false; out.leagues[lg] = { new_dead_weights: [...new Set(unexpected)] }; }
     } catch (err) {
       out.pass = false; out.leagues[lg] = { error: err.message };
     }
@@ -129,9 +130,11 @@ async function checkFeatures(sb, todayISO) {
         (vals[k] = vals[k] || new Set()).add(Number(n.toFixed(6)));
       }
     }
-    // All-zero features belong to other leagues and are expected.
+    // All-zero features belong to other leagues and are expected. League
+    // constants (home advantage) and flags are constant by design — the same
+    // allow-list feature-health uses, so the two checks agree.
     const collapsed = Object.entries(vals)
-      .filter(([, s]) => s.size === 1 && !s.has(0))
+      .filter(([k, s]) => s.size === 1 && !s.has(0) && !KNOWN_LOW_CARDINALITY.has(k))
       .map(([k]) => k);
     if (collapsed.length) out.collapsed[lg] = collapsed.slice(0, 10);
   }

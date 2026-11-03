@@ -20,6 +20,19 @@ const { SPREADSHEET_ID, SHEETS } = require('./config');
 // ── Module cache (loaded once per trigger run) ─────────────────
 let _teamInjuries = null; // { "NBA|BOS": 0.3, "NHL|TOR": 0.7, ... }
 
+// Position → importance score. 'G' means goalie in the NHL (the one player
+// who decides a game) but just "guard" in the NBA, where ESPN lists most
+// backcourt players as G. A shared table made every NBA guard S-tier, so two
+// guards out maxed a team's injury score at 1.0 (found 2026-11-03).
+const POS_WEIGHTS = { SP: 85, CP: 70, QB: 90, G: 85, RP: 40, C: 50, SS: 50, PG: 55, SG: 50, SF: 50, PF: 50, RB: 55, WR: 50, TE: 45, D: 50, LW: 45, RW: 45 };
+const POS_WEIGHTS_BY_LEAGUE = { NBA: { G: 50, F: 50, 'G-F': 50, 'F-C': 50 } };
+
+function positionScore(league, pos) {
+  const p = String(pos || '').trim().toUpperCase();
+  const own = POS_WEIGHTS_BY_LEAGUE[league] || {};
+  return own[p] ?? POS_WEIGHTS[p] ?? 30;
+}
+
 // Tier-based severity weights — S-tier players being out hurts much more
 const TIER_SEVERITY = {
   S: 0.50,
@@ -73,8 +86,7 @@ async function buildPlayerLookup() {
 
         const pos = (row[3] || '').trim();
         // Position-based score for tier assignment (matches player-tiers.js logic)
-        const posWeights = { SP: 85, CP: 70, QB: 90, G: 85, RP: 40, C: 50, SS: 50, PG: 55, SG: 50, SF: 50, PF: 50, RB: 55, WR: 50, TE: 45, D: 50, LW: 45, RW: 45 };
-        const score = posWeights[pos.toUpperCase()] || 30;
+        const score = positionScore(league, pos);
 
         let tier = 'D';
         if (score >= 85) tier = 'S';
@@ -313,8 +325,11 @@ function getImpactFallback(row, impactIdx, statusMult) {
     if (impact === 'high' || impact === 'critical') return 0.35 * statusMult;
     if (impact === 'medium' || impact === 'moderate') return 0.20 * statusMult;
     if (impact === 'low' || impact === 'minor') return 0.08 * statusMult;
-    const parsed = parseFloat(impact);
-    if (!isNaN(parsed)) return parsed * statusMult;
+    // A numeric impact is data-collection's STATUS score (OUT = 1.0), not how
+    // important the player is. Multiplying it by the status again made any
+    // unrecognised OUT player — a two-way call-up, a rookie — worth a full
+    // 1.0 on his own, so nearly every NBA team read "devastated" every day
+    // (found 2026-11-03). Unknown player = default importance below.
   }
   // Default: moderate importance × status
   return 0.15 * statusMult;
@@ -345,6 +360,8 @@ function setInjuryScores(map) {
 }
 
 module.exports = {
+  positionScore,
+  getImpactFallback,
   tierFromRating,
   loadInjuryImpact,
   getTeamInjuryScore,

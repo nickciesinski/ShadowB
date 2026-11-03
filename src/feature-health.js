@@ -24,6 +24,7 @@
 
 const { extractFeatures } = require('./game-features');
 const paramStore = require('./param-store');
+const { featureNames: nflContextFeatureNames } = require('./nfl-context');
 
 // sp_* are injected downstream by game-model from market odds, not by
 // extractFeatures, so they are legitimately absent at extraction time.
@@ -87,6 +88,10 @@ function checkDeadWeights(league) {
   let produced;
   try {
     produced = new Set(Object.keys(extractFeatures(probe, probe, {}, league)));
+    // NFL rest/travel/timezone features need a real kickoff and last-game
+    // history, which the synthetic probe has no way to supply. They are live
+    // on real slates, so count them as produced rather than "dead".
+    if (league === 'NFL') for (const k of nflContextFeatureNames()) produced.add(k);
   } catch (err) {
     return { league, error: `extractFeatures threw: ${err.message}`, markets: [] };
   }

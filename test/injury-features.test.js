@@ -22,3 +22,18 @@ test('player rating sets the tier: a rated star outranks a rated backup', () => 
   assert.strictEqual(tierFromRating(55), 'B');
   assert.strictEqual(tierFromRating(12), 'D');
 });
+
+// 2026-11-03 — NBA injury scores pinned at 1.0 for nearly every team.
+test('NBA guards are not rated like NHL goalies', () => {
+  const { positionScore } = require('../src/injury-impact');
+  assert.strictEqual(positionScore('NHL', 'G'), 85);
+  assert.strictEqual(positionScore('NBA', 'G'), 50);
+  assert.strictEqual(positionScore('NFL', 'QB'), 90);
+});
+
+test('an unknown OUT player does not max out a team on his own', () => {
+  const { getImpactFallback } = require('../src/injury-impact');
+  // data-collection writes impact 1.0 for every OUT player
+  const sev = getImpactFallback(['', '', '', '', 'out', '', '1'], 6, 1.0);
+  assert.ok(sev <= 0.2, `got ${sev}`);
+});
