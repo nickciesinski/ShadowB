@@ -110,7 +110,10 @@ async function updatePlayerStats() {
           const groups = rosterData.athletes || [];
 
           for (const group of groups) {
-            const players = group.items || [];
+            // NHL/NFL/MLB group players by position ({ position, items: [...] });
+            // NBA returns a flat list of players. Reading only .items left the
+            // NBA roster sheet frozen for months (found 2026-11-03).
+            const players = group.items || (group.id ? [group] : []);
             for (const p of players) {
               const espnId = String(p.id || '');
               const name = p.displayName || p.fullName || '';

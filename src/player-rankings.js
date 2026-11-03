@@ -34,10 +34,21 @@ const PR_CONFIG = {
     MLB_PITCHER: { volume: 0.30, rate: 0.70 },
     NHL_SKATER:  { volume: 0.40, rate: 0.60 },
     NHL_GOALIE:  { volume: 0.35, rate: 0.65 },
-    NBA:         { volume: 0.30, rate: 0.70 },
+    NBA:         { volume: 0.85, rate: 0.15 },
     NFL_QB:      { volume: 0.35, rate: 0.65 },
-    NFL_SKILL:   { volume: 0.40, rate: 0.60 },
-    NFL_DEF:     { volume: 0.40, rate: 0.60 },
+    NFL_SKILL:   { volume: 0.85, rate: 0.15 },  // RBs always have fewer yards per touch than WRs
+    NFL_DEF:     { volume: 1.00, rate: 0.00 },  // no rate stats — see below
+  },
+
+  // 2026-11-03: rate stats need a real sample. A WR with one 27-yard catch had
+  // the best Y/Rec in the league and ranked #3 overall. Each rate average is
+  // pulled toward 50 until the player reaches this much playing time.
+  minSample: {
+    NBA:        { stat: (s) => (s.gamesPlayed || 0) * (s.avgMinutes || 0), full: 300 },
+    NFL_QB:     { stat: (s) => s.passingAttempts || 0, full: 150 },
+    NFL_SKILL:  { stat: (s) => s.touches || 0, full: 40 },
+    NHL_SKATER: { stat: (s) => s.games || 0, full: 10 },
+    NHL_GOALIE: { stat: (s) => s.games || 0, full: 8 },
   },
 
   // Stats to extract from ESPN athlete responses, per position group.
@@ -88,9 +99,9 @@ const PR_CONFIG = {
         { key: 'gameWinningGoals', display: 'GWG' },
       ],
       rate: [
-        { key: 'plusMinus', display: '+/-' },
+        { key: 'plusMinus', display: 'Plus/Minus' },  // '+/-' is read as a formula by Sheets
         { key: 'timeOnIcePerGame', display: 'TOI/GP' },
-        { key: 'production', display: 'P/GP' },
+        { key: 'pointsPerGame', display: 'P/GP' },     // computed — ESPN's 'production' is a time, not P/GP
         { key: 'shootingPct', display: 'SH%' },
       ],
     },
@@ -104,22 +115,22 @@ const PR_CONFIG = {
       ],
       rate: [
         { key: 'savePct', display: 'SV%' },
-        { key: 'goalsAgainstAverage', display: 'GAA', invert: true },
+        { key: 'avgGoalsAgainst', display: 'GAA', invert: true },
       ],
     },
+    // 2026-11-03: was eleven equal-weighted stats with shooting % as 70% of
+    // the score, which ranked rim-running centres (high FG%) above the MVP.
+    // Now one all-round per-game production number does most of the work.
     NBA: {
       volume: [
+        { key: 'impactPerGame', display: 'Impact/G' },
         { key: 'avgPoints', display: 'PTS' },
         { key: 'avgRebounds', display: 'REB' },
         { key: 'avgAssists', display: 'AST' },
-        { key: 'avgSteals', display: 'STL' },
-        { key: 'avgBlocks', display: 'BLK' },
         { key: 'avgMinutes', display: 'MIN' },
-        { key: 'gamesPlayed', display: 'GP' },
       ],
       rate: [
         { key: 'fieldGoalPct', display: 'FG%' },
-        { key: 'threePointFieldGoalPct', display: '3P%' },
         { key: 'freeThrowPct', display: 'FT%' },
         { key: 'avgTurnovers', display: 'TOV', invert: true },
       ],
@@ -138,28 +149,26 @@ const PR_CONFIG = {
         { key: 'interceptions', display: 'INT', invert: true },
       ],
     },
+    // 2026-11-03: rushing and receiving are combined. Scored separately, a WR
+    // was judged on receiving alone while an RB was averaged across both, so
+    // no running back reached the top of the list.
     NFL_SKILL: {
       volume: [
-        { key: 'rushingYards', display: 'Rush Yds' },
-        { key: 'rushingTouchdowns', display: 'Rush TD' },
-        { key: 'receivingYards', display: 'Rec Yds' },
-        { key: 'receptions', display: 'Rec' },
-        { key: 'receivingTouchdowns', display: 'Rec TD' },
+        { key: 'scrimmageYards', display: 'Scrim Yds' },
+        { key: 'scrimmageTouchdowns', display: 'TD' },
       ],
       rate: [
-        { key: 'yardsPerRushAttempt', display: 'YPC' },
-        { key: 'yardsPerReception', display: 'Y/Rec' },
-        { key: 'fumbles', display: 'Fum', invert: true },
+        { key: 'yardsPerTouch', display: 'Y/Touch' },
       ],
     },
     NFL_DEF: {
       volume: [
         { key: 'totalTackles', display: 'Tackles' },
         { key: 'sacks', display: 'Sacks' },
-        { key: 'tacklesForLoss', display: 'TFL' },
+        { key: 'stuffs', display: 'Stuffs' },
         { key: 'interceptions', display: 'INT' },
         { key: 'passesDefended', display: 'PD' },
-        { key: 'forcedFumbles', display: 'FF' },
+        { key: 'fumblesForced', display: 'FF' },
       ],
       rate: [], // ESPN doesn't have defensive rate stats
     },
@@ -184,11 +193,11 @@ const PR_CONFIG = {
     NFL: {
       QB: 'NFL_QB',
       RB: 'NFL_SKILL', WR: 'NFL_SKILL', TE: 'NFL_SKILL', FB: 'NFL_SKILL',
-      OL: 'NFL_SKILL', OT: 'NFL_SKILL', OG: 'NFL_SKILL', C: 'NFL_SKILL',
+      // Kickers, punters and linemen have none of the stats ranked here, so
+      // they were scored on noise (a punter ranked #10). Left unranked.
       DL: 'NFL_DEF', DE: 'NFL_DEF', DT: 'NFL_DEF', NT: 'NFL_DEF',
       LB: 'NFL_DEF', OLB: 'NFL_DEF', ILB: 'NFL_DEF',
       CB: 'NFL_DEF', S: 'NFL_DEF', FS: 'NFL_DEF', SS: 'NFL_DEF', DB: 'NFL_DEF',
-      K: 'NFL_SKILL', P: 'NFL_SKILL',
     },
   },
 
@@ -200,8 +209,10 @@ const PR_CONFIG = {
     NFL_QB: 'QB', NFL_SKILL: 'Skill', NFL_DEF: 'Defense',
   },
 
-  // NFL QB scale multiplier (pushes elite QBs to top of unified list)
-  nflQbScaleMultiplier: 1.12,
+  // Best possible score per group. An NFL QB moves a line several points; the
+  // best linebacker does not. Capping the other groups keeps a star WR at
+  // A tier and a star defender at B/A, so only quarterbacks can be S.
+  groupTop: { NFL_SKILL: 84, NFL_DEF: 76 },
 
   // Sheet names in the RANKINGS spreadsheet
   rankingSheets: {
@@ -297,13 +308,36 @@ async function readRoster(sport) {
  * Uses parallel arrays: names[i] corresponds to statistics[last].stats[i].
  * We take the most recent season entry.
  */
+function seasonYear(entry) {
+  return Number(entry?.season?.year) || 0;
+}
+
+// ESPN sends numbers as display strings: "1,793" (parseFloat reads 1),
+// "23:28" minutes:seconds (read 23), ".927". Returns a number or null.
+function parseStatValue(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  const str = String(raw).trim().replace(/,/g, '');
+  const mmss = str.match(/^(\d+):(\d{2})$/);
+  if (mmss) return Number(mmss[1]) + Number(mmss[2]) / 60;
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(str)) return null;
+  return parseFloat(str);
+}
+
 function flattenAthleteStats(data) {
   const result = {};
 
   // ── Shape A: /stats endpoint — parallel arrays in categories ──
   const cats = data?.categories;
+  let maxYear = 0;
   if (cats) {
     const catArr = Array.isArray(cats) ? cats : Object.values(cats);
+    for (const cat of catArr) {
+      const ss = cat.statistics || [];
+      const y = ss.length ? seasonYear(ss[ss.length - 1]) : 0;
+      if (y > maxYear) maxYear = y;
+    }
+    if (maxYear) result._season = maxYear;
     for (const cat of catArr) {
       const catName = (cat.name || '').toLowerCase();
       // Only use regular-season career stats (skip postseason, expanded, advanced for now)
@@ -314,13 +348,18 @@ function flattenAthleteStats(data) {
       const seasons = cat.statistics;
       if (!names || !seasons || !seasons.length) continue;
 
-      // Take the most recent season
+      // Take the most recent season — but only if it IS the current one. A
+      // QB's last kicking season was 2021; it must not count as this year.
       const latest = seasons[seasons.length - 1];
       if (!latest?.stats) continue;
+      const yr = seasonYear(latest);
+      if (yr && maxYear && yr < maxYear) continue;
 
       for (let i = 0; i < names.length; i++) {
-        const val = parseFloat(latest.stats[i]);
-        if (!isNaN(val)) {
+        const val = parseStatValue(latest.stats[i]);
+        // First category wins: a QB's passing interceptions must not be
+        // overwritten by his (zero) defensive interceptions.
+        if (val !== null && !(names[i] in result)) {
           result[names[i]] = val;
         }
       }
@@ -332,8 +371,8 @@ function flattenAthleteStats(data) {
   if (summary && Array.isArray(summary)) {
     for (const s of summary) {
       if (s.name && s.value !== undefined && s.value !== null) {
-        const val = parseFloat(s.value);
-        if (!isNaN(val) && !(s.name in result)) {
+        const val = parseStatValue(s.value);
+        if (val !== null && !(s.name in result)) {
           result[s.name] = val;
         }
       }
@@ -374,6 +413,19 @@ async function fetchAthleteStats(player, sport) {
     const stats = flattenAthleteStats(statsData);
 
     if (Object.keys(stats).length === 0) return null;
+    if (stats.points != null && stats.games > 0) stats.pointsPerGame = stats.points / stats.games;
+    if (stats.receptions != null || stats.rushingAttempts != null) {
+      const touches = (stats.receptions || 0) + (stats.rushingAttempts || 0);
+      stats.touches = touches;
+      stats.scrimmageYards = (stats.receivingYards || 0) + (stats.rushingYards || 0);
+      stats.scrimmageTouchdowns = (stats.receivingTouchdowns || 0) + (stats.rushingTouchdowns || 0);
+      if (touches > 0) stats.yardsPerTouch = stats.scrimmageYards / touches;
+    }
+    if (stats.avgPoints != null) {
+      // Box-score production per game (fantasy-style weights).
+      stats.impactPerGame = stats.avgPoints + 1.2 * (stats.avgRebounds || 0) + 1.5 * (stats.avgAssists || 0)
+        + 3 * (stats.avgSteals || 0) + 3 * (stats.avgBlocks || 0) - (stats.avgTurnovers || 0);
+    }
 
     player.stats = stats;
     return player;
@@ -434,8 +486,18 @@ async function fetchAllPlayerStats(roster, sport) {
     console.log(`[player-rankings] ${sport} sample stat keys (${samplePlayer.name}): ${Object.keys(samplePlayer.stats).join(', ')}`);
   }
 
-  // Filter to only players that have at least some stats
-  return roster.filter(p => p.stats && Object.keys(p.stats).length > 0);
+  // Only players with stats from the CURRENT season. The most common latest
+  // season across the roster is "now"; a player whose newest stats are older
+  // (retired, injured all year) is not ranked on a past season.
+  const withStatsList = roster.filter(p => p.stats && Object.keys(p.stats).length > 0);
+  const yearCounts = {};
+  for (const p of withStatsList) if (p.stats._season) yearCounts[p.stats._season] = (yearCounts[p.stats._season] || 0) + 1;
+  const current = Number(Object.entries(yearCounts).sort((a, b) => b[1] - a[1])[0]?.[0]) || 0;
+  const fresh = current ? withStatsList.filter(p => !p.stats._season || p.stats._season >= current) : withStatsList;
+  if (fresh.length < withStatsList.length) {
+    console.log(`[player-rankings] ${sport}: dropped ${withStatsList.length - fresh.length} players with no ${current} stats`);
+  }
+  return fresh;
 }
 
 // ── Z-Score Normalization ─────────────────────────────────────
@@ -537,14 +599,28 @@ function computeCompositeScores(players, posGroup) {
     }
 
     const volumeAvg = volumeCount > 0 ? volumeSum / volumeCount : 50;
-    const rateAvg = rateCount > 0 ? rateSum / rateCount : 50;
+    let rateAvg = rateCount > 0 ? rateSum / rateCount : 50;
+    const ms = PR_CONFIG.minSample[posGroup];
+    if (ms) rateAvg = 50 + (rateAvg - 50) * Math.min(1, ms.stat(player.stats || {}) / ms.full);
 
-    let composite = (volumeAvg * (weights.volume || 0.4)) + (rateAvg * (weights.rate || 0.6));
+    player.compositeScore = (volumeAvg * (weights.volume ?? 0.4)) + (rateAvg * (weights.rate ?? 0.6));
+  }
 
-    // NFL QB multiplier
-    if (posGroup === 'NFL_QB') composite *= PR_CONFIG.nflQbScaleMultiplier;
-
-    player.compositeScore = Math.max(0, Math.min(100, composite));
+  // 2026-11-03: averaging several capped z-scores squeezes everyone toward
+  // 50 — the best NBA player scored 84, so no one in any league reached the
+  // star tier (85+) and a star's absence cost the same as a starter's.
+  // Stretch each group so its median sits at 50 and its best player at 98
+  // (or the group's ceiling — see groupTop).
+  const ceiling = PR_CONFIG.groupTop[posGroup] ?? 98;
+  const sorted = players.map(p => p.compositeScore).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const top = sorted[sorted.length - 1];
+  for (const player of players) {
+    let c = player.compositeScore;
+    if (top > median) {
+      c = c >= median ? 50 + (c - median) / (top - median) * (ceiling - 50) : 50 * c / (median || 1);
+    }
+    player.compositeScore = Math.max(0, Math.min(100, c));
   }
 }
 
@@ -750,7 +826,8 @@ async function updateNFLRankings(injuryMap) {
   const qbs = [], skill = [], def = [];
 
   for (const p of playersWithStats) {
-    const group = PR_CONFIG.positionGroups.NFL[p.pos] || 'NFL_SKILL';
+    const group = PR_CONFIG.positionGroups.NFL[p.pos];
+    if (!group) continue; // K, P, linemen — nothing here measures them
     p.posGroup = group;
     if (group === 'NFL_QB') qbs.push(p);
     else if (group === 'NFL_DEF') def.push(p);
@@ -808,6 +885,9 @@ async function updateAllPlayerRankings() {
 
 module.exports = {
   updateAllPlayerRankings,
+  flattenAthleteStats,
+  parseStatValue,
+  fetchAllPlayerStats,
   updateMLBRankings,
   updateNHLRankings,
   updateNBARankings,
