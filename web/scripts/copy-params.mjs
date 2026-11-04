@@ -35,3 +35,7 @@ fs.mkdirSync(rankShared, { recursive: true });
 fs.copyFileSync(path.resolve(here, '..', '..', 'src', 'injury-replacement.js'),
                 path.join(rankShared, 'injury-replacement.js'));
 console.log(`[copy-params] copied injury-replacement.js -> ${rankShared}`);
+// Which rating formula the injury tuner has chosen per league, so the tab
+// shows the same scores the model is using.
+fs.copyFileSync(path.resolve(here, '..', '..', 'config', 'injury-tuning.json'),
+                path.join(rankShared, 'injury-tuning.json'));

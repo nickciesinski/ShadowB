@@ -9,6 +9,16 @@ const { buildInjuryFeatures } = require('./nfl-injuries');
 const { buildNflFormFeatures } = require('./nfl-form');
 const { buildArenaFeatures } = require('./arena-context');
 const { getTeamInjuryScore, getTeamInjuryGap } = require('./injury-impact');
+
+// Which rating formula the injury tuner has picked per league (default v0).
+let _injuryTuning = null;
+function injuryTuningVariant(league) {
+  if (!_injuryTuning) {
+    try { _injuryTuning = require('../config/injury-tuning.json'); } catch (e) { _injuryTuning = {}; }
+  }
+  const v = _injuryTuning[league]?.variant;
+  return ['v0', 'v1', 'v2'].includes(v) ? v : 'v0';
+}
 const { teamAbbr } = require('./team-abbr');
 // =============================================================
 // src/game-features.js — Extract per-game feature vectors for
@@ -219,9 +229,16 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   f.severe_injury_factor = Math.max(homeInjScore, awayInjScore) > 0.5 ? 1 : 0;
   f.injury_advantage = Math.max(-1, Math.min(1, f.injury_weight_diff * 2)); // normalized -1 to 1
   // 2026-11-03 — replacement-aware version: each absence counts the gap
-  // between the player and whoever replaces him. Weight 0 until measured.
-  const homeGap = getTeamInjuryGap(league, homeAbbr);
-  const awayGap = getTeamInjuryGap(league, awayAbbr);
+  // between the player and whoever replaces him. One copy per rating formula
+  // (_v0/_v1/_v2) for the weekly tuner; injury_gap_diff itself uses whichever
+  // formula the tuner has chosen (config/injury-tuning.json). Weight 0 until
+  // the tuner promotes it.
+  for (const v of ['v0', 'v1', 'v2']) {
+    f[`injury_gap_diff_${v}`] = getTeamInjuryGap(league, awayAbbr, v) - getTeamInjuryGap(league, homeAbbr, v);
+  }
+  const activeVariant = injuryTuningVariant(league);
+  const homeGap = getTeamInjuryGap(league, homeAbbr, activeVariant);
+  const awayGap = getTeamInjuryGap(league, awayAbbr, activeVariant);
   f.home_injury_gap = homeGap;
   f.away_injury_gap = awayGap;
   f.injury_gap_diff = awayGap - homeGap; // positive = away hurt more = good for home

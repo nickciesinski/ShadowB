@@ -1,0 +1,6 @@
+{
+  "_comment": "Owned by scripts/injury-tuner.js (weekly). Which rating formula feeds injury_gap_diff, and the auto-promotion state per league. QUARANTINED = measured only, weight 0. PROMOTED = 3 straight weeks of out-of-sample improvement; the tuner sets the weight in model-params. Demotes itself on a bad week.",
+  "NBA": { "status": "QUARANTINED", "streak": 0, "variant": "v0", "weight": 0, "history": [] },
+  "NFL": { "status": "QUARANTINED", "streak": 0, "variant": "v0", "weight": 0, "history": [] },
+  "NHL": { "status": "QUARANTINED", "streak": 0, "variant": "v0", "weight": 0, "history": [] }
+}

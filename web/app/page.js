@@ -2651,6 +2651,14 @@ function RankingsTab() {
   return (
     <div className="tp">
       <div className="ah"><b>Rankings</b><span>{state.data?.updated ? `UPDATED ${state.data.updated}` : ''}</span></div>
+      {state.data?.tuning && (
+        <div style={{ padding: '0 14px 8px', color: 'var(--dim2)', font: '500 10px/1.4 var(--mono)' }}>
+          Injury impact: {state.data.tuning.status === 'PROMOTED'
+            ? <span style={{ color: 'var(--win)' }}>LIVE in picks</span>
+            : <span>learning — {state.data.tuning.streak}/3 passing weeks</span>}
+          {' '}· formula {state.data.tuning.formula}
+        </div>
+      )}
       <div className="aleagues scroll">
         {RANK_LEAGUES.map(l => (
           <button key={l} className={lg === l ? 'sel' : ''} onClick={() => setLg(l)}><span className="lg">{l}</span>{lg === l && <span className="ct">{players.length}</span>}</button>

@@ -535,9 +535,34 @@ function normalizeZScore(values, invert = false) {
  * Compute composite scores for a group of players in the same position group.
  * Mutates each player object to add compositeScore.
  */
+// 2026-11-03 — alternative rating formulas, scored alongside the default
+// every week. The injury tuner (scripts/injury-tuner.js) measures which one
+// best explains game results and switches the model to it once it has proven
+// itself. v0 is the default formula above.
+const RATING_VARIANTS = {
+  v1: { label: 'more efficiency', volumeShift: -0.25 },
+  v2: { label: 'pure production', volumeShift: +1 },
+};
+
+function variantWeights(posGroup, variant) {
+  const w = PR_CONFIG.statWeights[posGroup];
+  const v = RATING_VARIANTS[variant];
+  if (!w || !v) return w;
+  if (!(PR_CONFIG.stats[posGroup]?.rate || []).length) return w; // nothing to rebalance
+  const volume = Math.max(0, Math.min(1, (w.volume ?? 0.4) + v.volumeShift));
+  return { volume, rate: 1 - volume };
+}
+
 function computeCompositeScores(players, posGroup) {
+  for (const variant of Object.keys(RATING_VARIANTS)) {
+    scoreComposite(players, posGroup, variantWeights(posGroup, variant));
+    for (const p of players) (p.variantScores = p.variantScores || {})[variant] = p.compositeScore;
+  }
+  scoreComposite(players, posGroup, PR_CONFIG.statWeights[posGroup]);
+}
+
+function scoreComposite(players, posGroup, weights) {
   const statDefs = PR_CONFIG.stats[posGroup];
-  const weights = PR_CONFIG.statWeights[posGroup];
 
   if (!statDefs || !weights) {
     console.warn(`[player-rankings] No stat config for: ${posGroup}`);
@@ -660,7 +685,11 @@ const SUMMARY_HEADER = [
   'Composite Score', 'Tier', 'Overall Rank',
   'Injury Status', 'Frozen Score', 'Frozen Rank',
   'Age', 'Last Updated',
+  // Alternative formulas (see RATING_VARIANTS) — read by the injury tuner.
+  'Score v1', 'Score v2',
 ];
+
+function fmtScore(v) { return Number.isFinite(v) ? v.toFixed(1) : ''; }
 
 async function writeSummarySheet(sheetName, players, injuryMap) {
   const ts = new Date().toISOString().split('T')[0];
@@ -707,6 +736,7 @@ async function writeSummarySheet(sheetName, players, injuryMap) {
       p.compositeScore.toFixed(1), tier, rank,
       injury, frozenScore, frozenRank,
       p.age || '', ts,
+      fmtScore(p.variantScores?.v1), fmtScore(p.variantScores?.v2),
     ]);
   }
 
@@ -895,5 +925,6 @@ module.exports = {
   PR_CONFIG,
   normalizeZScore,
   computeCompositeScores,
+  RATING_VARIANTS,
   assignTier,
 };

@@ -23,7 +23,8 @@ let _teamInjuries = null; // { "NBA|BOS": 0.3, "NHL|TOR": 0.7, ... }
 // 2026-11-03 — same idea, but each absence is worth the gap between the
 // player and his replacement (src/injury-replacement.js). Measured at
 // weight 0 alongside the old score before it is trusted.
-let _teamInjuryGap = null; // { "NBA|BOS": 0.42, ... }
+let _teamInjuryGap = null; // { "v0|NBA|BOS": 0.42, ... } — one entry per rating formula
+const GAP_VARIANTS = ['v0', 'v1', 'v2'];
 
 // Position → importance score. 'G' means goalie in the NHL (the one player
 // who decides a game) but just "guard" in the NBA, where ESPN lists most
@@ -144,7 +145,14 @@ async function applyPlayerRatings(lookup) {
         const team = String(row[1] || '').trim().toUpperCase() || (lookup[key] && lookup[key].team);
         if (!team) continue;
         const pos = String(row[2] || '').trim().toUpperCase() || (lookup[key] && lookup[key].pos) || '';
-        lookup[key] = { team, league, tier, score, rated: true, pos, name: String(row[0] || '').trim() };
+        // Scores under each rating formula (Score v1/v2 columns, see
+        // RATING_VARIANTS in player-rankings.js); missing → default formula.
+        const variants = { v0: score };
+        for (const [v, idx] of [['v1', 12], ['v2', 13]]) {
+          const x = parseFloat(row[idx]);
+          variants[v] = Number.isFinite(x) ? x : score;
+        }
+        lookup[key] = { team, league, tier, score, rated: true, pos, name: String(row[0] || '').trim(), variants };
         rated++;
       }
     } catch (e) {
@@ -322,17 +330,20 @@ async function loadInjuryImpact() {
 
   // Replacement-gap scores from the rated depth charts.
   try {
-    const byLeague = {};
-    for (const [key, info] of Object.entries(playerLookup)) {
-      if (!info.rated || !info.pos) continue;
-      (byLeague[info.league] = byLeague[info.league] || []).push({
-        name: info.name || key.split('|')[1], team: info.team, pos: info.pos, score: info.score,
-        status: statusByPlayer[key] || '',
-      });
-    }
-    for (const [league, players] of Object.entries(byLeague)) {
-      const { teams } = computeReplacementImpact(league, players);
-      for (const [team, v] of Object.entries(teams)) _teamInjuryGap[`${league}|${team}`] = v;
+    for (const variant of GAP_VARIANTS) {
+      const byLeague = {};
+      for (const [key, info] of Object.entries(playerLookup)) {
+        if (!info.rated || !info.pos) continue;
+        (byLeague[info.league] = byLeague[info.league] || []).push({
+          name: info.name || key.split('|')[1], team: info.team, pos: info.pos,
+          score: info.variants?.[variant] ?? info.score,
+          status: statusByPlayer[key] || '',
+        });
+      }
+      for (const [league, players] of Object.entries(byLeague)) {
+        const { teams } = computeReplacementImpact(league, players);
+        for (const [team, v] of Object.entries(teams)) _teamInjuryGap[`${variant}|${league}|${team}`] = v;
+      }
     }
     const n = Object.keys(_teamInjuryGap).length;
     if (n) console.log(`[injury-impact] Replacement-gap scores for ${n} teams`);
@@ -381,9 +392,9 @@ function getTeamInjuryScore(league, teamAbbr) {
 }
 
 /** Replacement-gap injury score for a team (0 = no meaningful absence). */
-function getTeamInjuryGap(league, teamAbbr) {
+function getTeamInjuryGap(league, teamAbbr, variant = 'v0') {
   if (!_teamInjuryGap) return 0;
-  return _teamInjuryGap[`${league}|${teamAbbr}`] || 0;
+  return _teamInjuryGap[`${variant}|${league}|${teamAbbr}`] || 0;
 }
 
 /**
@@ -397,7 +408,9 @@ function resetInjuryCache() {
 /** Seed the cache directly (tests). */
 function setInjuryScores(map, gapMap = {}) {
   _teamInjuries = { ...map };
-  _teamInjuryGap = { ...gapMap };
+  // Tests pass "NBA|BOS" keys for the default formula.
+  _teamInjuryGap = {};
+  for (const [k, v] of Object.entries(gapMap)) _teamInjuryGap[/^v\d\|/.test(k) ? k : `v0|${k}`] = v;
 }
 
 module.exports = {

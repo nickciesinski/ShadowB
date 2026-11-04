@@ -12,6 +12,9 @@ const LEAGUES = ['NBA', 'NFL', 'NHL', 'MLB'];
 
 // Same code the model uses (copied from src/ at build by copy-params.mjs).
 import replacement from './_shared/injury-replacement.js';
+import tuning from './_shared/injury-tuning.json';
+// Score column for each rating formula (see RATING_VARIANTS in player-rankings.js).
+const VARIANT_COL = { v0: 4, v1: 12, v2: 13 };
 const { computeReplacementImpact } = replacement;
 
 function tierFromRating(score) {
@@ -69,13 +72,16 @@ export async function GET(req) {
 
     // Summary schema: Name, Team, Position, Group, Composite, Tier, Rank,
     // Injury Status, Frozen Score, Frozen Rank, Age, Last Updated
+    const variant = VARIANT_COL[tuning?.[league]?.variant] != null ? tuning[league].variant : 'v0';
     let inj = null;
     try { inj = await latestInjuries(league); } catch (e) { inj = null; }
     let updated = '';
     const base = [];
     for (const r of rows) {
       const name = (r[0] || '').trim();
-      const score = parseFloat(r[4]); // same column the model reads
+      // Same formula the model is using for this league.
+      const chosen = parseFloat(r[VARIANT_COL[variant]]);
+      const score = Number.isFinite(chosen) ? chosen : parseFloat(r[4]);
       if (!name || !Number.isFinite(score)) continue;
       const status = inj ? (inj.map[norm(name)] || '') : (r[7] || '').trim();
       base.push({
@@ -93,7 +99,8 @@ export async function GET(req) {
     })).sort((a, b) => b.score - a.score);
 
     return NextResponse.json(
-      { ok: true, league, updated, injuriesAsOf: inj?.date || null, players, teams },
+      { ok: true, league, updated, injuriesAsOf: inj?.date || null, players, teams,
+        tuning: { formula: variant, status: tuning?.[league]?.status || 'QUARANTINED', streak: tuning?.[league]?.streak || 0 } },
       { headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=3600' } },
     );
   } catch (err) {
