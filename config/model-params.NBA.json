@@ -60,6 +60,10 @@
     "nba_b2b_diff": 0,
     "nba_density_diff": 0,
     "nba_travel_miles_diff": 0,
+    "nba_margin_l5_diff": 0,
+    "nba_margin_l10_diff": 0,
+    "nba_margin_l5_surge_diff": 0,
+    "nba_game_pts_l5_surge": 0,
     "nba_pace_est": 0
   },
   "spread": {
@@ -100,6 +104,10 @@
     "nba_b2b_diff": 0,
     "nba_density_diff": 0,
     "nba_travel_miles_diff": 0,
+    "nba_margin_l5_diff": 0,
+    "nba_margin_l10_diff": 0,
+    "nba_margin_l5_surge_diff": 0,
+    "nba_game_pts_l5_surge": 0,
     "nba_pace_est": 0
   },
   "total": {
@@ -129,6 +137,10 @@
     "nba_b2b_diff": 0,
     "nba_density_diff": 0,
     "nba_travel_miles_diff": 0,
+    "nba_margin_l5_diff": 0,
+    "nba_margin_l10_diff": 0,
+    "nba_margin_l5_surge_diff": 0,
+    "nba_game_pts_l5_surge": 0,
     "nba_pace_est": 0
   }
 }

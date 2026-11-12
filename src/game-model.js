@@ -62,6 +62,7 @@ const { fetchNflForm } = require('./nfl-form');
 // carries EPL for the soccer system.
 const { isInSeason: leagueInSeason } = require('./season-windows');
 const { fetchArenaContext } = require('./arena-context');
+const { fetchArenaForm } = require('./arena-form');
 const { norm: normName } = require('./norm');
 
 /**
@@ -333,7 +334,7 @@ function generateGamePicks(game, teamsMap, weights, league, scheduleInfo, gameWe
   // object so the lookup does not depend on how team stats happen to be shaped.
   const features = extractFeatures(homeStats, awayStats, scheduleInfo, league,
     { bullpenLoad: opts.bullpenLoad, formWindows: opts.formWindows,
-      matchupCtx: opts.matchupCtx, travelCtx: opts.travelCtx, nflCtx: opts.nflCtx, nflInjuries: opts.nflInjuries, arenaCtx: opts.arenaCtx,
+      matchupCtx: opts.matchupCtx, travelCtx: opts.travelCtx, nflCtx: opts.nflCtx, nflInjuries: opts.nflInjuries, arenaCtx: opts.arenaCtx, arenaForm: opts.arenaForm,
       // buildGameObjects names this `commence`. The first version guessed at
       // commenceTime / start_time / startTime — none exist — so every rest
       // feature needing a start time was silently absent across all four
@@ -1165,6 +1166,10 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
     if (league === 'NBA' || league === 'NHL') {
       try { ctx.arenaCtx = await fetchArenaContext(league, gameDate); }
       catch (err) { console.warn(`[game-model] ${gameDate} ${league} arena context failed:`, err.message); }
+      try {
+        ctx.arenaForm = await fetchArenaForm(league, gameDate);
+        console.log(`[game-model] ${league} ${gameDate} form: ${ctx.arenaForm.size} teams`);
+      } catch (err) { console.warn(`[game-model] ${gameDate} ${league} form failed:`, err.message); }
     }
 
     return ctx;

@@ -58,7 +58,13 @@
     "nhl_rest_days_diff": 0,
     "nhl_b2b_diff": 0,
     "nhl_density_diff": 0,
-    "nhl_travel_miles_diff": 0
+    "nhl_travel_miles_diff": 0,
+    "nhl_margin_l5_diff": 0,
+    "nhl_margin_l10_diff": 0,
+    "nhl_margin_l5_surge_diff": 0,
+    "nhl_game_pts_l5_surge": 0,
+    "nhl_sv_l5_diff": 0,
+    "nhl_sv_l5_surge_diff": 0
   },
   "spread": {
     "nhl_goal_diff": 0,
@@ -95,7 +101,13 @@
     "nhl_rest_days_diff": 0,
     "nhl_b2b_diff": 0,
     "nhl_density_diff": 0,
-    "nhl_travel_miles_diff": 0
+    "nhl_travel_miles_diff": 0,
+    "nhl_margin_l5_diff": 0,
+    "nhl_margin_l10_diff": 0,
+    "nhl_margin_l5_surge_diff": 0,
+    "nhl_game_pts_l5_surge": 0,
+    "nhl_sv_l5_diff": 0,
+    "nhl_sv_l5_surge_diff": 0
   },
   "total": {
     "nhl_goal_diff": 0,
@@ -122,6 +134,12 @@
     "nhl_rest_days_diff": 0,
     "nhl_b2b_diff": 0,
     "nhl_density_diff": 0,
-    "nhl_travel_miles_diff": 0
+    "nhl_travel_miles_diff": 0,
+    "nhl_margin_l5_diff": 0,
+    "nhl_margin_l10_diff": 0,
+    "nhl_margin_l5_surge_diff": 0,
+    "nhl_game_pts_l5_surge": 0,
+    "nhl_sv_l5_diff": 0,
+    "nhl_sv_l5_surge_diff": 0
   }
 }

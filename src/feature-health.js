@@ -25,6 +25,8 @@
 const { extractFeatures } = require('./game-features');
 const paramStore = require('./param-store');
 const { featureNames: nflContextFeatureNames } = require('./nfl-context');
+const { featureNames: arenaContextFeatureNames } = require('./arena-context');
+const { featureNames: arenaFormFeatureNames } = require('./arena-form');
 
 // sp_* are injected downstream by game-model from market odds, not by
 // extractFeatures, so they are legitimately absent at extraction time.
@@ -92,6 +94,11 @@ function checkDeadWeights(league) {
     // history, which the synthetic probe has no way to supply. They are live
     // on real slates, so count them as produced rather than "dead".
     if (league === 'NFL') for (const k of nflContextFeatureNames()) produced.add(k);
+    // NBA/NHL candidates come from per-date context, not extractFeatures alone.
+    if (league === 'NBA' || league === 'NHL') {
+      for (const k of arenaContextFeatureNames(league)) produced.add(k);
+      for (const k of arenaFormFeatureNames(league)) produced.add(k);
+    }
   } catch (err) {
     return { league, error: `extractFeatures threw: ${err.message}`, markets: [] };
   }

@@ -8,6 +8,7 @@ const { buildNflFeatures } = require('./nfl-context');
 const { buildInjuryFeatures } = require('./nfl-injuries');
 const { buildNflFormFeatures } = require('./nfl-form');
 const { buildArenaFeatures } = require('./arena-context');
+const { buildArenaFormFeatures } = require('./arena-form');
 const { getTeamInjuryScore, getTeamInjuryGap } = require('./injury-impact');
 
 // Which rating formula the injury tuner has picked per league (default v0).
@@ -529,6 +530,13 @@ function extractFeatures(home, away, scheduleInfo, league, ctx = {}) {
   if ((league === 'NBA' || league === 'NHL') && ctx.arenaCtx && ctx.homeTeam && ctx.awayTeam) {
     Object.assign(f, buildArenaFeatures(
       ctx.arenaCtx, ctx.homeTeam, ctx.awayTeam, ctx.commenceTime));
+  }
+
+  // CANDIDATES (weight 0), NBA/NHL: short-window form from game scores (and NHL
+  // team save %). The recent_form_* keys above are win/loss only. 2026-11-12,
+  // see src/arena-form.js.
+  if ((league === 'NBA' || league === 'NHL') && ctx.arenaForm && ctx.homeTeam && ctx.awayTeam) {
+    Object.assign(f, buildArenaFormFeatures(league, ctx.arenaForm, ctx.homeTeam, ctx.awayTeam));
   }
 
   return f;
