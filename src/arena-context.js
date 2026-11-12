@@ -31,7 +31,20 @@
 // which is how "Utah Mammoth" is spelled correctly here.
 // =============================================================
 
-const { normTeam } = require('./bullpen-fatigue');
+const { normTeam: baseNorm } = require('./bullpen-fatigue');
+
+// 2026-11-12. Team key for every lookup in this file. baseNorm keeps a-z only,
+// so "Montréal" became "montral" and never matched "Montreal" — every Canadiens
+// game logged no NHL candidates for the first six weeks of the season. And the
+// odds feed says "Los Angeles Clippers" where ESPN's schedule says "LA
+// Clippers", so every Clippers game lost rest/b2b/density/travel. Same two
+// mismatches game-model.js and clv.js already handle. Strip accents first,
+// then fold aliases onto one spelling.
+const TEAM_ALIASES = { losangelesclippers: 'laclippers' };
+function normTeam(name) {
+  const k = baseNorm(String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  return TEAM_ALIASES[k] || k;
+}
 const { haversineMiles, tzOffsetHours } = require('./travel-context');
 
 const MAX_ABS = 3;
@@ -274,6 +287,7 @@ function featureNames(league) {
 }
 
 module.exports = {
+  normTeam,
   fetchArenaContext,
   fetchRecentGames,
   fetchEspnDays,

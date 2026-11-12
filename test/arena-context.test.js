@@ -129,3 +129,24 @@ test('every feature is declared at weight 0 in both shipped configs', () => {
     }
   }
 });
+
+// 2026-11-12: Montréal (accent) and LA/Los Angeles Clippers silently logged no
+// candidates for the whole first six weeks of the season.
+test('accent and Clippers alias resolve to the same team', () => {
+  const ac = require('../src/arena-context');
+  assert.ok(ac.venueFor('NHL', 'Montréal Canadiens'));
+  assert.strictEqual(ac.normTeam('Montréal Canadiens'), ac.normTeam('Montreal Canadiens'));
+  assert.strictEqual(ac.normTeam('Los Angeles Clippers'), ac.normTeam('LA Clippers'));
+});
+
+test('Clippers get rest features when ESPN spells them "LA Clippers"', () => {
+  const ac = require('../src/arena-context');
+  const recent = new Map([
+    [ac.normTeam('LA Clippers'), [{ when: '2026-11-09T03:00Z', venueTeam: 'LA Clippers' }]],
+    [ac.normTeam('Montreal Canadiens'), []],
+    [ac.normTeam('Sacramento Kings'), [{ when: '2026-11-08T03:00Z', venueTeam: 'Sacramento Kings' }]],
+  ]);
+  const f = ac.buildArenaFeatures({ league: 'NBA', gameDate: '2026-11-10', recent },
+    'Los Angeles Clippers', 'Sacramento Kings', '2026-11-10T03:30Z');
+  assert.ok('nba_rest_days_diff' in f && 'nba_b2b_diff' in f && 'nba_travel_miles_diff' in f);
+});
