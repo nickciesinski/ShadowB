@@ -38,6 +38,10 @@ jobs:
           # season; NFL is run so its sample starts accumulating from week 1.
           node scripts/feature-clv-report.js --league MLB || true
           node scripts/feature-clv-report.js --league NFL || true
+          # 2026-11-12: NBA/NHL were never added here, so their candidates were
+          # logging since opening night with no report ever produced.
+          node scripts/feature-clv-report.js --league NBA || true
+          node scripts/feature-clv-report.js --league NHL || true
       - name: Commit report
         run: |
           git config user.name "shadow-bets-bot"
