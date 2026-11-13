@@ -177,6 +177,13 @@ async function fetchEspnDays(path, start, end, fetchFn) {
  * Games ON the slate date are excluded: one of them is the game being
  * predicted, and using it as its own history would be circular.
  */
+function ptDate(iso) {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime())
+    ? d.toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' })
+    : null;
+}
+
 async function fetchRecentGames(league, gameDate, opts = {}) {
   const cfg = LEAGUES[String(league || '').toUpperCase()];
   if (!cfg) return new Map();
@@ -189,7 +196,12 @@ async function fetchRecentGames(league, gameDate, opts = {}) {
     const events = await fetchEspnDays(cfg.path, start, end, fetchFn);
     for (const ev of events) {
       const when = ev?.date;
-      if (!when || String(when).slice(0, 10) >= gameDate) continue;
+      // 2026-11-13: compare PACIFIC dates. This used the UTC date, and any game
+      // starting after 4 PM PT is already "tomorrow" in UTC, so last night's game
+      // read as being ON the slate date and was dropped. Back-to-backs were almost
+      // never detected, and rest/density were a game stale (LA Kings and NY
+      // Islanders, both on a b2b 11-13, showed their previous game as days ago).
+      if (!when || ptDate(when) === null || ptDate(when) >= gameDate) continue;
       const comp = ev?.competitions?.[0];
       const homeComp = (comp?.competitors || []).find((x) => x.homeAway === 'home');
       for (const c of (comp?.competitors || [])) {

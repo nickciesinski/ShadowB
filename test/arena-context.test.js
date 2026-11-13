@@ -150,3 +150,25 @@ test('Clippers get rest features when ESPN spells them "LA Clippers"', () => {
     'Los Angeles Clippers', 'Sacramento Kings', '2026-11-10T03:30Z');
   assert.ok('nba_rest_days_diff' in f && 'nba_b2b_diff' in f && 'nba_travel_miles_diff' in f);
 });
+
+// 2026-11-13: a 7 PM PT game the night before is "tomorrow" in UTC and was
+// dropped, so back-to-backs were almost never detected.
+test('last night\'s evening game counts (Pacific date, not UTC)', async () => {
+  const ac = require('../src/arena-context');
+  const ev = (id, date) => ({ id, date, competitions: [{ competitors: [
+    { homeAway: 'home', team: { displayName: 'Los Angeles Kings' } },
+    { homeAway: 'away', team: { displayName: 'New York Islanders' } }] }] });
+  const fetch = async (url) => ({ ok: true, json: async () => ({ events: url.endsWith('20261112')
+    ? [ev('a', '2026-11-13T03:30Z')]    // Nov 12, 7:30 PM PT
+    : url.endsWith('20261113') ? [ev('b', '2026-11-14T03:30Z')] : [] }) });
+  const m = await ac.fetchRecentGames('NHL', '2026-11-13', { fetch });
+  assert.strictEqual(m.get(ac.normTeam('Los Angeles Kings'))[0].when, '2026-11-13T03:30Z');
+  const f = ac.buildArenaFeatures({ league: 'NHL', gameDate: '2026-11-13', recent: m },
+    'Los Angeles Kings', 'Vancouver Canucks', '2026-11-14T03:00Z');
+  // Kings home on a b2b, Canucks have no recent game -> rest features omitted, not wrong.
+  assert.ok(!('nhl_b2b_diff' in f));
+  const recent = new Map([...m, [ac.normTeam('Vancouver Canucks'), [{ when: '2026-11-11T03:00Z', venueTeam: 'Vancouver Canucks' }]]]);
+  const g = ac.buildArenaFeatures({ league: 'NHL', gameDate: '2026-11-13', recent },
+    'Los Angeles Kings', 'Vancouver Canucks', '2026-11-14T03:00Z');
+  assert.strictEqual(g.nhl_b2b_diff, -1); // home on a b2b = bad for home
+});
