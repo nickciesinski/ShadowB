@@ -300,6 +300,12 @@ function buildReview(dateStr, seg7, seg30, decisions) {
     if (Object.keys(d.changes).length) continue;
     md += `- **${d.league}**: ${d.note || 'hold'}${d.flag ? ` — ⚠ ${d.flag}` : ''}\n`;
   }
+  const oosLines = decisions.filter(d => d.oos);
+  if (oosLines.length) {
+    md += `\n## Out-of-sample apply gate (R5.1c)\n\n`;
+    md += `Loosening must also hold on days 8-30 (the window the 7-day decision did not see).\n\n`;
+    for (const d of oosLines) md += `- **${d.league}**: ${d.oos}\n`;
+  }
   const flags = decisions.filter(d => d.flag && Object.keys(d.changes).length);
   if (flags.length) {
     md += `\n## Flags for manual review\n\n`;
@@ -400,15 +406,23 @@ async function main() {
   const cfg = JSON.parse(fs.readFileSync(CFG_PATH, 'utf8'));
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
+  const oosGate = require('../src/threshold-oos-gate');
+  const oosCfg = oosGate.loadGateConfig();
+  console.log(`[tune] OOS apply gate (R5.1c): ${oosCfg.enabled ? 'ENABLED' : 'inert (enabled=false)'}`);
+
   const decisions = [];
   for (const lg of LEAGUES) {
     const current = mergedThresholds(cfg, lg);
     const clvApproved = leagueApprovedClv(rows, cut30, lg); // 30d staked CLV (R1.2)
-    const d = decideLeagueChange(lg, seg7[lg], seg30[lg], current, clvApproved);
+    const decided = decideLeagueChange(lg, seg7[lg], seg30[lg], current, clvApproved);
+    // R5.1(c): a loosening must also hold on days 8..30 (the window the 7d
+    // decision did not see). Guard only; inert unless config enables it.
+    const holdout = oosGate.holdoutStats(rows, lg, cut30, cut7);
+    const d = oosGate.applyGate(decided, current, holdout, oosCfg);
     d.league = lg;
     decisions.push(d);
     const summary = Object.keys(d.changes).length ? JSON.stringify(d.changes) : (d.note || 'hold');
-    console.log(`[tune] ${lg}: ${summary}${d.flag ? ' | FLAG: ' + d.flag : ''}`);
+    console.log(`[tune] ${lg}: ${summary}${d.flag ? ' | FLAG: ' + d.flag : ''}${d.oos ? ' | OOS: ' + d.oos : ''}`);
   }
 
   // Apply changes to config

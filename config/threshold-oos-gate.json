@@ -1,0 +1,9 @@
+{
+  "enabled": false,
+  "updated": "2026-11-16",
+  "_doc": "R5.1(c) out-of-sample APPLY gate for the weekly approval-threshold tuner (scripts/weekly-threshold-tune.js, logic in src/threshold-oos-gate.js). The tuner decides on the last 7 days. When enabled=true, any change that LOOSENS a league (lower minEdgePct/minConfidence/minMarketQuality/minDataCompleteness, higher maxUncertainty/maxEdgePct) is only applied if the days-8-to-30 window it did not decide on also shows approved staked ROI > minRoiPct, avg CLV >= minClvPp and avg net edge (CLV - vig) >= minNetEdgePp, each on >= minSample bets. GUARD ONLY: tightening changes always pass through; it can never add or enlarge a change. Default enabled=false so it ships INERT — the review just prints what it would have done.",
+  "minSample": 50,
+  "minRoiPct": 0,
+  "minClvPp": 0,
+  "minNetEdgePp": 0
+}
