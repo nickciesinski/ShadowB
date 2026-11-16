@@ -22,6 +22,7 @@ const {
   totalToOverProb,
   winProbToMLEdge,
   calcUnits,
+  sizingEdge,
   roundUnits,
   edgeToDisplayConfidence,
   applyHeavyFavCap,
@@ -1202,9 +1203,12 @@ async function generateAllPicks(games, teamsMap, weights, league, getPerformance
         ? 'total' : pick.betType;
       const perfMod = getPerformanceModifier(league, betTypeNorm);
 
-      const calMod = getCalibrationMultiplier(Math.max(0, pick._edge));
+      // Size off the edge pulled halfway to the market (config/prob-shrink.json);
+      // the claimed edge runs 10-25 pts above reality. Side and approval unchanged.
+      const sizeEdge = sizingEdge(pick._edge, league);
+      const calMod = getCalibrationMultiplier(sizeEdge);
       let units = calcUnits(
-        Math.max(0, pick._edge),
+        sizeEdge,
         pick._uncertainty || 0.5,
         pick._mktQuality || 0.5,
         perfMod,

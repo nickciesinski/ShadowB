@@ -23,6 +23,7 @@ split by what produced them. Each version below also has a matching git tag.
 | v2.3.6-2026-10-02 | 2026-10-02 | If either team's offense/defense stat is missing, the comparison is 0 instead of a real-vs-zero gap (caused three NHL alerts in a week). NHL teams flipped to the new season with 0 games read as league average | NHL, NFL, NBA |
 | v2.3.7-2026-10-21 | 2026-10-21 | Safety guard ported from soccer: a book quoting a spread/total main line outside 10–90% (e.g. +2755) is ignored when setting the price. No current picks affected — US data has never had one | all (guard only) |
 | v2.4-2026-10-31 | 2026-10-31 | Injury impact reaches the model for the first time (it read 0 for every game: team-name lookup bug) and is scored by real player ratings; injury weights turned on. Weights moved up/down by measured correlation with results vs the market (NFL rest/bye up; NFL red zone, yards, short form down; NHL short-window form and goals-for down). NFL picks lock the night before. Edge cap (NHL 20, NFL/MLB 30 pts) and NHL ML underdogs + NBA totals moved to tracking-only. Start a fresh measurement | NHL, NBA, NFL |
+| v2.4.1-2026-11-16 | 2026-11-16 | Stakes sized off the edge pulled halfway toward the market (model claimed 67-76% on sides that won 50-60%); sides and approval unchanged. NHL weights up where v2.4 picks showed signal: goals-against (ML 1.4→1.7, spread 1.4→1.8), last-5 form (0.45→0.6) | NHL (weights), all (stake sizes) |
 
 ## How to see results by version
 In Supabase → SQL Editor:

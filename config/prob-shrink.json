@@ -1,0 +1,5 @@
+{
+  "_comment": "Share of the model's claimed edge removed before SIZING a stake (0 = trust the model, 1 = trust the market). Added 2026-11-16: on v2.4 picks the model claimed 67-76% where sides won 50-60% (NBA spread 75.6% claimed vs 50.5% won). Pulling halfway toward the market cuts stakes on inflated edges. Sizing only: the side, the logged model_prob, and the approval rules (minEdgePct, maxEdgePct) still see the raw edge.",
+  "default": 0.5,
+  "leagues": { "MLB": 0.5, "NBA": 0.5, "NHL": 0.5, "NFL": 0.5 }
+}

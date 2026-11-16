@@ -194,6 +194,26 @@ function calcUnits(edgePct, uncertaintyScore, marketQualityScore, performanceMod
   return roundUnits(units);
 }
 
+// 2026-11-16 — pull the claimed edge toward the market before sizing. See
+// config/prob-shrink.json. Shrinking both sides' probabilities by the same
+// share scales every edge by (1 - share), so it never changes which side wins.
+let _shrinkCfg = null;
+function shrinkShare(league) {
+  if (!_shrinkCfg) {
+    try {
+      _shrinkCfg = JSON.parse(require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'config', 'prob-shrink.json'), 'utf8'));
+    } catch (e) { _shrinkCfg = {}; }
+  }
+  const v = (_shrinkCfg.leagues || {})[league] ?? _shrinkCfg.default ?? 0;
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0;
+}
+
+/** The edge (pct pts) used for stake sizing, after shrinking toward the market. */
+function sizingEdge(edgePct, league) {
+  return Math.max(0, edgePct) * (1 - shrinkShare(league));
+}
+
 /**
  * Round a stake to 2 decimal places for clean logging/display, never below the
  * 0.01-unit floor (rules.js: every pick gets a non-zero stake). Use this wherever
@@ -319,6 +339,8 @@ module.exports = {
   // Sizing
   calcUnits,
   roundUnits,
+  sizingEdge,
+  shrinkShare,
   edgeToDisplayConfidence,
   applyHeavyFavCap,
   // Quality scoring
