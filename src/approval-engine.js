@@ -83,6 +83,12 @@ const path = require('path');
 // R1.3: CLV-beat staking gate (pure; inert unless config/clv-gate.json enabled=true).
 const { isSegmentGated, loadGateConfig } = require('./clv-gate');
 
+// Map a pick's betType to its market. Totals are logged as 'over'/'under'.
+function marketOf(betType) {
+  const b = String(betType || '').toLowerCase().trim();
+  return (b === 'over' || b === 'under') ? 'total' : b;
+}
+
 function loadThresholdConfig() {
   try {
     const cfgPath = path.join(__dirname, '..', 'config', 'approval-thresholds.json');
@@ -165,8 +171,11 @@ function shouldApprove(pick, thresholds, league) {
 
   // 9. Segments moved to tracking-only by Nick (2026-10-31), from
   // config/approval-thresholds.json: whole markets, and moneyline underdogs.
+  // 2026-11-16 — total picks carry betType 'over'/'under', never 'total', so
+  // `trackingOnlyMarkets: ["total"]` (NBA) silently never matched and NBA
+  // totals kept getting staked. Compare on the market, not the side label.
   const trackMarkets = Array.isArray(thresholds.trackingOnlyMarkets) ? thresholds.trackingOnlyMarkets : [];
-  if (trackMarkets.includes(betType)) {
+  if (trackMarkets.includes(betType) || trackMarkets.includes(marketOf(betType))) {
     reasons.push(`${league} ${betType} set to tracking-only`);
   }
   const odds = Number(pick._odds);
@@ -210,7 +219,7 @@ function applyApprovalFilters(picks, league) {
       // segment has sustained negative closing-line value, downgrade to
       // tracking_only (the ROI there is variance, not edge). Guard only —
       // never upgrades. Coverage rule still satisfied: the pick still logs.
-      const gate = isSegmentGated(league, pick.betType, CLV_GATE);
+      const gate = isSegmentGated(league, marketOf(pick.betType), CLV_GATE);
       if (gate.gated) {
         pick.approval_status = 'tracking_only';
         pick.approval_reason = gate.reason;

@@ -25,6 +25,24 @@ test('NBA: totals are tracking-only; spreads are uncapped', () => {
   assert.strictEqual(shouldApprove({ ...base, betType: 'spread', _edge: 28, _odds: -110 }, t, 'NBA').approved, true);
 });
 
+test('NBA: real total picks (betType over/under) are tracking-only too', () => {
+  // Totals are logged as 'over'/'under', never 'total' — this is the label
+  // the live path actually sends. Before 2026-11-16 these slipped through.
+  const t = getThresholds('NBA');
+  for (const bt of ['over', 'under', 'Over', 'Under']) {
+    const r = shouldApprove({ ...base, betType: bt, _edge: 8, _odds: -110 }, t, 'NBA');
+    assert.strictEqual(r.approved, false, bt);
+    assert.ok(r.reasons.some(x => /tracking-only/.test(x)), bt);
+  }
+});
+
+test('MLB/NHL/NFL totals unaffected (no trackingOnlyMarkets there)', () => {
+  for (const lg of ['MLB', 'NHL', 'NFL']) {
+    const r = shouldApprove({ ...base, betType: 'over', _edge: 5, _odds: -110 }, getThresholds(lg), lg);
+    assert.ok(!r.reasons.some(x => /set to tracking-only/.test(x)), lg);
+  }
+});
+
 test('NFL: cap at 30 pts', () => {
   const t = getThresholds('NFL');
   assert.strictEqual(shouldApprove({ ...base, betType: 'spread', _edge: 31, _odds: -110 }, t, 'NFL').approved, false);
