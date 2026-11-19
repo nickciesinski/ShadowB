@@ -87,6 +87,10 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .aleagues .sel{background:var(--panel)}
     .aleagues .sel .lg{color:var(--text)}
     .aleagues .sel .ct{color:var(--take)}
+    .aleagues .sel.filt{background:#2a1a0c;box-shadow:inset 0 -2px 0 var(--fade)}
+    .aleagues .sel.filt .lg,.aleagues .sel.filt .ct{color:var(--fade)}
+    .filtnote{display:flex;justify-content:space-between;align-items:center;padding:7px 14px;font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--fade);background:#170f08;border-bottom:1px solid var(--line)}
+    .filtnote b{color:var(--take);font-weight:600;cursor:pointer}
     .aleagues .glyph{font:500 13px/1 var(--mono);color:var(--dim2)}
     .aleagues button:disabled{opacity:.35}
     .aleagues.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -148,7 +152,7 @@ if (typeof document !== 'undefined' && !document.getElementById('sb-custom-style
     .r.fade .tick{background:var(--fade)}
     .r.fade .u{color:#ffd6b3}
     .r.fade .side i{color:var(--fade)}
-    .more{padding:7px 14px 8px 32px;font:500 10px/1 var(--mono);letter-spacing:.06em;color:var(--dim2);border-top:1px solid #14171b;background:#0c0e11;cursor:pointer}
+    .more{padding:9px 14px 10px 32px;font:600 10px/1 var(--mono);letter-spacing:.06em;color:var(--take);border-top:1px solid #14171b;background:#0c0e11;cursor:pointer}
     .apnl{font:600 15px/1 var(--mono);text-align:right;letter-spacing:-.02em}
     .apnl.up{color:var(--win)}.apnl.dn{color:var(--loss)}.apnl.fl{color:var(--dim)}
     .apnl em{font-style:normal;font-size:9px;color:#565e68;margin-left:1px}
@@ -698,17 +702,28 @@ function LeagueRow({ league, setLeague, counts, allCount, toggles = [], onSort }
   const ls = Object.keys(counts).filter(l => l && counts[l] > 0);
   if (league !== 'All' && !ls.includes(league)) ls.push(league);
   ls.sort((a, b) => leagueRank(a) - leagueRank(b) || a.localeCompare(b));
+  // 2026-11-19: a picked league is lit orange and says what it's hiding, so a
+  // filtered slate never passes for the whole slate.
+  const hiding = league !== 'All' ? allCount - (counts[league] || 0) : 0;
   return (
+    <>
     <div className="aleagues scroll">
       <button className={league === 'All' ? 'sel' : ''} onClick={() => setLeague('All')}><span className="lg">ALL</span><span className="ct">{allCount}</span></button>
       {toggles.map(t => (
         <button key={t.label} className={t.on ? 'sel' : ''} disabled={t.disabled} onClick={t.onClick}><span className="lg">{t.label}</span><span className="ct">{t.count}</span></button>
       ))}
       {ls.map(l => (
-        <button key={l} className={league === l ? 'sel' : ''} onClick={() => setLeague(l)}><span className="lg">{l}</span><span className="ct">{counts[l] || 0}</span></button>
+        <button key={l} className={league === l ? 'sel filt' : ''} onClick={() => setLeague(l)}><span className="lg">{l}</span><span className="ct">{counts[l] || 0}</span></button>
       ))}
       {onSort && <button className="sort" onClick={onSort}><span className="glyph">⇅</span></button>}
     </div>
+    {hiding > 0 && (
+      <div className="filtnote">
+        <span>{league} ONLY · SHOWING {counts[league] || 0} OF {allCount}</span>
+        <b onClick={() => setLeague('All')}>SHOW ALL</b>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -1338,7 +1353,7 @@ function PicksTab({ lockedView, novigOrders, markNovig, picks, liveGames, myBets
                 : renderWatchRow(p, i))}
               {hidden.length > 0 && (
                 <div className="more" onClick={() => setExpandedGames(prev => ({ ...prev, [g.key]: true }))}>
-                  + {hidden.length} market{hidden.length > 1 ? 's' : ''} · tier 5
+                  + SHOW {hidden.map(p => marketMeta(p).code).join(' + ')} · NO EDGE
                 </div>
               )}
             </div>
@@ -1537,8 +1552,9 @@ function ScoresTab({ liveGames, picks, isBet, isFade, displayPick, lastUpdated, 
   // (NBA + Mine works). They used to share one row with the leagues, so it was
   // either "my bets" or "NBA", never both. Picks = every game the model has a
   // prediction for. Tap a lit view again to turn it off.
-  const [view, setView] = useState(() => (
-    liveGames.some(hasMine) ? 'mine' : liveGames.some(hasPicks) ? 'picks' : 'all'));
+  // 2026-11-19 (Nick): opens on PICKS, not MINE — MINE hid the games the model
+  // picked that he hadn't bet, which read as games missing.
+  const [view, setView] = useState(() => (liveGames.some(hasPicks) ? 'picks' : 'all'));
   const [sortAlt, setSortAlt] = useState(false);
   const [expandedKey, setExpandedKey] = useState(null);
 
@@ -2621,19 +2637,26 @@ function defaultRankLeague() {
   const nbaOn = m >= 11 || m <= 6 || (m === 10 && day >= 15);
   return nbaOn ? 'NBA' : 'MLB';
 }
+// Rankings per league, kept while the app is open so switching tabs or
+// leagues doesn't reload them (they change at most daily). 2026-11-19.
+const rankingsCache = {};
 function RankingsTab() {
   const [lg, setLg] = useState(defaultRankLeague);
   const [q, setQ] = useState('');
   const [hurtOnly, setHurtOnly] = useState(false);
-  const [state, setState] = useState({ loading: true });
+  const [state, setState] = useState(() => (rankingsCache[defaultRankLeague()] ? { data: rankingsCache[defaultRankLeague()] } : { loading: true }));
 
   useEffect(() => {
     let live = true;
-    setState({ loading: true });
+    if (rankingsCache[lg]) setState({ data: rankingsCache[lg] });
+    else setState({ loading: true });
     fetch(`/api/rankings?league=${lg}`)
       .then(r => r.json())
-      .then(j => { if (live) setState(j.ok ? { data: j } : { error: j.error || 'Load failed' }); })
-      .catch(e => { if (live) setState({ error: e.message }); });
+      .then(j => {
+        if (j.ok) rankingsCache[lg] = j;
+        if (live && (j.ok || !rankingsCache[lg])) setState(j.ok ? { data: j } : { error: j.error || 'Load failed' });
+      })
+      .catch(e => { if (live && !rankingsCache[lg]) setState({ error: e.message }); });
     return () => { live = false; };
   }, [lg]);
 
@@ -2878,17 +2901,12 @@ export default function App() {
 
   const [tab, setTab] = useState(getDefaultTab);
   const [sf, setSf] = useState('All'); // Props tab league/My-Bets filter only
-  // League filter shared by Picks, Locked, Scores and Results; remembered on
-  // this device. Restored in an effect (not the initializer) to keep the
-  // first render identical to the server's.
-  const [league, setLeagueState] = useState('All');
-  useEffect(() => {
-    try { const v = localStorage.getItem('sb.league'); if (v) setLeagueState(v); } catch (e) {}
-  }, []);
-  const setLeague = (v) => {
-    setLeagueState(v);
-    try { localStorage.setItem('sb.league', v); } catch (e) {}
-  };
+  // League filter shared by Picks, Locked, Scores and Results.
+  // 2026-11-19 (Nick): starts on ALL every time the app opens. It used to be
+  // remembered, so a leftover NBA choice silently hid the NHL picks on every
+  // tab and the slate looked like it was missing games.
+  const [league, setLeague] = useState('All');
+  useEffect(() => { try { localStorage.removeItem('sb.league'); } catch (e) {} }, []);
   const [pf, setPf] = useState('All');
   // My Bets — persisted to localStorage, auto-resets daily
   // Map<key, 'bet' | 'fade'> — 'bet' = tailed the pick, 'fade' = bet the opposite
@@ -3253,28 +3271,53 @@ export default function App() {
     return result;
   };
 
-  // Fetch sheet data
+  // 2026-11-19 (speed): the last good payload is kept on this phone and shown
+  // the instant the app opens; the fresh copy replaces it a moment later. Only
+  // a display cache — picks are locked server-side, so it can't show a side
+  // the server doesn't have. A failed refresh keeps the saved copy on screen.
+  const hasDataRef = useRef(false);
   const fetchData = useCallback(() => {
     fetch('/api/data')
       .then(r => r.json().then(d => { if (!r.ok || d?.error) throw new Error(d?.error || `HTTP ${r.status}`); return d; }))
-      .then(d => { setData(d); setLoading(false); setLastUpdated(new Date()); })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .then(d => {
+        hasDataRef.current = true;
+        setData(d); setError(null); setLoading(false); setLastUpdated(new Date());
+        try { localStorage.setItem('sb.cache.data', JSON.stringify(d)); } catch (e) {}
+      })
+      .catch(e => { if (!hasDataRef.current) setError(e.message); setLoading(false); });
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem('sb.cache.data') || 'null');
+      if (c && Array.isArray(c.todayPicks)) {
+        hasDataRef.current = true;
+        setData(c); setLoading(false);
+        if (c.lastUpdated) setLastUpdated(new Date(c.lastUpdated));
+      }
+      const r = JSON.parse(localStorage.getItem('sb.cache.results') || 'null');
+      if (r && Array.isArray(r.gradedPicks)) setResultsData(r);
+    } catch (e) {}
+    fetchData();
+  }, [fetchData]);
 
   // Fetch graded history (Results tab) lazily — never blocks the main load.
+  const resultsFetched = useRef(false);
   const fetchResults = useCallback(() => {
+    resultsFetched.current = true;
     fetch('/api/results')
       .then(r => r.json().then(d => { if (!r.ok || d?.error) throw new Error(d?.error || `HTTP ${r.status}`); return d; }))
-      .then(d => { setResultsData(d); setResultsError(false); })
+      .then(d => {
+        setResultsData(d); setResultsError(false);
+        try { localStorage.setItem('sb.cache.results', JSON.stringify(d)); } catch (e) {}
+      })
       .catch(() => { setResultsError(true); }); // existing resultsData (if any) stays intact; main app unaffected
   }, []);
 
   // Kick off the results fetch once, right AFTER the main data has arrived.
   useEffect(() => {
-    if (data && resultsData === null) fetchResults();
-  }, [data, resultsData, fetchResults]);
+    if (data && !resultsFetched.current) fetchResults();
+  }, [data, fetchResults]);
 
   // Re-fetch data when app becomes visible (switching back to tab/app).
   // Also refresh graded results so they stay current as games finish through
@@ -3305,8 +3348,10 @@ export default function App() {
   }, [refreshScores]);
 
   // Fetch box scores for ALL props with live/finished games (every 30s)
+  // 2026-11-19: only while the Props tab is open. Props is hidden, and this was
+  // still downloading every live box score every 30s in the background.
   useEffect(() => {
-    if (!data?.props || !liveGames.length) return;
+    if (tab !== 'props' || !data?.props?.length || !liveGames.length) return;
 
     const fetchStats = async () => {
       // Only consider games from today (prevents stale yesterday stats)
@@ -3354,7 +3399,7 @@ export default function App() {
     fetchStats();
     const interval = setInterval(fetchStats, 30000);
     return () => clearInterval(interval);
-  }, [data?.props, liveGames]);
+  }, [tab, data?.props, liveGames]);
 
   const liveCount = liveGames.filter(g => g.status === 'in').length;
   const closeCount = liveGames.filter(g => g.status === 'in' && g.isLate && Math.abs(g.awayScore - g.homeScore) <= 5).length;

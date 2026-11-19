@@ -1,4 +1,3 @@
-import { google } from 'googleapis';
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -49,7 +48,10 @@ function getSupabase() {
   });
 }
 
+// googleapis is a very large package. Loading it only when the Sheets backup
+// is actually needed keeps it out of every normal app open (2026-11-19).
 async function getSheetsClient() {
+  const { google } = await import('googleapis');
   const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!serviceAccountJson) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON not set');
   const credentials = JSON.parse(serviceAccountJson);
@@ -85,44 +87,8 @@ function parsePerfRow(row) {
   };
 }
 
-function parsePropRow(row) {
-  return {
-    timestamp: row[0] || '',
-    league: row[1] || '',
-    player: row[2] || '',
-    market: row[3] || '',
-    line: row[4] || '',
-    direction: row[5] || '',
-    book: row[6] || '',
-    bookOdds: parseInt(row[7]) || -110,
-    bookProb: parseFloat(row[8]) || 0,
-    consensusProb: parseFloat(row[9]) || 0,
-    edge: parseFloat(row[10]) || 0,
-    game: row[11] || '',
-    prizepicks: row[12] || '',
-    underdog: row[13] || '',
-    betr: row[14] || '',
-    sleepr: row[15] || '',
-  };
-}
-
-function parseOddsRow(row) {
-  return {
-    sport: row[1] || '',
-    home: row[2] || '',
-    away: row[3] || '',
-    commence: row[4] || '',
-    market: row[5] || '',
-    outcome: row[6] || '',
-    price: parseFloat(row[7]) || 0,
-    point: row[8] || '',
-    book: row[9] || '',
-  };
-}
-
 export async function GET() {
   try {
-    const sheets = await getSheetsClient();
     const sb = getSupabase();
 
     const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
@@ -173,20 +139,18 @@ export async function GET() {
         })().catch(() => null)
       : Promise.resolve(null);
 
-    const sbSnapQ = sb
-      ? sb.from('sheet_snapshots')
-          .select('rows').eq('entity', 'gameOdds')
-          .order('captured_at', { ascending: false }).limit(1)
-          .then(r => (r.error ? null : r.data)).catch(() => null)
-      : Promise.resolve(null);
-
-    const [perfRows, propRows, oddsRows, sbTodayRows, sbSnap] = await Promise.all([
-      getValues(sheets, 'Performance Log', 'A1:S10000'),
-      getValues(sheets, 'Prop_Combos', 'A1:P500'),
-      getValues(sheets, 'Today_Odds', 'A1:J5000'),
-      sbTodayQ,
-      sbSnapQ,
-    ]);
+    // 2026-11-19 (speed): this used to read three Google Sheets tabs on EVERY
+    // app open, in parallel with Supabase, so the app waited on the slowest one
+    // (Sheets, 1-3s+). The 10,000-row Performance Log was only a backup for an
+    // empty Supabase, and Prop_Combos / Today_Odds / the gameOdds snapshot only
+    // fed the Props tab, which is hidden (see `tabs` in page.js). Now: Supabase
+    // only; Sheets is read just when Supabase returns nothing. If the Props tab
+    // comes back, re-add props + todayGames here.
+    const sbTodayRows = await sbTodayQ;
+    const useSheets = !sbTodayRows || sbTodayRows.length === 0;
+    const perfRows = useSheets
+      ? await getValues(await getSheetsClient(), 'Performance Log', 'A1:S10000')
+      : [];
 
     const allPicks = perfRows.slice(1).map(parsePerfRow);
 
@@ -248,28 +212,8 @@ export async function GET() {
       });
     }
 
-    // Parse props
-    const props = propRows.slice(1).map(parsePropRow).filter(p => p.player);
-
-    // Build unique games: prefer the gameOdds snapshot in Supabase, else Today_Odds.
-    let oddsSource = oddsRows;
-    if (sbSnap && sbSnap[0] && Array.isArray(sbSnap[0].rows) && sbSnap[0].rows.length > 1) {
-      oddsSource = sbSnap[0].rows;
-    }
-    const gameMap = {};
-    for (const row of oddsSource.slice(1)) {
-      const o = parseOddsRow(row);
-      const key = `${o.away}@${o.home}`;
-      if (!gameMap[key]) {
-        gameMap[key] = {
-          league: o.sport,
-          away: o.away,
-          home: o.home,
-          commence: o.commence,
-        };
-      }
-    }
-    const todayGames = Object.values(gameMap);
+    const props = [];
+    const todayGames = [];
 
     return NextResponse.json({
       todayPicks,
