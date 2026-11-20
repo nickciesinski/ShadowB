@@ -131,7 +131,13 @@ function buildHtml(dateStr, rows) {
   let body = '';
   for (const lg of leagues) {
     const games = byLeague[lg];
-    const gameKeys = Object.keys(games).sort();
+    // Earliest start first; games with no start time go last, then by name.
+    const startMs = (g) => {
+      const ts = games[g].map((r) => Date.parse(r.start_time)).filter(Number.isFinite);
+      return ts.length ? Math.min(...ts) : Infinity;
+    };
+    const gameKeys = Object.keys(games).sort((a, b) =>
+      (startMs(a) - startMs(b)) || a.localeCompare(b));
     const lgPickCount = Object.values(games).reduce((n, arr) => n + arr.length, 0);
     body += `<h2 style="color:#16213e;border-bottom:2px solid #0f3460;padding-bottom:4px;margin-bottom:8px;">`
       + `${LEAGUE_EMOJI[lg] || ''} ${esc(lg)} `
