@@ -1,0 +1,31 @@
+name: Nightly App Check
+
+# Opens the live app the way Nick does, just before his 9 PM PT betting
+# window: checks it opens fast, isn't filtered to one league, and that every
+# game tomorrow has ML + spread + total. Emails Nick ONLY if something is wrong.
+# See scripts/app-check.js.
+
+# Dispatched by Vercel Cron at 03:30 UTC = 7:30 PM PST / 8:30 PM PDT (web/vercel.json
+# -> /api/cron/slate), after the slate lands (by 02:59 UTC) and before the 9 PM
+# window, so an alert arrives in time to act on. No `schedule:` on purpose —
+# GitHub's cron runs up to 13 h late (see evening-digest.yml).
+on:
+  workflow_dispatch:
+
+jobs:
+  app-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm install --no-save playwright@1.49.1 && npx playwright install --with-deps chromium
+      - name: Run app check
+        run: node scripts/app-check.js
+        env:
+          APP_URL: https://shadow-b-5x.vercel.app
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}

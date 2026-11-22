@@ -50,6 +50,26 @@ is a leak — MLB umpire assignment was proposed and dropped for exactly that
 vs 15/15 after). Declare new features at weight 0 so they are measured before
 they are trusted; see `src/bullpen-fatigue.js` for the pattern.
 
+## The app (web/) — keep it fast and never hide picks silently
+Nick stopped using the app because it was slow to open and filters hid picks
+(fixed 2026-11-19). Don't undo that:
+- **Main load stays fast.** `/api/data` reads Supabase only. No Google Sheets
+  reads, no big snapshots, and nothing for hidden tabs on the main load — Sheets
+  is a backup only when Supabase is empty. Load `googleapis` lazily.
+- **Open instantly.** The app shows the last saved copy (`sb.cache.*` in
+  localStorage) and refreshes in the background. Keep that working.
+- **Filters never hide picks quietly.** League filter starts on ALL every open
+  (not remembered). Any active filter must be visible (orange chip + "showing X
+  of Y · SHOW ALL"). Scores opens on PICKS, not MINE. Folded no-edge markets
+  name what's folded.
+- **No background downloads for tabs Nick can't see** (e.g. hidden Props tab).
+- **Nightly app check** (`scripts/app-check.js`, `.github/workflows/app-check.yml`,
+  started by Vercel Cron at 03:30 UTC) opens the live app before the 9 PM PT
+  window and emails Nick only if it's slow, filtered, or a game is missing
+  ML/spread/total. If you change the app's tabs, filters or selectors, update
+  that script so it doesn't false-alarm — and run it (`node
+  scripts/app-check.js`) after app changes.
+
 ## Data & environment notes
 - Live pick data is in Supabase (project "ShadowPicks").
 - Model weights/params live in `config/model-params.*.json` (owned by the

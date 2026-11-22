@@ -34,7 +34,7 @@ export async function GET(request) {
   const workflow = url.searchParams.get('workflow') || DEFAULT_WORKFLOW;
   // Allowlist: this route may only start the pipeline workflows, never an
   // arbitrary one supplied in a query string.
-  const ALLOWED = new Set(['morning-chain.yml', 'evening-digest.yml', 'final-card.yml']);
+  const ALLOWED = new Set(['morning-chain.yml', 'evening-digest.yml', 'final-card.yml', 'app-check.yml']);
   if (!ALLOWED.has(workflow)) {
     return NextResponse.json({ ok: false, error: `workflow not allowed: ${workflow}` }, { status: 400 });
   }
