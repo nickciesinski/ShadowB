@@ -102,6 +102,47 @@ function favCoverRate(rows) {
   return { w, l, pct: pct(w, w + l) };
 }
 
+/** Profit on a 1-unit bet at American odds, or null. */
+function payout(odds) {
+  const o = Number(odds);
+  if (!Number.isFinite(o) || o === 0) return null;
+  return o < 0 ? 100 / -o : o / 100;
+}
+
+/**
+ * 2026-11-23 (Nick): "Don't mind mostly favorites, but if I just blindly bet
+ * all of them it clearly won't work." So the real test for the favorite lean:
+ * does betting the model's moneyline picks beat betting EVERY favorite, flat
+ * 1 unit each? Uses the other side's price (close, else last seen) for the
+ * favorites the model passed on. ROI in % per bet.
+ */
+function blindFavCheck(rows) {
+  const out = [];
+  for (const lg of LEAGUES) {
+    const ml = rows.filter(r => String(r.league || '').toUpperCase() === lg && normMarket(r.market) === 'moneyline');
+    const model = [], blind = [], favs = [], dogs = [];
+    for (const r of ml) {
+      const res = String(r.result || '').trim().toUpperCase();
+      if (res !== 'W' && res !== 'L') continue;
+      const won = res === 'W';
+      const pay = payout(r.odds);
+      if (pay === null) continue;
+      const ret = won ? pay : -1;
+      model.push(ret);
+      if (Number(r.odds) < 0) { favs.push(ret); blind.push(ret); }
+      else {
+        dogs.push(ret);
+        const opay = payout(r.close_opp_odds ?? r.last_seen_opp_odds);
+        if (opay !== null && Number(r.close_opp_odds ?? r.last_seen_opp_odds) < 0) blind.push(won ? -1 : opay);
+      }
+    }
+    const roi = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 1000) / 10 : null);
+    out.push({ league: lg, n: model.length, model: roi(model), blind: roi(blind), blindN: blind.length,
+      favs: roi(favs), favN: favs.length, dogs: roi(dogs), dogN: dogs.length });
+  }
+  return out;
+}
+
 /** Build the per-league x market table from Supabase-shaped rows. */
 function analyze(rows) {
   const cells = [];
@@ -153,7 +194,7 @@ function fmtCell(c, market) {
   };
 }
 
-function buildMarkdown({ dateStr, from, to, latestPickDate, rows, cells, weights, cover }) {
+function buildMarkdown({ dateStr, from, to, latestPickDate, rows, cells, weights, cover, blindFav, blindFrom }) {
   let md = `# Bias-Drift Check — ${dateStr}\n\n`;
   md += `Window: **${from} → ${to}** (7 days ending yesterday), pick_regime v2_clv. `;
   md += `Most recent pick date: **${latestPickDate || 'none'}**. Picks in window: ${rows.length}.\n\n`;
@@ -171,6 +212,19 @@ function buildMarkdown({ dateStr, from, to, latestPickDate, rows, cells, weights
       md += `\nNBA spread favorite cover rate (graded): ${cover.w}-${cover.l} / ${cover.pct}%\n`;
     } else {
       md += `\nNBA spread favorite cover rate: no graded NBA spread favorites in window.\n`;
+    }
+  }
+  if (blindFav && blindFav.length) {
+    const R = (x) => (x === null || x === undefined ? '—' : `${x > 0 ? '+' : ''}${x}%`);
+    md += `\n## Moneyline: model picks vs blindly betting every favorite\n\n`;
+    md += `Since ${blindFrom}, graded picks, flat 1 unit each. ROI per bet. "Model beats blind?" needs ${MIN_SAMPLE * 4}+ picks to mean anything — a few hundred bets is still noisy.\n\n`;
+    md += `| League | Model picks ROI (n) | Blind favorites ROI (n) | Model's favorites | Model's underdogs | Model beats blind? |\n|---|---|---|---|---|---|\n`;
+    for (const b of blindFav) {
+      if (!b.n) continue;
+      const beats = b.model === null || b.blind === null ? '—'
+        : b.n < MIN_SAMPLE * 4 ? 'too few picks'
+        : b.model > b.blind ? 'yes' : 'NO';
+      md += `| ${b.league} | ${R(b.model)} (${b.n}) | ${R(b.blind)} (${b.blindN}) | ${R(b.favs)} (${b.favN}) | ${R(b.dogs)} (${b.dogN}) | ${beats} |\n`;
     }
   }
   md += `\n## Live weights (config/model-params.*.json)\n\nExpected: total market anchor ≈ 0.95, sp_prob ≤ 0.1.\n\n`;
@@ -217,7 +271,9 @@ async function main() {
     try { paramsByLeague[lg] = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', `model-params.${lg}.json`), 'utf8')); } catch (e) { /* missing */ }
   }
   const weights = weightsCheck(paramsByLeague);
-  const md = buildMarkdown({ dateStr, from: fromStr, to: toStr, latestPickDate, rows, cells, weights, cover });
+  const blindFrom = isoDate(new Date(nowPT.getTime() - 60 * 864e5));
+  const blindFav = blindFavCheck(recent);
+  const md = buildMarkdown({ dateStr, from: fromStr, to: toStr, latestPickDate, rows, cells, weights, cover, blindFav, blindFrom });
 
   if (dryRun) { console.log(md); return; }
   const dir = path.join(__dirname, '..', 'bias-drift-reports');
@@ -230,4 +286,4 @@ if (require.main === module) {
   main().catch(e => { console.error('[drift] FATAL:', e.message); process.exit(1); });
 }
 
-module.exports = { analyze, cellStats, verdict, weightsCheck, favCoverRate, buildMarkdown, splitGame, normMarket, BANDS, MIN_SAMPLE };
+module.exports = { blindFavCheck, payout, analyze, cellStats, verdict, weightsCheck, favCoverRate, buildMarkdown, splitGame, normMarket, BANDS, MIN_SAMPLE };
