@@ -2899,7 +2899,13 @@ export default function App() {
     return h < 9 || h >= 20 ? 'picks' : 'scores';
   };
 
-  const [tab, setTab] = useState(getDefaultTab);
+  // Start on a fixed tab, then switch to the time-of-day tab after the page is
+  // live. The page is pre-built on the server (at some daytime hour), so reading
+  // the clock during the first render made the built page and the phone
+  // disagree — at night the Picks tab looked unselected and tapping it did
+  // nothing (2026-11-22).
+  const [tab, setTab] = useState('scores');
+  useEffect(() => { setTab(getDefaultTab()); }, []);
   const [sf, setSf] = useState('All'); // Props tab league/My-Bets filter only
   // League filter shared by Picks, Locked, Scores and Results.
   // 2026-11-19 (Nick): starts on ALL every time the app opens. It used to be
