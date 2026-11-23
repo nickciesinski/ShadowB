@@ -24,11 +24,26 @@ test('spread: 9/9 favorites -> DRIFT on Fav%', () => {
   assert.strictEqual(c.verdict, 'DRIFT');
 });
 
-test('moneyline: 100% favorites is note-only (Home% drives verdict)', () => {
-  const rows = Array.from({ length: 10 }, (_, i) => row({ market: 'moneyline', pick: i < 5 ? 'Home Team' : 'Away Team', odds: -150 }));
-  const c = d.cellStats(rows, 'moneyline');
-  assert.strictEqual(c.favPct, 100);
-  assert.strictEqual(c.verdict, 'OK');
+test('moneyline: mostly favorites is fine, nearly all favorites drifts (2026-11-23)', () => {
+  const mk = (favs) => Array.from({ length: 20 }, (_, i) => row({ market: 'moneyline', pick: i % 2 ? 'Home Team' : 'Away Team', odds: i < favs ? -150 : 130 }));
+  assert.strictEqual(d.cellStats(mk(14), 'moneyline').verdict, 'OK');     // 70%
+  assert.strictEqual(d.cellStats(mk(20), 'moneyline').verdict, 'DRIFT');  // 100%
+});
+
+test('blind-favorites check: alarms only on a real sample', () => {
+  const ml = (odds, result, opp) => ({ league: 'NHL', market: 'moneyline', odds, result, close_opp_odds: opp });
+  // 60 favorite picks at -150 winning 50% (bad) and 40 underdogs at +150 winning 20%.
+  const rows = [
+    ...Array.from({ length: 60 }, (_, i) => ml(-150, i % 2 ? 'W' : 'L', 130)),
+    ...Array.from({ length: 40 }, (_, i) => ml(150, i % 5 ? 'L' : 'W', -170)),
+  ];
+  const b = d.blindFavCheck(rows).find(x => x.league === 'NHL');
+  assert.strictEqual(b.n, 100);
+  assert.strictEqual(b.issues.length, 2);
+  const few = d.blindFavCheck(rows.slice(0, 30)).find(x => x.league === 'NHL');
+  assert.strictEqual(few.issues.length, 0);
+  const probs = d.listProblems({ rows, cells: [], weights: { lines: [] }, blindFav: [b] });
+  assert.strictEqual(probs.length, 2);
 });
 
 test('totals: Over% from pick text', () => {

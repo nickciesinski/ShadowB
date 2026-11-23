@@ -4,6 +4,7 @@ on:
   schedule:
     # Sunday 13:05 UTC (5:05 AM PT) — after the clean-era report. Read-only:
     # writes bias-drift-reports/<date>.md, never touches weights or picks.
+    # Emails Nick only when it finds a problem (2026-11-23).
     - cron: '5 13 * * 0'
   workflow_dispatch: {}
 
@@ -27,6 +28,9 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
         run: node scripts/bias-drift-report.js
       - name: Commit report
         run: |

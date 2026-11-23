@@ -27,7 +27,15 @@ const BANDS = {
   over: [38, 62],      // totals Over%
   home: [32, 68],      // ML / spread Home%
   spreadFav: [25, 75], // spread Favorite%
+  // 2026-11-23: ML Favorite% used to be note-only, so NBA at 90% favorites
+  // never raised anything. Mostly favorites is fine; nearly all is not.
+  mlFav: [20, 85],     // moneyline Favorite%
 };
+// Model-vs-blind-favorites check (moneyline, last 60 days). Below these sample
+// sizes the numbers are shown but never alarm.
+const BLIND_MIN_N = 60;      // picks before "model loses to blind favorites" counts
+const DOG_MIN_N = 40;        // underdog picks before their ROI counts
+const DOG_ROI_ALARM = -10;   // underdog picks losing 10%+ per bet
 const WATCH_MARGIN = 3;
 
 function normMarket(s) {
@@ -84,8 +92,7 @@ function cellStats(rows, market) {
   out.homePct = pct(h, h + a); out.home = h; out.ha = h + a;
   out.favPct = pct(fav, priced); out.fav = fav; out.priced = priced;
   const vHome = verdict(out.homePct, BANDS.home);
-  // Moneyline favorite% is note-only: favorites are usually the likelier winner.
-  const vFav = market === 'spread' ? verdict(out.favPct, BANDS.spreadFav) : '—';
+  const vFav = verdict(out.favPct, market === 'spread' ? BANDS.spreadFav : BANDS.mlFav);
   out.verdict = worst(vHome, vFav);
   return out;
 }
@@ -137,8 +144,15 @@ function blindFavCheck(rows) {
       }
     }
     const roi = (a) => (a.length ? Math.round((a.reduce((x, y) => x + y, 0) / a.length) * 1000) / 10 : null);
-    out.push({ league: lg, n: model.length, model: roi(model), blind: roi(blind), blindN: blind.length,
-      favs: roi(favs), favN: favs.length, dogs: roi(dogs), dogN: dogs.length });
+    const b = { league: lg, n: model.length, model: roi(model), blind: roi(blind), blindN: blind.length,
+      favs: roi(favs), favN: favs.length, dogs: roi(dogs), dogN: dogs.length, issues: [] };
+    if (b.n >= BLIND_MIN_N && b.model !== null && b.blind !== null && b.model <= b.blind) {
+      b.issues.push(`${lg} moneyline picks (${b.model}% per bet, ${b.n} bets) did no better than blindly betting every favorite (${b.blind}%).`);
+    }
+    if (b.dogN >= DOG_MIN_N && b.dogs !== null && b.dogs <= DOG_ROI_ALARM) {
+      b.issues.push(`${lg} underdog moneyline picks are losing ${Math.abs(b.dogs)}% per bet (${b.dogN} bets).`);
+    }
+    out.push(b);
   }
   return out;
 }
@@ -194,6 +208,32 @@ function fmtCell(c, market) {
   };
 }
 
+/**
+ * Plain-English problems worth an email. Small-sample cells are left out —
+ * they stay visible in the report but never alarm on their own.
+ */
+function listProblems({ rows, cells, weights, blindFav }) {
+  const out = [];
+  if (!rows.length) out.push('No picks at all in the last 7 days — the pipeline may be down.');
+  for (const c of cells) {
+    for (const [label, x] of [['', c.all], [' (staked picks)', c.staked]]) {
+      if (x.n < MIN_SAMPLE || x.verdict !== 'DRIFT') continue;
+      const bits = [];
+      if (c.market === 'total') bits.push(`Over ${x.overPct}%`);
+      else {
+        const [hl, hh] = BANDS.home;
+        if (x.homePct !== null && (x.homePct < hl || x.homePct > hh)) bits.push(`home team ${x.homePct}%`);
+        const [fl, fh] = c.market === 'spread' ? BANDS.spreadFav : BANDS.mlFav;
+        if (x.favPct !== null && (x.favPct < fl || x.favPct > fh)) bits.push(`favorites ${x.favPct}%`);
+      }
+      out.push(`${c.league} ${c.market}${label}: ${bits.join(', ')} of ${x.n} picks this week.`);
+    }
+  }
+  for (const b of blindFav || []) out.push(...b.issues);
+  for (const w of weights.lines) if (w.verdict === 'DRIFT') out.push(`${w.league} weights: ${w.note}.`);
+  return out;
+}
+
 function buildMarkdown({ dateStr, from, to, latestPickDate, rows, cells, weights, cover, blindFav, blindFrom }) {
   let md = `# Bias-Drift Check — ${dateStr}\n\n`;
   md += `Window: **${from} → ${to}** (7 days ending yesterday), pick_regime v2_clv. `;
@@ -224,7 +264,7 @@ function buildMarkdown({ dateStr, from, to, latestPickDate, rows, cells, weights
       const beats = b.model === null || b.blind === null ? '—'
         : b.n < MIN_SAMPLE * 4 ? 'too few picks'
         : b.model > b.blind ? 'yes' : 'NO';
-      md += `| ${b.league} | ${R(b.model)} (${b.n}) | ${R(b.blind)} (${b.blindN}) | ${R(b.favs)} (${b.favN}) | ${R(b.dogs)} (${b.dogN}) | ${beats} |\n`;
+      md += `| ${b.league} | ${R(b.model)} (${b.n}) | ${R(b.blind)} (${b.blindN}) | ${R(b.favs)} (${b.favN}) | ${R(b.dogs)} (${b.dogN}) | ${beats}${b.issues.length ? ' ⚠' : ''} |\n`;
     }
   }
   md += `\n## Live weights (config/model-params.*.json)\n\nExpected: total market anchor ≈ 0.95, sp_prob ≤ 0.1.\n\n`;
@@ -232,12 +272,12 @@ function buildMarkdown({ dateStr, from, to, latestPickDate, rows, cells, weights
   for (const w of weights.lines) {
     md += `| ${w.league} | ${w.anchor ?? '—'} | ${w.spMax ?? '—'} | ${w.verdict || '—'}${w.note ? ' — ' + w.note : ''} |\n`;
   }
-  const drifting = cells.filter(c => c.all.verdict === 'DRIFT' || (c.staked.n >= MIN_SAMPLE && c.staked.verdict === 'DRIFT'));
+  const problems = listProblems({ rows, cells, weights, blindFav });
   md += `\n## Overall\n\n`;
   if (!rows.length) md += `**NO DATA** — check the pipeline.\n`;
-  else if (!drifting.length && !weights.drift) md += `All cells within bands; weights intact.\n`;
+  else if (!problems.length) md += `No problems (small-sample cells are shown above but don't count).\n`;
   else {
-    md += `**DRIFT**: ${drifting.map(c => `${c.league} ${c.market}${c.all.n < MIN_SAMPLE ? ' (small n)' : ''}`).join(', ') || 'weights'}${weights.drift ? '; weights regressed' : ''}.\n\n`;
+    md += `**${problems.length} PROBLEM(S) — emailed:**\n\n${problems.map(p => `- ${p}`).join('\n')}\n\n`;
     md += `Likely causes: heavy Over → totals anchor pushed below 0.90; heavy Home → sp_prob fix undone; heavy spread favorites (esp. NBA) → projected margins too large vs the market line (projectMargin in src/game-model.js has no pull toward the line; early-season stats).\n`;
   }
   return md;
@@ -275,15 +315,34 @@ async function main() {
   const blindFav = blindFavCheck(recent);
   const md = buildMarkdown({ dateStr, from: fromStr, to: toStr, latestPickDate, rows, cells, weights, cover, blindFav, blindFrom });
 
-  if (dryRun) { console.log(md); return; }
+  const problems = listProblems({ rows, cells, weights, blindFav });
+  if (dryRun) { console.log(md); console.log(`[drift] ${problems.length} problem(s) — dry run, no email.`); return; }
   const dir = path.join(__dirname, '..', 'bias-drift-reports');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, `${dateStr}.md`), md);
   console.log(`[drift] wrote bias-drift-reports/${dateStr}.md (${rows.length} picks)`);
+  if (problems.length) await email(problems, dateStr);
+  else console.log('[drift] no problems — no email.');
+}
+
+/** Email Nick only when something is off. Same Gmail setup as the app check. */
+async function email(problems, dateStr) {
+  const { GMAIL_USER, GMAIL_APP_PASSWORD } = process.env;
+  const to = (process.env.EMAIL_RECIPIENTS || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (!GMAIL_USER || !GMAIL_APP_PASSWORD || !to.length) { console.warn('[drift] email not configured — skipping.'); return; }
+  const nodemailer = require('nodemailer');
+  const esc = (x) => String(x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const html = `<p><b>This week's pick-lean check found ${problems.length} problem(s):</b></p>
+<ul>${problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+<p style="color:#666">Full report: bias-drift-reports/${dateStr}.md in the ShadowB repo.</p>
+<p style="color:#666">Paste this email into a Claude session to look into it.</p>`;
+  const t = nodemailer.createTransport({ service: 'gmail', auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD } });
+  await t.sendMail({ from: GMAIL_USER, to: to.join(', '), subject: `⚠️ Shadow Bets weekly lean check: ${problems.length} problem(s)`, html });
+  console.log('[drift] alert email sent.');
 }
 
 if (require.main === module) {
   main().catch(e => { console.error('[drift] FATAL:', e.message); process.exit(1); });
 }
 
-module.exports = { blindFavCheck, payout, analyze, cellStats, verdict, weightsCheck, favCoverRate, buildMarkdown, splitGame, normMarket, BANDS, MIN_SAMPLE };
+module.exports = { listProblems, blindFavCheck, payout, analyze, cellStats, verdict, weightsCheck, favCoverRate, buildMarkdown, splitGame, normMarket, BANDS, MIN_SAMPLE };
