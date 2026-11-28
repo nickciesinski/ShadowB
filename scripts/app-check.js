@@ -87,7 +87,13 @@ async function checkEspn(games, date, problems) {
       const home = c.find(x => x.homeAway === 'home')?.team?.displayName;
       if (!away || !home) continue;
       const hit = picked.some(k => k.startsWith(lg.toLowerCase()) && k.includes(nick(away)) && k.includes(nick(home)));
-      if (!hit) problems.push(`${lg} ${away} @ ${home} (tomorrow) has no picks at all.`);
+      if (hit) continue;
+      // No line posted yet (common when a team played the night before) means
+      // the model can't pick yet — the ~4:30 AM PT morning run tops it up.
+      const noLine = !(ev.competitions?.[0]?.odds || []).length;
+      problems.push(noLine
+        ? `${lg} ${away} @ ${home} (tomorrow) has no picks yet — betting sites haven't posted a line. The 4:30 AM PT run should add it; check before the 5:30 AM window.`
+        : `${lg} ${away} @ ${home} (tomorrow) has no picks at all.`);
     }
   }
 }
